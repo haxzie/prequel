@@ -16,7 +16,7 @@
  *   that carries its own music still exports the same video on another
  *   machine, and next year — the same reasoning a background is copied in.
  */
-import { copyFileSync, existsSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,8 @@ import type { MusicCatalogue } from "../shared/contract.js";
 import { apiUrl } from "./api.js";
 import { log } from "./log.js";
 import { shippedMusic } from "../shared/music.js";
+import { libraryRef } from "../shared/library.js";
+import { shelfDir } from "./library.js";
 import { BARE_M4A, fetchInto, isAudioMp4, TIMEOUT_MS } from "./media-cache.js";
 
 /** How long a stored catalogue is served without re-checking. */
@@ -141,25 +143,28 @@ export async function catalogue(): Promise<MusicCatalogue | null> {
  * present but is not audio is replaced rather than trusted, because a bad file
  * on disk outlives the mistake that produced it.
  */
-export async function ensureMusic(dir: string, file: string): Promise<boolean> {
-  if (!BARE_M4A.test(file)) return false;
+export async function ensureMusic(file: string): Promise<string | null> {
+  if (!BARE_M4A.test(file)) return null;
+  const reference = libraryRef("music", file);
 
   // The shipped track is copied rather than fetched. It is the one bed the app
   // can lay with no network at all, and asking the API for a file that is
   // already inside the bundle would make the offline case the broken one.
-  if (shippedMusic(file)) return copyShipped(dir, file);
+  if (shippedMusic(file)) return copyShipped(file) ? reference : null;
 
-  return fetchInto(`/v1/music/raw/${file}`, join(dir, file), isAudioMp4);
+  const ok = await fetchInto(`/v1/music/raw/${file}`, join(shelfDir("music"), file), isAudioMp4);
+  return ok ? reference : null;
 }
 
-/** Puts one of the app's own tracks inside a recording. */
-function copyShipped(dir: string, file: string): boolean {
-  const destination = join(dir, file);
+/** Puts one of the app's own tracks on the shelf. */
+function copyShipped(file: string): boolean {
+  const destination = join(shelfDir("music"), file);
 
   try {
     // Skipped when it is already there: choosing the same track twice is not a
     // reason to rewrite two megabytes.
     if (!existsSync(destination)) {
+      mkdirSync(join(destination, ".."), { recursive: true });
       copyFileSync(
         fileURLToPath(new URL(`../../resources/music/${file}`, import.meta.url)),
         destination,

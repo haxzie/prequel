@@ -24,6 +24,7 @@ import {
   type MediaTime,
   type TrackKind,
 } from "../../../shared/manifest";
+import { libraryRef } from "../../../shared/library";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import {
   clickSoundId,
@@ -693,43 +694,61 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
 
   const library = useMusic();
   /** The track being fetched, so the row that was chosen can say so. */
-  const [pendingMusic, setPendingMusic] = useState<string | null>(null);
+  /**
+   * The tracks being fetched, by the reference a project names them with.
+   *
+   * A set rather than one name: laying a bed and then changing its song puts
+   * two downloads in flight, and the second finishing is not a reason to stop
+   * saying the first is still going.
+   */
+  const [fetchingMusic, setFetchingMusic] = useState<ReadonlySet<string>>(new Set());
 
   /**
-   * Puts one library track inside the recording, and describes it.
+   * What a library track is called before a byte of it has arrived.
    *
-   * Fetched before anything is applied, for the reason `onPickPreset`
-   * downloads first: a bed naming a file that is not there yet is a bar on the
-   * timeline that plays nothing, and a spinner on the row that was pressed is
-   * what says the choice was registered.
-   *
-   * The length comes from the catalogue rather than from a probe of the file.
-   * The two are the same number — the upload script reads it off the bytes it
-   * is about to write — and taking the catalogue's means a bed is laid at the
-   * right width without the renderer opening the file to find out.
+   * Everything a bed needs to be laid: the catalogue knows the label and the
+   * length — the upload script reads the length off the bytes it writes — and
+   * the reference is the one main will answer with, because both sides build
+   * it the same way. So the bar can go down now and the file can land under
+   * it.
    */
-  const ensureTrack = useCallback(
-    async (track: MusicListing): Promise<MusicFile | null> => {
-      setPendingMusic(track.file);
-      const result = await window.prequel.editor.music.ensure(session.dir, track.file);
-      setPendingMusic((current) => (current === track.file ? null : current));
-
-      if (!result.ok || !result.value) {
-        // Nothing is applied. A track that cannot be fetched leaves whatever
-        // is already playing alone.
-        console.warn(`[editor] could not fetch ${track.file}`);
-        return null;
-      }
-
-      return {
-        file: track.file,
-        label: track.label,
-        duration: track.duration,
-        libraryId: track.id,
-      };
-    },
-    [session.dir],
+  const trackFile = useCallback(
+    (track: MusicListing): MusicFile => ({
+      file: libraryRef("music", track.file),
+      label: track.label,
+      duration: track.duration,
+      libraryId: track.id,
+    }),
+    [],
   );
+
+  /**
+   * Puts one library track on the shelf, with the bed already on the timeline.
+   *
+   * It used to fetch first and lay the bed second, which meant pressing Add
+   * Audio did nothing at all for as long as the download took — a couple of
+   * megabytes of nothing happening, on the one gesture whose whole point is
+   * that something appears. Now the bar arrives at once and shimmers until the
+   * song is under it; `undo` is what the failure runs, because a bar that
+   * plays nothing is worse than no bar.
+   */
+  const fetchTrack = useCallback(async (track: MusicListing, undo: () => void): Promise<void> => {
+    const reference = libraryRef("music", track.file);
+    setFetchingMusic((current) => new Set(current).add(reference));
+
+    const result = await window.prequel.editor.music.ensure(track.file);
+
+    setFetchingMusic((current) => {
+      const next = new Set(current);
+      next.delete(reference);
+      return next;
+    });
+
+    if (!result.ok || !result.value) {
+      console.warn(`[editor] could not fetch ${track.file}`);
+      undo();
+    }
+  }, []);
 
   /**
    * The track Add Ambient Music lays down.
@@ -758,12 +777,17 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   );
 
   const addAmbient = useCallback(
-    async (at?: MediaTime) => {
+    (at?: MediaTime) => {
       if (!ambient) return;
-      const source = await ensureTrack(ambient);
-      if (source) addMusic(source, at);
+
+      // Laid first and fetched second. The bed is drawn from what the
+      // catalogue already knows — see `trackFile` — and removed again if the
+      // song never turns up.
+      const source = trackFile(ambient);
+      addMusic(source, at);
+      void fetchTrack(ambient, () => dispatch({ type: "dropMusicFile", file: source.file }));
     },
-    [ambient, ensureTrack, addMusic],
+    [ambient, trackFile, addMusic, fetchTrack],
   );
 
   const importAudio = useCallback(async () => {
@@ -809,15 +833,30 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       stopMusicPreview();
       if (file === null) return;
 
-      // Fetched first where it has to be. A catalogue row has nothing on disk
-      // until somebody asks for it, and `prequel-media:` would answer the
-      // element with a 404 it reports as a decode failure.
-      if (!state.project.musicFiles.some((entry) => entry.file === file)) {
-        const track = library.groups.flatMap((group) => group.items).find((t) => t.file === file);
-        if (!track || !(await ensureTrack(track))) return;
+      // Fetched first where it has to be, and this one really does have to:
+      // nothing is being laid down, so there is no bar to shimmer while the
+      // bytes arrive — the only thing this gesture does is make a sound.
+      //
+      // A catalogue row has nothing on disk until somebody asks for it, and
+      // `prequel-media:` would answer the element with a 404 it reports as a
+      // decode failure.
+      const listed = library.groups
+        .flatMap((group) => group.items)
+        .find((track) => track.file === file || libraryRef("music", track.file) === file);
+
+      if (listed) {
+        const got = await window.prequel.editor.music.ensure(listed.file);
+        if (!got.ok || !got.value) {
+          console.warn(`[editor] could not fetch ${listed.file}`);
+          return;
+        }
       }
 
-      const element = new Audio(mediaUrl(recordingName(session.dir), file));
+      // Under the name it is actually kept by: a library row names a bare file
+      // and the shelf is where it lives — see `shared/library.ts`.
+      const element = new Audio(
+        mediaUrl(recordingName(session.dir), listed ? libraryRef("music", listed.file) : file),
+      );
       // At its own level, not the bed's: this is being listened to as a song
       // rather than as a bed, and a muted bar would audition in silence.
       element.volume = 1;
@@ -831,7 +870,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       audition.current = element;
       setPlayingMusic(file);
     },
-    [stopMusicPreview, state.project.musicFiles, library, ensureTrack, session.dir],
+    [stopMusicPreview, library, session.dir],
   );
 
   /**
@@ -842,17 +881,35 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * panel, which is only on screen because it is selected.
    */
   const pickMusic = useCallback(
-    async (track: MusicListing) => {
+    (track: MusicListing) => {
       const musicId = state.selectedMusicId;
       if (!musicId) return;
 
       // Whatever was being auditioned stops. The choice is made, and the bed
       // itself is now the thing to listen to.
       stopMusicPreview();
-      const source = await ensureTrack(track);
-      if (source) dispatch({ type: "setMusicFile", musicId, source });
+
+      // Pointed at the new song straight away, so the bar says which track it
+      // is while the file is still coming. The one it was on is kept, because
+      // that is what a failed download has to put back — a bed left naming a
+      // song that never arrived would play nothing with nothing to say why.
+      const was = state.project.musicFiles.find(
+        (file) => file.file === state.project.music.find((bed) => bed.id === musicId)?.file,
+      );
+
+      dispatch({ type: "setMusicFile", musicId, source: trackFile(track) });
+      void fetchTrack(track, () => {
+        if (was) dispatch({ type: "setMusicFile", musicId, source: was });
+      });
     },
-    [state.selectedMusicId, ensureTrack, stopMusicPreview],
+    [
+      state.selectedMusicId,
+      state.project.music,
+      state.project.musicFiles,
+      trackFile,
+      fetchTrack,
+      stopMusicPreview,
+    ],
   );
 
   const importForMusic = useCallback(async () => {
@@ -923,7 +980,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       const wallpaper = presetNeedsBackground(preset);
       if (wallpaper) {
         setApplyingPreset(preset.id);
-        const result = await window.prequel.editor.backgrounds.ensure(session.dir, wallpaper);
+        const result = await window.prequel.editor.backgrounds.ensure(wallpaper);
         if (stale()) return;
         setApplyingPreset(null);
 
@@ -933,6 +990,18 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           console.warn(`[editor] could not fetch ${wallpaper} for ${preset.id}`);
           return;
         }
+
+        // Named the way the shelf names it, which is not always the way the
+        // look did: one saved before the library existed carries a bare name,
+        // and a project that applied it would then point at a picture its own
+        // folder does not hold.
+        ready = {
+          ...preset,
+          background: {
+            ...preset.background,
+            background: { kind: "image", source: "preset", path: result.value },
+          },
+        };
       } else if (presetCarriesImage(preset)) {
         setApplyingPreset(preset.id);
         const result = await window.prequel.editor.scenePresets.applyImage(preset.id, session.dir);
@@ -1560,7 +1629,18 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const peaks = useWaveforms(heard.dir, heard.media, heard.manifest.duration);
   // Per file, and not merged into the line above: a music file has nothing to
   // do with the session's clock — see `useMusicPeaks`.
-  const musicPeaks = useMusicPeaks(session.dir, state.project.musicFiles);
+  // Not the ones still arriving: asking for the peaks of a file that is not
+  // there yet is an error in the log and a wave that never appears — the hook
+  // is keyed on the files it was given, so a file that answered "missing"
+  // once would never be asked about again. Dropping them until they land
+  // changes that key, which is what sends it back for the wave.
+  const musicPeaks = useMusicPeaks(
+    session.dir,
+    useMemo(
+      () => state.project.musicFiles.filter((file) => !fetchingMusic.has(file.file)),
+      [state.project.musicFiles, fetchingMusic],
+    ),
+  );
   // Indexed by source time for the same reason, so a cut neither moves the
   // thumbnails nor asks for them to be extracted again.
   //
@@ -1993,7 +2073,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               pendingBackground={pendingBackground}
               music={{
                 library,
-                pending: pendingMusic,
+                pending: fetchingMusic,
                 onPick: (track) => void pickMusic(track),
                 onChoose: (source) => {
                   stopMusicPreview();
@@ -2069,7 +2149,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 // screen is a better thing to look at than nothing. The spinner
                 // on the swatch is what says the choice was registered.
                 setPendingBackground(file);
-                const result = await window.prequel.editor.backgrounds.ensure(session.dir, file);
+                const result = await window.prequel.editor.backgrounds.ensure(file);
                 setPendingBackground((current) => (current === file ? null : current));
 
                 if (!result.ok || !result.value) {
@@ -2083,7 +2163,10 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                   type: "setSetting",
                   section: "background",
                   key: "background",
-                  value: { kind: "image", source: "preset", path: file },
+                  // The reference, not the name: the picture lives once for
+                  // the machine and the project points at it — so switching
+                  // between wallpapers leaves nothing behind in the recording.
+                  value: { kind: "image", source: "preset", path: result.value },
                 });
               }}
               onPickWatermark={async () => {
@@ -2180,6 +2263,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               media={media}
               peaks={peaks}
               musicPeaks={musicPeaks}
+              fetchingMusic={fetchingMusic}
               onAddMusic={ambient ? (at) => void addAmbient(at) : undefined}
               filmstrip={frames.strip}
               framesPending={frames.pending}
@@ -2278,26 +2362,34 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             it again, and keeping a decoder open for it would be a megabyte of
             audio held for a list entry.
 
+            Nothing for a file still being fetched. An element pointed at a
+            file that is not there yet fails to load and stays failed — React
+            keeps it across the render that would fix it, because neither its
+            key nor its `src` has changed — so the bed would be silent for the
+            rest of the session. Mounted when the song lands instead.
+
             `crossOrigin` for the reason every element here carries it: without
             it the element is tainted whatever headers come back, and a tainted
             element routed through `createMediaElementSource` outputs silence
             rather than failing. */}
-        {[...new Set(state.project.music.map((bed) => bed.file))].map((file) => (
-          <audio
-            key={file}
-            ref={media.registerMusic(file)}
-            src={mediaUrl(recordingName(session.dir), file)}
-            crossOrigin="anonymous"
-            preload="auto"
-            onError={(event) => {
-              const failure = event.currentTarget.error;
-              console.error(
-                `[editor] ${file} would not open:`,
-                failure ? `${String(failure.code)}: ${failure.message}` : "no reason given",
-              );
-            }}
-          />
-        ))}
+        {[...new Set(state.project.music.map((bed) => bed.file))]
+          .filter((file) => !fetchingMusic.has(file))
+          .map((file) => (
+            <audio
+              key={file}
+              ref={media.registerMusic(file)}
+              src={mediaUrl(recordingName(session.dir), file)}
+              crossOrigin="anonymous"
+              preload="auto"
+              onError={(event) => {
+                const failure = event.currentTarget.error;
+                console.error(
+                  `[editor] ${file} would not open:`,
+                  failure ? `${String(failure.code)}: ${failure.message}` : "no reason given",
+                );
+              }}
+            />
+          ))}
         {mattes.map((track) => (
           <video
             key={matteKey(track.segment)}

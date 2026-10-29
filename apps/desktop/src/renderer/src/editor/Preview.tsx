@@ -19,7 +19,8 @@ import {
   buildRenderPlan,
   captionAt,
   type EnterTransition,
-  pictureMoved,
+  pictureDrawn,
+  restingForDrawn,
   placement,
   type PlanSource,
   type Rect,
@@ -33,17 +34,22 @@ import {
   watermarkRect,
 } from "../../../shared/layout";
 import {
+  angleFrom,
   cornerAt,
   handleAt,
+  normaliseAngle,
   radiusAt,
   radiusDot,
   radiusFrom,
   radiusInset,
   keepsAspect,
+  rotateCornerAt,
+  snapAngle,
   type Corner,
   type Handle,
   type Point,
   pulled,
+  unspun,
 } from "./handles";
 import {
   captionLook,
@@ -732,6 +738,7 @@ export function Preview({
         drawnTexts,
         drawnMarks?.find((candidate) => candidate.id === ringedMark) ?? null,
         frozen !== null,
+        turnOf(ringed),
       );
 
       // Read here and nowhere else. The context is created without
@@ -934,6 +941,39 @@ export function Preview({
   const radiusOf = (target: Grabbable, box: Rect): number | null =>
     pictureRadius(target, box, frame, settings);
 
+  /**
+   * Whether the camera's shape is the one fitted to whoever is on it.
+   *
+   * The one camera that does not turn: its outline is sampled from the footage
+   * and placed in the frame's own pixels, so it would stay upright around a
+   * picture that did not — see the note on `turn` in `buildRenderPlan`. The
+   * turn zone is withheld rather than offered and ignored.
+   */
+  const followsSomebody = () =>
+    !settings.layout.cameraCutout &&
+    settings.layout.cameraShape === "blob" &&
+    (blobs?.samples.length ?? 0) > 0;
+
+  /**
+   * How far a picture is turned, in degrees clockwise about its own middle.
+   *
+   * Only ever the camera. The screen is the recording — turning it would leave
+   * wallpaper in the corners of the one picture that is meant to fill its box
+   * — and the logo is placed by four numbers of its own.
+   *
+   * Everything that hit-tests a box asks this and unspins the pointer by it,
+   * rather than each gesture learning about angles: the box the settings store
+   * is still upright, so a drag on a turned bubble is the same arithmetic with
+   * the pointer brought into the box's own frame first.
+   *
+   * Null rather than zero where the picture does not turn at all, which is not
+   * the same answer: zero is a bubble standing straight and still offering a
+   * turn zone around its corners. One value for both facts, so what can be
+   * turned and what is drawn cannot disagree.
+   */
+  const turnOf = (target: Grabbable | null): number | null =>
+    target === "camera" && !followsSomebody() ? settings.layout.cameraRotation : null;
+
   /** The same, as the patch a drag of the dot writes. */
   const radiusPatch = (
     target: Grabbable,
@@ -1129,19 +1169,31 @@ export function Preview({
       }
     }
 
-    // A picture a zoom has carried off its resting box is not grabbable: the
-    // box these answer with is where it will be again, not where it is, and a
-    // drag begun on it would move something the pointer is nowhere near. The
-    // same answer the ring uses, so what can be grabbed and what shows handles
-    // cannot disagree — off the last plan drawn, which is the one on screen.
-    const away = (which: PlanSource) =>
-      cached.current ? pictureMoved(cached.current.plan, which, sampleAt()) : false;
+    // Each picture where it is actually drawn — off the last plan, which is the
+    // one on screen — along with the box its settings describe and whether a
+    // drag has anything to write. See `grabbed`, and the same answer feeds the
+    // ring, so what can be grabbed and what shows handles cannot disagree.
+    const logo = watermarkBox();
+    const grabbable = (
+      target: Grabbable,
+    ): { box: Rect; rest: Rect; scale: number; drag: boolean } | null => {
+      // The logo is placed by its own four numbers in every composition and no
+      // plan moves it, so it is always itself.
+      if (target === "watermark")
+        return logo ? { box: logo, rest: logo, scale: 1, drag: true } : null;
 
-    const boxes: Record<Grabbable, Rect | null> = {
-      watermark: watermarkBox(),
-      camera: away("camera") ? null : (camera?.dstRect ?? null),
-      screen: away("screen") ? null : (screen?.dstRect ?? null),
+      const resting = (target === "camera" ? camera : screen)?.dstRect ?? null;
+      const plan = cached.current?.plan;
+      if (!plan) return resting ? { box: resting, rest: resting, scale: 1, drag: true } : null;
+      return grabbed(plan, target, sampleAt(), resting);
     };
+
+    const boxes: Record<Grabbable, { box: Rect; rest: Rect; scale: number; drag: boolean } | null> =
+      {
+        watermark: grabbable("watermark"),
+        camera: grabbable("camera"),
+        screen: grabbable("screen"),
+      };
 
     // The ringed picture's corners first, whatever is stacked over them. The
     // ring is drawn above every picture, so its handles sit on top of a bubble
@@ -1152,9 +1204,29 @@ export function Preview({
     // showing none is a gesture nobody aimed — and on the stacked arrangements
     // it is usually the *other* picture's edge the pointer was heading for.
     if (selected) {
-      const box = boxes[selected];
-      const handle = box ? handleAt(box, point, near, true) : null;
-      if (box && handle) return { kind: "resize", target: selected, handle, box, from: point };
+      const grip = boxes[selected];
+      // Handles only on a picture a drag can write. A shot that has the card
+      // owns where it lands — see `grabbed` — so it is ringed without them
+      // rather than given corners that would pull against the shot.
+      const box = grip?.drag === true ? grip.box : null;
+      const turn = turnOf(selected);
+      // The pointer in the box's own frame, which is upright whatever the
+      // picture is doing — see `turnOf`. Identical to `point` on everything
+      // that does not turn, which is everything but a bubble somebody has
+      // turned.
+      const own = box ? unspun(point, box, turn ?? 0) : point;
+
+      const handle = box ? handleAt(box, own, near, true) : null;
+      if (box && grip && handle)
+        return {
+          kind: "resize",
+          target: selected,
+          handle,
+          box,
+          rest: grip.rest,
+          scale: grip.scale,
+          from: point,
+        };
 
       // Then the radius dots, which sit inside the corners the handles are on.
       // After them, deliberately: the dot is held clear of the corner by
@@ -1163,8 +1235,22 @@ export function Preview({
       // the gesture more likely to have been meant.
       const radius = box ? radiusOf(selected, box) : null;
       if (box && radius !== null) {
-        const corner = radiusAt(box, point, near, radius, RADIUS_DOT * grain());
+        const corner = radiusAt(box, own, near, radius, RADIUS_DOT * grain());
         if (corner) return { kind: "radius", target: selected, corner, box, from: point };
+      }
+
+      // Last of the three, and the only one outside the box: the air just
+      // beyond a corner turns the picture — see `rotateCornerAt`. After the
+      // handles so a corner stays a resize, and after the dots so nothing
+      // inside the box is reached for from out here.
+      if (box && turn !== null && rotateCornerAt(box, point, near, ROTATE_REACH * grain(), turn)) {
+        return {
+          kind: "rotate",
+          target: selected,
+          box,
+          from: angleFrom(box, point),
+          was: settings.layout.cameraRotation,
+        };
       }
     }
 
@@ -1172,8 +1258,19 @@ export function Preview({
     // camera over the screen in every arrangement that stacks them, so a
     // picture underneath is reachable only where nothing covers it.
     for (const target of ["watermark", "camera", "screen"] as const) {
-      const box = boxes[target];
-      if (box && inside(box, point)) return { kind: "move", target, box, from: point };
+      const grip = boxes[target];
+      if (!grip) continue;
+      // Tested in the picture's own frame, so a turned bubble is picked up
+      // where it is drawn rather than where its upright box would be — and the
+      // corner of that box which is now off the picture is not.
+      if (!inside(grip.box, unspun(point, grip.box, turnOf(target) ?? 0))) continue;
+
+      // A picture the shot has taken answers to a press by being selected and
+      // nothing more: there is no box to write — see `grabbed` — and a move
+      // that the next frame undid would read as the picture fighting back.
+      return grip.drag
+        ? { kind: "move", target, box: grip.box, rest: grip.rest, scale: grip.scale, from: point }
+        : { kind: "pick", target };
     }
 
     return null;
@@ -1372,18 +1469,19 @@ export function Preview({
       // the offset slides the picture around inside the area it was given. Same
       // gesture, opposite sign, and the fraction is of the area rather than of
       // the source.
+      // The travel in the resting box's own pixels: `found` answers with the
+      // box the settings give, and a shrunken bubble draws that box smaller —
+      // so a pan over it covers more of the picture than the pointer moved.
+      const scale = grip.scale > 0 ? grip.scale : 1;
+      const [moveX, moveY] = [(point.x - grip.from.x) / scale, (point.y - grip.from.y) / scale];
+
       const [dx, dy] =
         found.fit === "cover"
           ? [
-              -((point.x - grip.from.x) / found.dstRect.width) *
-                (found.srcRect.width / source.width),
-              -((point.y - grip.from.y) / found.dstRect.height) *
-                (found.srcRect.height / source.height),
+              -(moveX / found.dstRect.width) * (found.srcRect.width / source.width),
+              -(moveY / found.dstRect.height) * (found.srcRect.height / source.height),
             ]
-          : [
-              (point.x - grip.from.x) / Math.max(found.area.width, 1),
-              (point.y - grip.from.y) / Math.max(found.area.height, 1),
-            ];
+          : [moveX / Math.max(found.area.width, 1), moveY / Math.max(found.area.height, 1)];
 
       return {
         section: "layout",
@@ -1394,22 +1492,43 @@ export function Preview({
       };
     }
 
+    // Pulled where the picture is drawn, then written where its settings are.
+    //
+    // A resize of a shrunken camera is the one gesture the two boxes differ
+    // on: the handle has to land under the pointer, which is a size in drawn
+    // pixels, and the setting is the size at rest — so the pull is divided by
+    // the shrink. The centre moves by however far the drawn box's centre moved,
+    // which is what keeps the corner opposite the one being pulled still.
+    //
     // Only a move is snapped. A resize is a statement about size, and pulling
     // a corner onto a line would change the *other* edge to get there — the
     // picture would grow as you tried to place it.
+    const scale = grip.scale > 0 ? grip.scale : 1;
     const dragged =
       grip.kind === "resize"
         ? {
-            box: pulled(grip.box, grip.handle, point, keepsAspect(grip.handle, shift)),
+            // Pulled where the picture is drawn, so the handle lands under the
+            // pointer, and divided by the shrink on the way back to the box the
+            // settings hold. `restingForDrawn` puts that box where the pulled
+            // one will be drawn from it — the anchor again, see the note there.
+            box: ((want) =>
+              restingForDrawn(
+                frame,
+                { width: want.width / scale, height: want.height / scale },
+                want,
+              ))(pulled(grip.box, grip.handle, point, keepsAspect(grip.handle, shift))),
             hitX: null,
             hitY: null,
           }
-        : pullToGuides(
-            {
+        : // The drawn picture follows the pointer exactly, and the resting box
+          // is whatever puts it there. One for one wherever nothing is shrunk,
+          // which is every drag that is not under a zoom.
+          pullToGuides(
+            restingForDrawn(frame, grip.rest, {
               ...grip.box,
               x: grip.box.x + (point.x - grip.from.x),
               y: grip.box.y + (point.y - grip.from.y),
-            },
+            }),
             grip.target,
           );
 
@@ -1642,6 +1761,9 @@ export function Preview({
                 // handle marks the point the drag actually pivots about. The
                 // half pixel that costs is in `HANDLE_AT`.
                 "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
+                // Gone on a picture a shot has taken, which is ringed but not
+                // pullable — see `grabbed`.
+                "group-data-[handles=none]/ring:hidden",
                 HANDLE_AT[corner],
               )}
             />
@@ -1668,6 +1790,7 @@ export function Preview({
               className={cn(
                 "absolute size-[7px] rounded-full border-[1.5px] border-selected bg-white/90 shadow-sm",
                 "group-data-[radius=none]/ring:hidden",
+                "group-data-[handles=none]/ring:hidden",
                 RADIUS_AT[corner],
               )}
             />
@@ -1687,6 +1810,7 @@ export function Preview({
               className={cn(
                 "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
                 "group-data-[handles=corners]/ring:hidden",
+                "group-data-[handles=none]/ring:hidden",
                 HANDLE_AT[edge],
               )}
             />
@@ -1800,6 +1924,10 @@ export function Preview({
             if (!found) return;
             onPick?.(found.target);
 
+            // A picture the shot has taken: selected above, and that is the
+            // whole gesture. Nothing is captured, so the next move is a hover.
+            if (found.kind === "pick") return;
+
             // Alt turns a drag on a picture into a pan of what it is showing. The
             // handles keep resizing either way — there is nothing else a handle
             // could sensibly mean.
@@ -1817,6 +1945,7 @@ export function Preview({
                       found.target === "screen"
                         ? settings.layout.screenOffsetY
                         : settings.layout.cameraOffsetY,
+                    scale: found.scale,
                   }
                 : found;
 
@@ -1873,9 +2002,16 @@ export function Preview({
                       found.kind === "sizeText" ||
                       found.kind === "sizeMark"
                     ? HANDLE_CURSOR[found.handle]
-                    : event.altKey && found.kind !== "moveText" && found.kind !== "moveMark"
-                      ? "move"
-                      : "grab";
+                    : found.kind === "rotate"
+                      ? ROTATE_CURSOR
+                      : found.kind === "pick"
+                        ? // An arrow: the press selects and nothing follows the
+                          // pointer. A hand here would promise a drag that the
+                          // shot owning this picture cannot give — see `grabbed`.
+                          "default"
+                        : event.altKey && found.kind !== "moveText" && found.kind !== "moveMark"
+                          ? "move"
+                          : "grab";
               return;
             }
 
@@ -1908,6 +2044,18 @@ export function Preview({
               return;
             }
 
+            if (grab.current.kind === "rotate") {
+              // The angle the pointer has travelled round the middle, added to
+              // where the bubble already was. Shift snaps the result rather
+              // than the travel, so the bubble lands on the step and not a
+              // step away from wherever it started.
+              const turned = normaliseAngle(
+                grab.current.was + (angleFrom(grab.current.box, point) - grab.current.from),
+              );
+              onDrag("layout", { cameraRotation: snapAngle(turned, event.shiftKey) });
+              return;
+            }
+
             if (grab.current.kind === "radius") {
               const { section, patch } = radiusPatch(
                 grab.current.target,
@@ -1917,6 +2065,11 @@ export function Preview({
               onDrag(section, patch);
               return;
             }
+
+            // Never stored — a pick is over at the press, see the handler
+            // above — but the type allows it and narrowing here is cheaper
+            // than a second grip type to keep in step.
+            if (grab.current.kind === "pick") return;
 
             if (grab.current.kind === "move") event.currentTarget.style.cursor = "grabbing";
             // Before the guides are drawn: `patchFor` is what works out which
@@ -2030,6 +2183,18 @@ function ring(
   mark: Annotation | null,
   /** Whether this is a screenshot, which may be dragged past the frame's edge. */
   still: boolean,
+  /**
+   * How far the selected picture is turned, in degrees clockwise — `turnOf`'s
+   * answer, which is zero for everything but a bubble that has been taken by
+   * a corner.
+   *
+   * Null where the picture does not turn at all, which is not the same as a
+   * picture standing straight: that one still turns from its corners. Passed in rather
+   * than read off `settings`, because a camera whose shape is fitted to
+   * somebody does not turn either, and that depends on the recording's outline
+   * — which this has no sight of.
+   */
+  turn: number | null,
 ): void {
   if (!element) return;
 
@@ -2038,7 +2203,7 @@ function ring(
   // placed by nothing but the four numbers below it. A text's comes from the
   // same `placeText` the plan is built from, so the ring is around what the
   // exporter draws.
-  const box = mark
+  const resting = mark
     ? annotationBox(mark.points.map((at) => annotationPoint(frame, at)))
     : text
       ? textBlockRect(frame, text, rendered)
@@ -2049,33 +2214,47 @@ function ring(
               ?.dstRect ?? null)
           : null;
 
-  // A zoom moves the picture on its own track, leaving the box a drag reads and
-  // writes exactly where it was. Following the zoom would put handles on a
-  // corner that cannot be grabbed; staying put would ring empty background. So
-  // while it is away there is no ring, and the picture is left to be watched
-  // rather than edited.
-  //
-  // Through `pictureMoved`, which asks the plan. A text is placed by nothing a
-  // zoom touches, and the logo is not a picture a plan moves.
-  const moving =
+  /**
+   * The ring follows the picture rather than its settings.
+   *
+   * It used to come off entirely while a zoom had the picture, on the grounds
+   * that handles on a resting box are handles on empty background. The box is
+   * now taken from the plan — where the picture is at this instant — so the
+   * ring is on the thing it is about, and only the *handles* come off where a
+   * gesture has nothing to write. Same answer `find` works from, so what is
+   * drawn and what can be grabbed cannot disagree.
+   *
+   * A text is placed by nothing a zoom touches and the logo is not a picture a
+   * plan moves, so both are their own box.
+   */
+  const held =
     !text && !mark && selected !== null && selected !== "watermark"
-      ? pictureMoved(plan, selected, at)
-      : false;
+      ? grabbed(plan, selected, at, resting)
+      : null;
+  const box = held?.box ?? resting;
 
-  if (!box || moving || fitted.width <= 0) {
+  if (!box || fitted.width <= 0) {
     element.style.display = "none";
     return;
   }
 
   const scale = fitted.width / frame.width;
   const { x, y, width, height } = box;
+  // Whether the ring is drawn at an angle at all. A text and a mark are their
+  // own shapes and a logo has its own panel; none of the three has a leaf to
+  // write an angle into, and `turn` is null for them.
+  const turnable = !text && !mark && turn !== null;
 
   element.style.display = "block";
   // Which handles the ring should show, read by the side ones' own class. A
   // text is sized by its lines and has no second axis, so it gets corners and
   // nothing else — see the text branch of `find`, which refuses to hand back
   // an edge for one.
-  element.dataset["handles"] = text ? "corners" : "all";
+  //
+  // And none at all on a picture whose position the shot owns: it is ringed
+  // where it is, so the selection is visible and its panel is one click away,
+  // but there is no box for a pull to write — see `grabbed`.
+  element.dataset["handles"] = held && !held.drag ? "none" : text ? "corners" : "all";
 
   // The radius dots: how far in they sit, and whether there are any. Written
   // as one custom property the four of them read, rather than four elements
@@ -2090,16 +2269,72 @@ function ring(
   // setting behind a dot on them. The logo does — its own leaf, against its own
   // edge — so it gets the dots like the two pictures.
   const radius =
-    text || mark || selected === null ? null : pictureRadius(selected, box, frame, settings);
+    text || mark || selected === null || (held && !held.drag)
+      ? null
+      : pictureRadius(selected, box, frame, settings);
 
   const inset = radius === null ? 0 : radiusInset(box, radius, RADIUS_DOT / scale) * scale;
   element.dataset["radius"] = radius === null ? "none" : "shown";
   element.style.setProperty("--radius-dot", `${inset}px`);
   // Transform rather than `left`/`top`: this runs every frame, and through a
   // drag it runs on every frame that also lays the canvas out.
-  element.style.transform = `translate(${x * scale}px, ${y * scale}px)`;
+  //
+  // The turn goes on the ring rather than on each handle, so the eight of
+  // them and the four dots all ride round with the box and the markup stays
+  // the markup of an upright rectangle. `transform-origin` is
+  // the element's middle by default, which is the point the picture turns
+  // about — see `turnedCorners`.
+  element.style.transform =
+    `translate(${x * scale}px, ${y * scale}px)` +
+    (turnable && turn !== 0 ? ` rotate(${String(turn)}deg)` : "");
   element.style.width = `${width * scale}px`;
   element.style.height = `${height * scale}px`;
+}
+
+/**
+ * A picture as a gesture sees it: where it is drawn, what its settings say, and
+ * which of the two a drag can actually write.
+ *
+ * The editor used to refuse a picture entirely while a zoom had it — no ring,
+ * no handles, and a click that deselected. The refusal was aimed at one real
+ * problem, that the box a drag writes is the resting box and not what is on
+ * screen, and it caught two cases that are not that problem at all:
+ *
+ * - **The camera.** Shrink-on-zoom takes the bubble towards the corner it is
+ *   parked in, and its position still comes straight from `cameraX`/`cameraY`:
+ *   move the resting box a hundred pixels and the shrunken bubble moves a
+ *   hundred pixels. Only its *size* is scaled, so only a resize has to be
+ *   divided by anything — which is what `scale` is for.
+ * - **A shot that moves the window.** Wherever the arrangement crops, the card
+ *   holds still and the shot travels through the recording instead — see
+ *   `shotTrack`. The rectangle on screen is exactly the resting box, so every
+ *   gesture is the gesture it always was.
+ *
+ * What is left is a shot that moves the *card*, and there a drag genuinely has
+ * nothing to write: the shot puts the point it is aimed at in the middle of the
+ * frame, so where the picture lands does not depend on `screenX` at all, and a
+ * move would be a gesture the next frame undoes. That one is `drag: false` —
+ * still selectable, still ringed where it is, with no handles on it.
+ */
+function grabbed(
+  plan: RenderPlan,
+  which: PlanSource,
+  at: number,
+  /** The box the settings put it in, when the plan has nothing to say. */
+  fallback: Rect | null,
+): { box: Rect; rest: Rect; scale: number; drag: boolean } | null {
+  const drawn = pictureDrawn(plan, which, at);
+  if (!drawn) return fallback ? { box: fallback, rest: fallback, scale: 1, drag: true } : null;
+
+  return {
+    box: drawn.rect,
+    rest: drawn.rest,
+    // Per picture rather than per axis: both are scaled together — the camera's
+    // shrink keeps the bubble's proportions and a shot scales the card by its
+    // level — and one number is one thing for a resize to divide by.
+    scale: drawn.rest.width > 0 ? drawn.rect.width / drawn.rest.width : 1,
+    drag: which === "camera" || !drawn.card,
+  };
 }
 
 /** Clockwise from the top left, which is the order the handles read in. */
@@ -2159,14 +2394,48 @@ const HANDLE_AT: Record<Handle, string> = {
  * drag, which reads as drift nobody can point at the cause of.
  */
 type Grip =
-  | { kind: "move"; target: Grabbable; box: Rect; from: Point }
-  | { kind: "resize"; target: Grabbable; handle: Handle; box: Rect; from: Point }
+  // `box` is where the picture is drawn and `rest` the box its settings
+  // describe. The two are the same thing on everything but a camera a zoom has
+  // shrunk — there the gesture is aimed at what is on screen and written to
+  // what the settings hold, and `scale` is the ratio between them. See
+  // `grabbed`.
+  | { kind: "move"; target: Grabbable; box: Rect; rest: Rect; scale: number; from: Point }
+  | {
+      kind: "resize";
+      target: Grabbable;
+      handle: Handle;
+      box: Rect;
+      rest: Rect;
+      scale: number;
+      from: Point;
+    }
+  // Selected and nothing else: a picture whose position the shot owns. Its own
+  // kind rather than a `move` that writes nothing, so `patchFor` never has to
+  // ask whether this drag counts.
+  | { kind: "pick"; target: Grabbable }
   // Pulling a corner's radius dot. The box is the picture's, not the dot's:
   // what the drag measures is how far in from the corner the pointer has come.
   | { kind: "radius"; target: Grabbable; corner: Corner; box: Rect; from: Point }
+  // Turning the picture from the air outside a corner. `from` is where the
+  // pointer was when it was grabbed, as an angle about the box's middle, and
+  // `was` the rotation at that moment — so the drag writes a difference.
+  // Taking it absolutely would snap the bubble round to wherever in the zone
+  // the press landed, which is a jump on every grab.
+  | { kind: "rotate"; target: Grabbable; box: Rect; from: number; was: number }
   // Panning is the two video sources only: it slides a crop window over
   // footage, and a watermark has no crop — the whole file is the picture.
-  | { kind: "pan"; target: PlanSource; from: Point; offsetX: number; offsetY: number }
+  //
+  // `scale` for the reason a move carries it: the pointer travels over the
+  // picture as it is drawn, and how much of the *source* that covers is
+  // measured against the box at rest.
+  | {
+      kind: "pan";
+      target: PlanSource;
+      from: Point;
+      offsetX: number;
+      offsetY: number;
+      scale: number;
+    }
   // A text is not a `Grabbable`: it has no settings section, and which one is
   // held is the editor's selection rather than this component's.
   | { kind: "moveText"; textId: string; box: Rect; from: Point }
@@ -2221,6 +2490,36 @@ const HANDLE = 12;
  * the same picture is shown larger.
  */
 const RADIUS_DOT = 14;
+
+/**
+ * How far beyond a corner the turn zone reaches, in screen points.
+ *
+ * Screen points rather than output pixels, like `HANDLE` and `RADIUS_DOT`: it
+ * is about how far the hand has to move, not about how big the picture is.
+ *
+ * Wide enough to find without aiming and narrow enough that the background
+ * behind a bubble is still background — past this a press deselects, which is
+ * what a click out there has always meant.
+ */
+const ROTATE_REACH = 26;
+
+/**
+ * The cursor over that zone: Lucide's `rotate-cw`, drawn twice — a heavy dark
+ * stroke under a white one, so it reads on both the wallpaper and the picture.
+ *
+ * A string here rather than a `@utility` beside `cursor-blade`, because this
+ * one is written to `style.cursor` as the pointer moves rather than set as a
+ * class: the hit layer wears one cursor and the answer changes several times a
+ * second. The hotspot is the middle of the glyph, which is the point being
+ * turned about — the same convention the system's resize cursors use.
+ */
+const ROTATE_CURSOR =
+  `url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' ` +
+  `width='24' height='24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E` +
+  `%3Cg stroke='%23111' stroke-width='4'%3E%3Cpath d='M19 12a7 7 0 1 1-7-7c1.96 0 3.83.78 5.24 2.13L19 9'/%3E` +
+  `%3Cpath d='M19 5v4h-4'/%3E%3C/g%3E` +
+  `%3Cg stroke='%23fff' stroke-width='2'%3E%3Cpath d='M19 12a7 7 0 1 1-7-7c1.96 0 3.83.78 5.24 2.13L19 9'/%3E` +
+  `%3Cpath d='M19 5v4h-4'/%3E%3C/g%3E%3C/svg%3E") 12 12, crosshair`;
 
 /**
  * The roundest each picture goes, matching the sliders in the panel.

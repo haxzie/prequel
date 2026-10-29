@@ -20,6 +20,8 @@ import { existsSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
+import { libraryParts } from "../shared/library.js";
+import { libraryFile } from "./library.js";
 import { log } from "./log.js";
 import { getRecorder } from "./recorder.js";
 import { insideRecordings } from "./session.js";
@@ -62,16 +64,27 @@ export async function audioPeaks(dir: string, file: string): Promise<Float32Arra
     throw new Error(`PEAKS_REFUSED: ${dir} is not a recording`);
   }
 
-  const source = resolve(dir, file);
-  const within = relative(dir, source);
-  if (within.startsWith("..") || resolve(dir, within) !== source) {
-    throw new Error(`PEAKS_REFUSED: ${file} is not inside the recording`);
+  // One of ours, which lives on the shelf rather than in the recording — see
+  // `shared/library.ts`. Resolved by the parser, which refuses anything that
+  // is not a shelf and a bare name, so this route needs no guard of its own.
+  const shelved = libraryFile(file);
+  const source = shelved ?? resolve(dir, file);
+
+  if (!shelved) {
+    const within = relative(dir, source);
+    if (within.startsWith("..") || resolve(dir, within) !== source) {
+      throw new Error(`PEAKS_REFUSED: ${file} is not inside the recording`);
+    }
   }
   if (!existsSync(source)) {
     throw new Error(`PEAKS_MISSING: ${file} is not there`);
   }
 
-  const cache = join(dir, peaksName(file));
+  // Cached beside the recording either way — the peaks are cheap, the picture
+  // they draw is this timeline's, and a shelf shared by every project is not
+  // somewhere to write per-project crumbs. `peaksName` is given the bare name,
+  // so a reference does not put its prefix into a file name.
+  const cache = join(dir, peaksName(libraryParts(file)?.file ?? file));
   const cached = await readCache(cache);
   if (cached) return cached;
 

@@ -177,6 +177,7 @@ fn measure(label: &str, width: u32, height: u32) {
 
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: dir.join("export.mp4"),
         width,
         height,

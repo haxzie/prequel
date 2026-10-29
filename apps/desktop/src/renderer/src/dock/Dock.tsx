@@ -19,22 +19,29 @@ export function Dock() {
   // measure text. So the panel reports what it needs and the window follows.
   useLayoutEffect(() => {
     const element = panel.current;
-    if (!element || state.view !== "setup") return;
+    if (!element) return;
 
-    // The setup row is sized to its contents; the panel is stretched to the
+    // Both rows are sized to their contents; the panel is stretched to the
     // window, so measuring the panel itself would just report the window back.
     // Found by attribute rather than by class: the classes here are utilities
     // and rearranging them must not quietly break the measurement.
-    const row = element.querySelector("[data-panel='setup']");
+    //
+    // The recording row measures for the same reason the setup row does, and
+    // it was fixed at a figure for a while: the clock moved onto the Stop
+    // button and the pill had to allow for an hours reading, which left a band
+    // of empty pill beside the recording light for the first fifty-nine
+    // minutes of every take.
+    const row = element.querySelector(`[data-panel='${state.view}']`);
     if (!row) return;
 
     const report = () => {
-      void window.prequel.dock.setWidth(Math.ceil(row.getBoundingClientRect().width));
+      void window.prequel.dock.setWidth(state.view, Math.ceil(row.getBoundingClientRect().width));
     };
 
     report();
-    // Fonts finish loading, a device is renamed, a chooser appears — all of
-    // them change the width without React re-rendering this component.
+    // Fonts finish loading, a device is renamed, a chooser appears, the clock
+    // reaches an hour — all of them change the width without React re-rendering
+    // this component.
     const observer = new ResizeObserver(report);
     observer.observe(row);
     return () => observer.disconnect();

@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use prequel_session::MediaTime;
 
+use crate::library::resolve_asset;
 use crate::mixer::{self, CHANNELS, Gain};
 use crate::reader::AudioReader;
 
@@ -126,16 +127,24 @@ impl MusicTrack {
     /// failed per chunk: a file that was moved or never downloaded mixes as
     /// silence, which is a quiet export rather than a failed one — the same
     /// answer `open_slot` gives a missing track.
-    pub fn prepare(beds: &[MusicBed], dir: &Path, sample_rate: f64) -> Option<Self> {
+    pub fn prepare(
+        beds: &[MusicBed],
+        dir: &Path,
+        library: Option<&Path>,
+        sample_rate: f64,
+    ) -> Option<Self> {
         let mut usable: Vec<MusicBed> = beds
             .iter()
             .filter(|bed| bed.end > bed.start && bed.volume > 0.0)
             .filter(|bed| {
-                let path = dir.join(&bed.file);
+                // Under whichever root owns it: a track of ours lives in the
+                // library and an imported one in the recording — see
+                // [`crate::library`].
+                let path = resolve_asset(dir, library, &bed.file);
                 if path.exists() {
                     return true;
                 }
-                tracing::warn!("music: {} is not in the recording", path.display());
+                tracing::warn!("music: {} is not there", path.display());
                 false
             })
             .map(|bed| MusicBed {

@@ -1410,6 +1410,21 @@ export function ShadowOffsetIcon() {
   );
 }
 
+/**
+ * A circular arrow, for the one control that turns a picture.
+ *
+ * Not `AngleIcon`, which is two arms off a vertex: that is a direction a light
+ * comes from, and this is a thing being spun.
+ */
+export function RotateIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M12 5a7 7 0 1 1-6.3 4" />
+      <path d="M12 2.5 14.6 5 12 7.5" />
+    </svg>
+  );
+}
+
 /** Two arms off a vertex, which is what the number means. */
 export function AngleIcon() {
   return (

@@ -357,21 +357,24 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
         }),
         // The thumbnails are the cache on this Mac; whichever are there, are.
         thumbnail: () => ok(true),
-        ensure: async (_dir, file) => {
+        // The reference a real `ensure` answers with, when the picture is among
+        // the recording's own files — which is what the gallery serves in
+        // place of a library on disk.
+        ensure: async (file: string) => {
           const response = await fetch(
             `/media/recording/${encodeURIComponent(sessionName ?? "")}/${encodeURIComponent(file)}`,
             { method: "HEAD" },
           );
-          return { ok: true as const, value: response.ok };
+          return { ok: true as const, value: response.ok ? file : null };
         },
       },
 
       music: {
         catalogue: () => ok(fixtures.MUSIC),
-        // Yes without fetching anything. A bed laid from the fixture library
-        // draws its bar and plays nothing, which is what a shot of the row
-        // needs — and the only alternative is shipping a song in the repo.
-        ensure: () => ok(true),
+        // The name back, without fetching anything. A bed laid from the fixture
+        // library draws its bar and plays nothing, which is what a shot of the
+        // row needs — and the only alternative is shipping a song in the repo.
+        ensure: (file: string) => ok(file),
       },
 
       wallpapers: {

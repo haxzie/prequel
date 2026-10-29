@@ -707,8 +707,8 @@ export class CaptureFlow {
   }
 
   /** Sizes the panel to the width the renderer measured. */
-  setPanelWidth(width: number): void {
-    this.deps.dock.setContentWidth(width);
+  setPanelWidth(view: DockView, width: number): void {
+    this.deps.dock.setContentWidth(view, width);
   }
 
   /**

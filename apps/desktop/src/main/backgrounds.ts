@@ -18,14 +18,19 @@
  *   is what it has always done. A recording that carries its own background
  *   still exports the same video on another machine, and next year.
  */
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { app } from "electron";
 
+import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import type { BackgroundsCatalogue } from "../shared/contract.js";
 import { apiUrl } from "./api.js";
 import { log } from "./log.js";
+import { libraryParts, libraryRef } from "../shared/library.js";
+import { shelfDir } from "./library.js";
 import { BARE_JPEG, fetchInto, TIMEOUT_MS } from "./media-cache.js";
 
 /** How long a stored catalogue is served without re-checking. */
@@ -147,12 +152,52 @@ export async function ensureThumbnail(file: string): Promise<boolean> {
 }
 
 /**
- * Puts the full picture inside a recording, so it can be drawn and exported.
+ * Puts the full picture in the library, so it can be drawn and exported.
  *
  * The one that takes time — a couple of megabytes — and the reason the picker
- * shows a spinner on a swatch that has been chosen but not yet fetched.
+ * shows a spinner on a swatch that has been chosen but not yet fetched. Once,
+ * for the machine: it went into the recording before, which put the same
+ * picture on disk once per project that used it — see `shared/library.ts`.
+ *
+ * Answers the reference a project stores rather than a bare name, so the one
+ * place that knows where these live is the one that writes the pointer.
  */
-export async function ensureBackground(dir: string, file: string): Promise<boolean> {
-  if (!BARE_JPEG.test(file)) return false;
-  return fetchInto(`/v1/backgrounds/raw/${file}`, join(dir, file));
+export async function ensureBackground(path: string): Promise<string | null> {
+  // Either way round. A saved look names its picture the way the project it
+  // was taken from did — bare on one saved before the library existed, a
+  // reference on one saved since — and both mean the same picture.
+  const file = libraryParts(path)?.file ?? path;
+  if (!BARE_JPEG.test(file)) return null;
+
+  const destination = join(shelfDir("backgrounds"), file);
+  const reference = libraryRef("backgrounds", file);
+
+  // A picture that ships inside the app is copied rather than fetched, the way
+  // the shipped music track is: it is the one background a machine with no
+  // network can lay, and asking the API for a file already in the bundle would
+  // make the offline case the broken one.
+  if (BACKGROUND_PRESETS.some((preset) => preset.file === file)) {
+    return copyShipped(file, destination) ? reference : null;
+  }
+
+  return (await fetchInto(`/v1/backgrounds/raw/${file}`, destination)) ? reference : null;
+}
+
+/** Puts one of the app's own pictures on the shelf. */
+function copyShipped(file: string, destination: string): boolean {
+  try {
+    // Skipped when it is already there — picking the same background twice is
+    // not a reason to rewrite a megabyte.
+    if (!existsSync(destination)) {
+      mkdirSync(join(destination, ".."), { recursive: true });
+      copyFileSync(
+        fileURLToPath(new URL(`../../resources/backgrounds/${file}`, import.meta.url)),
+        destination,
+      );
+    }
+    return true;
+  } catch (cause) {
+    console.warn(`[backgrounds] could not copy ${file}:`, cause);
+    return false;
+  }
 }

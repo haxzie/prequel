@@ -25,6 +25,7 @@ import { track } from "./analytics.js";
 import { toEveryWindow } from "./broadcast.js";
 import { redact, reportError } from "./errors.js";
 import { recordExport } from "./exports.js";
+import { libraryDir } from "./library.js";
 import { log } from "./log.js";
 import { publishExport } from "./media-protocol.js";
 import { getRecorder } from "./recorder.js";
@@ -324,6 +325,11 @@ export async function startExport(request: ExportRequest): Promise<void> {
     recorder.startExport(
       {
         sessionDir: request.dir,
+        // The other root a plan's paths resolve against: the assets we supply
+        // live once for the machine and a project names them — see
+        // `shared/library.ts`. Always passed, because whether a plan holds a
+        // reference is not this function's business.
+        libraryDir: libraryDir(),
         output,
         width: request.width,
         height: request.height,

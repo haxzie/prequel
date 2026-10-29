@@ -45,7 +45,7 @@ import type {
   UpdateState,
   WorkspaceSection,
 } from "../shared/contract.js";
-import { IPC_CHANNELS } from "../shared/contract.js";
+import { IPC_CHANNELS, type DockView } from "../shared/contract.js";
 import type { ScenePreset } from "../shared/scene-presets.js";
 import type { Project } from "../shared/project.js";
 import type { WallpaperCatalogue } from "../shared/wallpapers.js";
@@ -206,7 +206,8 @@ const api = {
      * "Camera" to "MacBook Pro Microphone (Built-in)" — so the renderer
      * measures and main resizes to match.
      */
-    setWidth: (width: number): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.dockWidth, width),
+    setWidth: (view: DockView, width: number): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.dockWidth, view, width),
 
     /** Reports that the camera preview failed, or recovered (`null`). */
     reportCameraError: (message: string | null): Promise<DockState> =>
@@ -506,9 +507,14 @@ const api = {
       thumbnail: (file: string): Promise<IpcResult<boolean>> =>
         ipcRenderer.invoke(IPC_CHANNELS.backgroundsThumbnail, file),
 
-      /** Puts the full picture inside the recording, so it can be drawn. */
-      ensure: (dir: string, file: string): Promise<IpcResult<boolean>> =>
-        ipcRenderer.invoke(IPC_CHANNELS.backgroundsEnsure, dir, file),
+      /**
+       * Puts the full picture in the library, so it can be drawn, and answers
+       * the reference to store — `@library/backgrounds/…`, or null when it
+       * could not be had. Null rather than a name, so a caller cannot write a
+       * pointer to a picture that is not there.
+       */
+      ensure: (file: string): Promise<IpcResult<string | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.backgroundsEnsure, file),
     },
 
     music: {
@@ -519,9 +525,13 @@ const api = {
       catalogue: (): Promise<IpcResult<MusicCatalogue | null>> =>
         ipcRenderer.invoke(IPC_CHANNELS.musicCatalogue),
 
-      /** Puts one track inside the recording, so it can be played. */
-      ensure: (dir: string, file: string): Promise<IpcResult<boolean>> =>
-        ipcRenderer.invoke(IPC_CHANNELS.musicEnsure, dir, file),
+      /**
+       * Puts one track in the library, so it can be played, and answers the
+       * reference to store — the same contract the backgrounds' own `ensure`
+       * holds.
+       */
+      ensure: (file: string): Promise<IpcResult<string | null>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.musicEnsure, file),
     },
 
     wallpapers: {

@@ -98,6 +98,13 @@ pub struct MusicClip {
 #[derive(Debug)]
 pub struct ExportOptions {
     pub session_dir: String,
+    /// Where the assets Prequel supplies live on this machine — the pictures
+    /// and tracks a project names rather than holds.
+    ///
+    /// Optional, so a caller with no library still exports: every path in a
+    /// plan that is not one of ours is a name inside the recording, and a
+    /// recording made before the library existed holds all of its own.
+    pub library_dir: Option<String>,
     pub output: String,
     pub width: u32,
     pub height: u32,
@@ -258,6 +265,7 @@ fn build_request(options: ExportOptions) -> Result<ExportRequest> {
 
     Ok(ExportRequest {
         session_dir: options.session_dir.into(),
+        library_dir: options.library_dir.map(Into::into),
         output: options.output.into(),
         width: options.width,
         height: options.height,

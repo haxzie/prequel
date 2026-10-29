@@ -27,7 +27,9 @@ import { BITMAP_DIRS } from "./captions.js";
 import { PERMISSION_IDS } from "../shared/contract.js";
 
 import { MEDIA_SCHEME, exportUrl, mediaUrl as urlFor } from "../shared/media-url.js";
+import { libraryRef, type LibraryKind } from "../shared/library.js";
 import { thumbnailPath } from "./backgrounds.js";
+import { libraryFile } from "./library.js";
 import { exportId, exportPath, exportThumbnailPath } from "./exports.js";
 import { fontPath } from "./fonts.js";
 import { cardPath } from "./scene-presets.js";
@@ -155,6 +157,15 @@ export function resolveMediaPath(url: string, root = SESSIONS_DIR): string | nul
   if (parsed.host === "asset") {
     if (parts.length !== 1) return null;
     return assetPath(parts[0]!);
+  }
+
+  // One of ours: a picture or a track from the catalogue, held once for the
+  // machine rather than once per recording — see `shared/library.ts`. Two
+  // segments, the shelf and the name, both checked by the shared parser, so
+  // there is nothing here to traverse either.
+  if (parsed.host === "library") {
+    if (parts.length !== 2) return null;
+    return libraryFile(libraryRef(parts[0]! as LibraryKind, parts[1]!));
   }
 
   // A background thumbnail main has cached. One segment, and the name is

@@ -568,6 +568,7 @@ export function TimelineStrip({
   media,
   peaks,
   musicPeaks,
+  fetchingMusic,
   onAddMusic,
   filmstrip,
   framesPending,
@@ -588,6 +589,14 @@ export function TimelineStrip({
    * and where that sits on the timeline is a different question.
    */
   musicPeaks: ReadonlyMap<string, Float32Array>;
+  /**
+   * The songs still being fetched, by the name their beds carry.
+   *
+   * A bed is laid the moment it is asked for and the file arrives behind it —
+   * see `fetchTrack` in `Editor` — so this is what tells a bar to shimmer
+   * instead of drawing a wave it does not have yet.
+   */
+  fetchingMusic: ReadonlySet<string>;
   /**
    * Lays a bed at this project time, with whichever track is the default.
    *
@@ -1683,6 +1692,7 @@ export function TimelineStrip({
                         // as the left edge is dragged, because that is what trimming
                         // a bed does — see `trimMusic`.
                         peaks={musicPeaks.get(bed.file) ?? null}
+                        loading={fetchingMusic.has(bed.file)}
                         from={bed.offset}
                         to={bed.offset + bed.length}
                         repeat={bed.repeat}
@@ -3392,6 +3402,7 @@ function MusicBar({
   onVolume,
   label,
   peaks,
+  loading,
   from,
   to,
   repeat,
@@ -3421,6 +3432,16 @@ function MusicBar({
   label: string;
   /** The file's own peaks, from its own zero. Null until they are made. */
   peaks: Float32Array | null;
+  /**
+   * Whether the song itself is still arriving.
+   *
+   * The bed goes down the moment Add Audio is pressed, before a byte of the
+   * file has been fetched — pressing it used to do nothing at all for as long
+   * as the download took. So the bar is here and the shimmer says the song is
+   * not, which is the one state it could otherwise be mistaken for: a bar with
+   * no wave on it looks exactly like silence.
+   */
+  loading: boolean;
   /** The stretch of the file the bar shows, in the file's own time. */
   from: MediaTime;
   to: MediaTime;
@@ -3545,7 +3566,22 @@ function MusicBar({
           once in a 0–1 box and the browser stretches it to whatever width the
           zoom has given the bar, so scrubbing the zoom does not rebuild a path
           per bar per frame. */}
-      {wave && (
+      {/* The song on its way. The same sheen a clip wears while its filmstrip
+          is being built, a few lines up, and the same sheen the export's still
+          wears while it renders — one gesture for "this is still arriving",
+          wherever it is said.
+
+          Over the whole bar rather than along its floor: what is missing is
+          the song, not the quiet parts of it. A bar with no wave on it looks
+          exactly like silence, which is the one thing this must not say. */}
+      {loading && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/3 animate-sheen bg-gradient-to-r from-transparent via-white/25 to-transparent motion-reduce:hidden"
+        />
+      )}
+
+      {wave && !loading && (
         <svg
           className="pointer-events-none absolute bottom-0 left-0 w-full text-white/35"
           // Against the bed's own line, for the reason a clip's wave is — see

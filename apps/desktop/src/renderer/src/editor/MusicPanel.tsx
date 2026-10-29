@@ -49,8 +49,14 @@ export type MusicPatch = Partial<Omit<MusicSlice, "id" | "at" | "length" | "file
 export interface MusicState {
   /** The hosted library, grouped the way the picker shows it. */
   library: Music;
-  /** The track being fetched, if any, so its row can say so. */
-  pending: string | null;
+  /**
+   * The tracks being fetched, so their rows can say so.
+   *
+   * A set, because laying a bed and then changing its song puts two downloads
+   * in flight — and it holds both names a track answers to, the bare one these
+   * rows are keyed by and the reference a bed carries.
+   */
+  pending: ReadonlySet<string>;
   /** Points this bed at a library track, fetching it into the recording first. */
   onPick: (track: MusicListing) => void;
   /**
@@ -157,7 +163,7 @@ export function MusicPanel({
           // offers to play itself — a song is the one thing in this editor
           // nobody can judge from its name.
           action={(option) =>
-            option.value === music.pending ? (
+            music.pending.has(option.value) ? (
               <span className="mr-1 grid size-6 flex-none place-items-center text-editor-muted [&_svg]:size-3.5">
                 <SpinnerIcon />
               </span>

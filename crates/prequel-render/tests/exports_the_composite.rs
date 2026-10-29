@@ -281,6 +281,7 @@ fn exports_only_the_slices_that_were_kept() {
     // 0–1s and 2–3s kept: two seconds of output from four of source.
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -329,6 +330,7 @@ fn the_whole_take_exports_at_its_full_length() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -363,6 +365,7 @@ fn reports_progress_as_it_goes() {
 
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: dir.join("export.mp4"),
         width: OUT_W,
         height: OUT_H,
@@ -395,6 +398,7 @@ fn cancelling_leaves_no_output_behind() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -427,6 +431,7 @@ fn refuses_an_edit_with_nothing_in_it() {
 
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: dir.join("export.mp4"),
         width: OUT_W,
         height: OUT_H,
@@ -461,6 +466,7 @@ fn re_exporting_replaces_the_previous_file() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -501,6 +507,7 @@ fn a_failed_export_leaves_nothing_behind() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         // Zero-sized, which the encoder refuses — a failure that happens after
         // the output path has been decided.
@@ -535,6 +542,7 @@ fn exports_the_sound_inside_the_video_file() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -669,6 +677,7 @@ fn typing_is_heard_in_a_recording_with_no_audio_track() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -720,6 +729,7 @@ fn sounds_switched_off_write_no_audio_track_for_a_silent_take() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -773,6 +783,7 @@ fn a_press_in_a_cut_is_not_heard() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -810,6 +821,7 @@ fn exports_a_gif_that_loops_and_carries_no_audio() {
     let output = dir.join("export.gif");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -867,6 +879,7 @@ fn music_is_heard_where_its_bed_is_and_nowhere_else() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,
@@ -931,6 +944,7 @@ fn music_fades_up_over_its_fade_in() {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,

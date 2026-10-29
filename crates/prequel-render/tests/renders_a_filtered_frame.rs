@@ -226,6 +226,7 @@ fn render(name: &str, filter: Option<PlanFilter>) -> (PathBuf, Frame) {
     let output = dir.join("export.mp4");
     let request = ExportRequest {
         session_dir: dir.clone(),
+        library_dir: None,
         output: output.clone(),
         width: OUT_W,
         height: OUT_H,

@@ -190,6 +190,7 @@ fn slice(plan: RenderPlan) -> SliceRender {
 fn request(dir: &Path, output: &Path, slices: Vec<SliceRender>) -> ExportRequest {
     ExportRequest {
         session_dir: dir.to_path_buf(),
+        library_dir: None,
         output: output.to_path_buf(),
         width: OUT_W,
         height: OUT_H,
@@ -513,6 +514,88 @@ fn draws_an_image_background() {
         (0, 255, 0),
         "screen over the background",
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn draws_a_background_the_project_only_names() {
+    // The half of the library that can be silently wrong. The editor resolves
+    // a reference through the media protocol and the exporter through
+    // `resolve_asset`, and nothing on screen would say the two had parted
+    // company: the preview would draw the wallpaper and the file would come
+    // out with a gradient where it should be.
+    //
+    // So the picture is put somewhere the recording cannot see — a library
+    // directory beside it — and the plan names it the way a project does.
+    let dir = scratch("prequel-pixels-library");
+    let library = dir.join("library-root");
+    std::fs::create_dir_all(library.join("backgrounds")).expect("library");
+
+    let source = split_frame(200, 200, [0, 255, 0], [0, 255, 0]);
+    record(&dir, "screen.mp4", 200, 200, &source);
+
+    let background = split_frame(200, 200, [0, 0, 255], [0, 0, 255]);
+    write_png(&library.join("backgrounds").join("shelved.png"), &background);
+
+    let output = dir.join("export.mp4");
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Fill {
+                rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: OUT_W as f64,
+                    height: OUT_H as f64,
+                },
+                paint: Paint::Image {
+                    path: "@library/backgrounds/shelved.png".to_owned(),
+                    blur: 0.0,
+                },
+            },
+            PlanItem::Image {
+                source: PlanSource::Screen,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                dst_rect: Rect {
+                    x: 110.0,
+                    y: 80.0,
+                    width: 100.0,
+                    height: 80.0,
+                },
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                grade: None,
+                rim: 0.0,
+                fringe: 0.0,
+                motion: Vec::new(),
+            },
+        ],
+        filter: None,
+    };
+
+    let mut asked = request(&dir, &output, vec![slice(plan)]);
+    asked.library_dir = Some(library);
+
+    export(&asked, &CancelFlag::new(), &mut |_| {}).expect("export");
+
+    // The corner is the shelved picture, which the recording never held.
+    let frame = first_frame(&output);
+    near(frame.at(20, 20), (0, 0, 255), "shelved background");
+    near(frame.at(160, 120), (0, 255, 0), "screen over it");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

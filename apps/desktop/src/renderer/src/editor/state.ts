@@ -416,6 +416,15 @@ export type EditorAction =
   | { type: "trimMusic"; musicId: string; edge: "start" | "end"; at: MediaTime }
   | { type: "splitMusic"; musicId: string; at: MediaTime }
   | { type: "deleteMusic"; musicId: string }
+  /**
+   * Takes back every bed on one track, and the track itself.
+   *
+   * What a download that failed after the bed was laid runs — see `fetchTrack`
+   * in `Editor`. By file rather than by id because the caller does not have
+   * one: the bed was made by the reducer, which names it, and the thing the
+   * caller knows is which song never arrived.
+   */
+  | { type: "dropMusicFile"; file: string }
   | { type: "pickTool"; tool: AnnotationKind | null }
   /** Picks up the pointer or the blade — see `TimelineTool`. */
   | { type: "pickTimelineTool"; tool: TimelineTool }
@@ -659,6 +668,7 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     case "addMusic":
     case "setMusicFile":
     case "deleteMusic":
+    case "dropMusicFile":
       return { coalesce: null };
 
     // Dragged, so they stream: one entry per mark per gesture rather than one
@@ -911,6 +921,9 @@ function apply(
 
     case "deleteMusic":
       return deleteMusic(state, action.musicId);
+
+    case "dropMusicFile":
+      return dropMusicFile(state, action.file);
 
     case "selectAnnotation":
       return {
@@ -2164,6 +2177,28 @@ function deleteMusic(state: EditorState, musicId: string): EditorState {
     ...edit(state, (project) => ({
       ...project,
       music: project.music.filter((bed) => bed.id !== musicId),
+    })),
+    selectedMusicId: null,
+  };
+}
+
+/**
+ * Every bed on one track removed, and the track with them.
+ *
+ * The bed goes down before the song has arrived — a bar that shimmers is a
+ * better answer to Add Audio than nothing happening for two megabytes — so
+ * this is what runs when it never does. The file entry goes too: it describes
+ * a song this machine does not have, and leaving it would offer it in the
+ * picker as though it did.
+ */
+function dropMusicFile(state: EditorState, file: string): EditorState {
+  if (!state.project.music.some((bed) => bed.file === file)) return state;
+
+  return {
+    ...edit(state, (project) => ({
+      ...project,
+      music: project.music.filter((bed) => bed.file !== file),
+      musicFiles: project.musicFiles.filter((entry) => entry.file !== file),
     })),
     selectedMusicId: null,
   };

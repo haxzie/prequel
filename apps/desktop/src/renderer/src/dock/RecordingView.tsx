@@ -32,9 +32,17 @@ export function RecordingView({ state }: { state: DockState }) {
     // recording light leaves ten, the 30px Stop leaves six. Both are off the
     // panel's inner 42 and not its 44 — the rim is drawn inside the box — and
     // the setup row lands on four for the same reason and a taller tray.
-    <div className="drag flex h-full animate-view-in items-center gap-1.5 pr-[6px] pl-[10px]">
+    <div
+      data-panel="recording"
+      // `w-max`, like the setup row: the pill is as wide as what is in it and
+      // reports that to main — see the measurement in `Dock`. It was stretched
+      // to a fixed window for a while, and the slack had to go somewhere: it
+      // went into the band beside the recording light, which read as a gap
+      // nobody had put there.
+      className="drag flex h-full w-max animate-view-in items-center gap-1.5 pr-[6px] pl-[10px]"
+    >
       {/* Dragging the pill moves its window; the buttons opt back out. */}
-      <div className="drag flex h-full min-w-0 flex-1 items-center">
+      <div className="drag flex h-full items-center">
         {/* The recording light. A dot matrix the size of the buttons beside
             it, with a wave of red crossing it, where this was a 9px dot that
             faded in and out.
@@ -145,7 +153,15 @@ export function RecordingView({ state }: { state: DockState }) {
           onClick={() => void window.prequel.dock.stop()}
         >
           <StopIcon />
-          <span className="text-[14px] font-semibold tabular-nums">{elapsed}</span>
+          {/* Wide enough for `00:00` whatever it currently reads.
+              The pill is sized to its contents now, so a clock that took its
+              own width would widen the window at 0:10 and again at 1:00 —
+              three resizes in the first minute of every take. Reserving the
+              minutes reading costs a few pixels under ten minutes and holds
+              still until the hour, where the window does grow once. */}
+          <span className="min-w-[38px] text-center text-[14px] font-semibold tabular-nums">
+            {elapsed}
+          </span>
         </Control>
       </div>
     </div>

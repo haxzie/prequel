@@ -22,8 +22,10 @@ import {
   maskReach,
   loupeAt,
   LOUPE_HASTE,
+  pictureDrawn,
   pictureMoved,
   placement,
+  restingForDrawn,
   presetFitsFrame,
   LOUPE_REACH,
   rectAt,
@@ -6857,5 +6859,224 @@ describe("a screenshot dragged off the frame", () => {
     );
 
     expect(placed.dstRect).toEqual(image(plan, "screen")!.dstRect);
+  });
+});
+
+describe("the camera turned by its knob", () => {
+  const TURN = 20;
+
+  const plan = (overrides: Partial<LayoutSettings> = {}, track: BlobTrack | null = null) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cameraRotation: TURN,
+          cameraBorderWidth: 0.01,
+          ...overrides,
+        },
+      }),
+      null,
+      undefined,
+      null,
+      undefined,
+      undefined,
+      undefined,
+      track,
+    );
+
+  /** The corners the quad should hold, worked out the long way round. */
+  const turnedCorners = (rect: Rect, degrees: number) => {
+    const radians = (degrees * Math.PI) / 180;
+    const middleX = rect.x + rect.width / 2;
+    const middleY = rect.y + rect.height / 2;
+    return [
+      [rect.x, rect.y],
+      [rect.x + rect.width, rect.y],
+      [rect.x, rect.y + rect.height],
+      [rect.x + rect.width, rect.y + rect.height],
+    ].map(([x, y]) => ({
+      x: middleX + (x! - middleX) * Math.cos(radians) - (y! - middleY) * Math.sin(radians),
+      y: middleY + (x! - middleX) * Math.sin(radians) + (y! - middleY) * Math.cos(radians),
+    }));
+  };
+
+  const quadOf = (item: { motion?: { quad?: number[] }[] }) => {
+    const quad = item.motion?.[0]?.quad;
+    if (!quad) throw new Error("no corners");
+    return [0, 1, 2, 3].map((corner) => ({
+      x: quad[corner * 3]!,
+      y: quad[corner * 3 + 1]!,
+      w: quad[corner * 3 + 2]!,
+    }));
+  };
+
+  it("draws the bubble on four corners turned about its own middle", () => {
+    const camera = image(plan(), "camera")!;
+    const wanted = turnedCorners(camera.dstRect, TURN);
+
+    quadOf(camera).forEach((corner, index) => {
+      expect(corner.x).toBeCloseTo(wanted[index]!.x, 6);
+      expect(corner.y).toBeCloseTo(wanted[index]!.y, 6);
+      // Affine: nothing leans towards the eye, so the divisor is 1 and the
+      // hardware's perspective divide is a divide by one.
+      expect(corner.w).toBe(1);
+    });
+  });
+
+  it("leaves the rectangle exactly where it was", () => {
+    // The box is what the settings store and what the editor's handles are
+    // drawn around. A turn that moved it would walk the bubble across the
+    // frame as it was spun.
+    const straight = image(plan({ cameraRotation: 0 }), "camera")!;
+
+    expect(image(plan(), "camera")!.dstRect).toEqual(straight.dstRect);
+  });
+
+  it("turns the shadow and the ring with it", () => {
+    // Either one left upright is the giveaway: a leaning bubble standing in an
+    // upright ring reads as a drawing mistake rather than as a tilt.
+    const items = plan().items;
+    // The last of each: the screen casts a shadow too, and the camera is drawn
+    // after it.
+    const shadow = items.filter((item) => item.kind === "shadow").at(-1)!;
+    const stroke = items.filter((item) => item.kind === "stroke").at(-1)!;
+
+    for (const item of [shadow, stroke]) {
+      const corners = quadOf(item as { motion?: { quad?: number[] }[] });
+      const rect = (item as { rect: Rect }).rect;
+      const wanted = turnedCorners(rect, TURN);
+      corners.forEach((corner, index) => {
+        expect(corner.x).toBeCloseTo(wanted[index]!.x, 6);
+        expect(corner.y).toBeCloseTo(wanted[index]!.y, 6);
+      });
+    }
+  });
+
+  it("carries nothing at all while it is straight", () => {
+    // Every plan that does not turn has to be the plan it always was: a track
+    // of one key on a still bubble would be a new thing for everything that
+    // reads one to interpret.
+    const camera = image(plan({ cameraRotation: 0 }), "camera")!;
+
+    expect(camera.motion).toBeUndefined();
+  });
+
+  it("refuses to turn a camera shaped by the person in it", () => {
+    // The outline is placed in the frame's own pixels, so it would stay
+    // upright around a picture that did not — see the note on `turn`.
+    const camera = image(
+      plan(
+        { cameraShape: "blob", cameraCornerRadius: SHAPE_RADIUS.blob },
+        {
+          samples: [{ at: 0, x: 0, y: 0, h: [0.2, 0, 0, 0, 0, 0], presence: 1 }],
+        },
+      ),
+      "camera",
+    )!;
+
+    expect(camera.motion).toBeUndefined();
+    expect(camera.blobs).toBeDefined();
+  });
+
+  it("keeps the handles up, because a turn is not a move", () => {
+    // `pictureMoved` takes the ring off a picture a zoom has carried away. A
+    // bubble that is merely leaning is still exactly where it can be grabbed.
+    expect(pictureMoved(plan(), "camera", 0)).toBe(false);
+  });
+});
+
+describe("grabbing a picture a zoom has hold of", () => {
+  const S = 1_000_000_000;
+  const ZOOM: ZoomSlice = {
+    ...DEFAULT_ZOOM,
+    id: "z",
+    source: { start: 1 * S, end: 4 * S },
+    target: "region",
+    x: 0.5,
+    y: 0.5,
+    level: 2,
+  };
+  /** Mid-hold, where the shot is fully in and the bubble fully shrunk. */
+  const DURING = 2.5 * S;
+
+  const plan = (layout: Partial<LayoutSettings> = {}, frame = LANDSCAPE) =>
+    buildRenderPlan(
+      frame,
+      { screen: SCREEN, camera: CAMERA },
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full", ...layout } }),
+      null,
+      [ZOOM],
+    );
+
+  it("says the card moved for a shot that moves the card", () => {
+    const screen = pictureDrawn(plan(), "screen", DURING)!;
+
+    expect(screen.card).toBe(true);
+    // The shot puts what it is aimed at in the middle of the frame, so where
+    // the picture lands owes nothing to `screenX` — which is the whole reason
+    // this one cannot be dragged.
+    expect(screen.rect).not.toEqual(screen.rest);
+  });
+
+  it("says only the window moved where the arrangement crops", () => {
+    // A 16:9 recording filling a 9:16 frame: the card cannot travel, because
+    // there is no picture outside the strip to travel into, so the shot moves
+    // the window through the recording instead — see `shotTrack`. The card is
+    // exactly where it rests, which is a card a drag can still write.
+    const screen = pictureDrawn(plan({}, VERTICAL), "screen", DURING)!;
+
+    expect(screen.window).toBe(true);
+    expect(screen.card).toBe(false);
+    expect(screen.rect).toEqual(screen.rest);
+  });
+
+  it("shrinks the camera without taking it off its own settings", () => {
+    const camera = pictureDrawn(plan(), "camera", DURING)!;
+
+    // Smaller, and still in the corner it was parked in.
+    expect(camera.card).toBe(true);
+    expect(camera.rect.width).toBeLessThan(camera.rest.width);
+    expect(camera.rect.width / camera.rest.width).toBeCloseTo(
+      DEFAULT_SETTINGS.layout.cameraShrinkTo,
+      2,
+    );
+  });
+
+  it("lands a shrunken bubble exactly where the drag asked", () => {
+    // The property the editor's drag rests on. A raw delta is wrong by about
+    // fifteen per cent here — moving the resting box moves the anchor too, so
+    // the bubble runs ahead of the pointer — and `restingForDrawn` is what
+    // takes that back out.
+    for (const [x, y] of [
+      [0.6, 0.7],
+      [0.3, 0.3],
+      [0.5, 0.5],
+    ]) {
+      const now = pictureDrawn(plan({ cameraX: x, cameraY: y }), "camera", DURING)!;
+      const want = { ...now.rect, x: now.rect.x + 120, y: now.rect.y - 40 };
+      const rest = restingForDrawn(LANDSCAPE, now.rest, want);
+
+      const after = pictureDrawn(
+        plan({
+          cameraX: (rest.x + rest.width / 2) / LANDSCAPE.width,
+          cameraY: (rest.y + rest.height / 2) / LANDSCAPE.height,
+        }),
+        "camera",
+        DURING,
+      )!;
+
+      expect(after.rect.x).toBeCloseTo(want.x, 1);
+      expect(after.rect.y).toBeCloseTo(want.y, 1);
+    }
+  });
+
+  it("is the drawn box itself wherever nothing is shrunk", () => {
+    // Every drag that is not under a zoom goes through the same call, so this
+    // is the path that must not change: no slack, no anchor, no arithmetic.
+    const box = { x: 100, y: 50, width: 400, height: 300 };
+
+    expect(restingForDrawn(LANDSCAPE, box, box)).toEqual(box);
   });
 });

@@ -8,6 +8,8 @@
 
 import type { PermissionId } from "./contract.js";
 
+import { libraryParts } from "./library.js";
+
 export const MEDIA_SCHEME = "prequel-media";
 
 /**
@@ -25,6 +27,15 @@ export const MEDIA_SCHEME = "prequel-media";
  * 404 that reads as missing footage.
  */
 export function mediaUrl(recording: string, fileName: string): string {
+  // One of ours, which lives in the library rather than in the recording — see
+  // `shared/library.ts`. Answered here rather than at each call site, because
+  // every one of them holds a name out of a project and none of them should
+  // have to know which of the two roots it came from.
+  const shelved = libraryParts(fileName);
+  if (shelved) {
+    return `${MEDIA_SCHEME}://library/${shelved.kind}/${encodeURIComponent(shelved.file)}`;
+  }
+
   const parts = [recording, ...fileName.split("/")].map((part) => encodeURIComponent(part));
   return `${MEDIA_SCHEME}://recording/${parts.join("/")}`;
 }

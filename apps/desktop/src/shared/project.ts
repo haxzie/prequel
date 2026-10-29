@@ -12,13 +12,14 @@ import type { Annotation } from "./annotations.js";
 import { sanitiseAnnotations } from "./annotations.js";
 import type { ExportFormat } from "./contract.js";
 import { filterId } from "./filters.js";
+import { libraryRef } from "./library.js";
 import { placement } from "./layout.js";
 import type { MediaTime, SourceInfo } from "./manifest.js";
 import {
   MAX_MUSIC_FADE,
   MAX_MUSIC_VOLUME,
   MIN_MUSIC_LENGTH,
-  MUSIC_FILE_NAME,
+  playableFile,
   type MusicFile,
   type MusicSlice,
 } from "./music.js";
@@ -327,6 +328,24 @@ export interface LayoutSettings {
    * was mirrored. An un-mirrored edit reads as flipped against the take.
    */
   cameraMirror: boolean;
+  /**
+   * How far the bubble is turned, in degrees clockwise, about its own middle.
+   *
+   * Degrees rather than the fraction every length in here is: a length is a
+   * share of an edge and survives a reframe because of it, where an angle is
+   * an angle in any frame. Held to a half turn either way, so the same tilt is
+   * always the same number — see `normaliseAngle`.
+   *
+   * About its middle rather than a corner, which is what makes the box the
+   * settings store still true: `cameraX`, `cameraY`, `cameraWidth` and
+   * `cameraHeight` describe the upright bubble, and this turns what is drawn
+   * in it. Nothing else has to know.
+   *
+   * Zero is upright and is what every project saved before this existed reads
+   * back as, so no migration — `sanitiseProject` spreads the file over these
+   * defaults.
+   */
+  cameraRotation: number;
   /**
    * The colour look the camera wears, by id from `CAMERA_LOOKS`.
    *
@@ -1512,7 +1531,10 @@ function sanitiseMusicFiles(stored: unknown): MusicFile[] {
   for (const value of stored as unknown[]) {
     const entry = (value ?? {}) as Record<string, unknown>;
     const file = typeof entry["file"] === "string" ? entry["file"] : "";
-    if (!MUSIC_FILE_NAME.test(file) || seen.has(file)) continue;
+    // Either a name inside the recording or a reference to one of ours — see
+    // `playableFile`. Checked rather than trusted, because a hand-edited
+    // `project.json` is a thing that happens.
+    if (!playableFile(file) || seen.has(file)) continue;
     seen.add(file);
 
     const duration = number(entry["duration"], 0);
@@ -1793,6 +1815,9 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // enough that whoever is on camera is still legible rather than a thumbnail.
   cameraShrinkTo: 0.7,
   cameraMirror: true,
+  // Straight, which is both the sensible default and what every project made
+  // before the handle existed draws.
+  cameraRotation: 0,
   // Nothing, and deliberately. A grade applied to somebody's face without being
   // asked for is a strong change to how a person looks, and the one effect in
   // here they would be right to be annoyed about finding switched on.
@@ -1902,7 +1927,12 @@ export const DEFAULT_BACKGROUND: BackgroundSettings = {
   // on finding the desktop behind every window, and when that fails the first
   // thing anyone sees is a blank frame. This is still there under `My
   // wallpaper` for anyone who wants it.
-  background: { kind: "image", source: "preset", path: "monterey.jpg" },
+  //
+  // Named rather than held, like every other picture of ours — the one every
+  // recording opens on is the one that was worth not copying: it was on this
+  // machine a hundred and seventy-eight times before the library existed. See
+  // `shared/library.ts`.
+  background: { kind: "image", source: "preset", path: libraryRef("backgrounds", "monterey.jpg") },
   // Sharp. The wallpaper is chosen to be looked at, and a recording that opened
   // on a blurred one would look like a picture that had failed to load.
   backgroundBlur: 0,

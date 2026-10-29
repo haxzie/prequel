@@ -16,6 +16,7 @@ use prequel_encode::{
 use prequel_session::MediaTime;
 
 use crate::compositor::{Compositor, Output};
+use crate::library::resolve_asset;
 use crate::mixer::{self, CHANNELS, Gain};
 use crate::music::{MusicBed, MusicTrack};
 use crate::reader::{AudioReader, VideoReader};
@@ -150,6 +151,14 @@ impl OutputFormat {
 #[derive(Debug, Clone)]
 pub struct ExportRequest {
     pub session_dir: PathBuf,
+    /// Where the assets Prequel supplies live on this machine, when the caller
+    /// has one — see [`crate::library`].
+    ///
+    /// Optional because not every caller has a library: the tests build a
+    /// request out of a recording alone, and a plan whose paths are all bare
+    /// names never asks. A reference with nothing to resolve it against falls
+    /// back to the recording and is simply missing, which is a plainer video.
+    pub library_dir: Option<PathBuf>,
     pub output: PathBuf,
     pub width: u32,
     pub height: u32,
@@ -269,7 +278,11 @@ fn run(
     // one. A missing image is skipped rather than fatal — the rest of the frame
     // is still worth rendering.
     for path in plan_images(&request.slices) {
-        let full = request.session_dir.join(&path);
+        let full = resolve_asset(
+            &request.session_dir,
+            request.library_dir.as_deref(),
+            Path::new(&path),
+        );
 
         // Never fatal, at either step. A background that will not load is a
         // plainer video; failing the export instead would throw away the
@@ -774,7 +787,12 @@ impl<'a> AudioStream<'a> {
     /// all" — a pair of `exists` calls and some arithmetic.
     fn open(request: &'a ExportRequest) -> Option<Self> {
         let sound = SoundTrack::prepare(request.sound.as_ref(), &request.slices, SAMPLE_RATE);
-        let music = MusicTrack::prepare(&request.music, &request.session_dir, SAMPLE_RATE);
+        let music = MusicTrack::prepare(
+            &request.music,
+            &request.session_dir,
+            request.library_dir.as_deref(),
+            SAMPLE_RATE,
+        );
 
         // Every audio file any slice names, that is really there. Named and
         // there are different questions: a slice names whatever segment covers
@@ -785,7 +803,13 @@ impl<'a> AudioStream<'a> {
             .iter()
             .flat_map(|slice| [slice.media.mic.as_ref(), slice.media.system.as_ref()])
             .flatten()
-            .map(|reference| request.session_dir.join(&reference.file))
+            .map(|reference| {
+                resolve_asset(
+                    &request.session_dir,
+                    request.library_dir.as_deref(),
+                    &reference.file,
+                )
+            })
             .filter(|path| path.exists())
             .collect();
 

@@ -6,7 +6,14 @@
  * correct range handling a `<video>` cannot seek — playback works until the
  * buffer runs out and then simply stops, with nothing to say why.
  */
-import { assetUrl, fontUrl, permissionIconUrl, scenePresetUrl } from "../shared/media-url.js";
+import {
+  assetUrl,
+  fontUrl,
+  mediaUrl as urlFor,
+  permissionIconUrl,
+  scenePresetUrl,
+} from "../shared/media-url.js";
+import { libraryRef } from "../shared/library.js";
 import { PERMISSION_IDS } from "../shared/contract.js";
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -280,5 +287,32 @@ describe("shipped assets", () => {
     expect(resolveMediaPath(assetUrl("permission-secrets.png"), ROOT)).toBeNull();
     expect(resolveMediaPath(assetUrl("permission-../../../etc/passwd.png"), ROOT)).toBeNull();
     expect(resolveMediaPath(assetUrl("permission-.png"), ROOT)).toBeNull();
+  });
+});
+
+describe("the library route", () => {
+  it("serves an asset of ours from the shelf, not from the recording", () => {
+    // The whole point of the reference: one copy for the machine, named by
+    // every project that uses it — see `shared/library.ts`.
+    const url = urlFor("Prequel 2026-01-01", libraryRef("backgrounds", "monterey.jpg"));
+
+    expect(url).toBe("prequel-media://library/backgrounds/monterey.jpg");
+    expect(resolveMediaPath(url)).toMatch(/library\/backgrounds\/monterey\.jpg$/);
+  });
+
+  it("still serves a recording's own file from the recording", () => {
+    // Every project written before the library existed names its pictures
+    // bare, and all of them have to go on resolving where they always did.
+    const url = urlFor("Prequel 2026-01-01", "wallpaper.jpg");
+
+    expect(url).toBe("prequel-media://recording/Prequel%202026-01-01/wallpaper.jpg");
+  });
+
+  it("refuses a shelf that is not one of ours, and a name that is a path", () => {
+    expect(resolveMediaPath("prequel-media://library/fonts/inter.woff2")).toBe(null);
+    expect(resolveMediaPath("prequel-media://library/backgrounds/..%2F..%2Fsecrets.jpg")).toBe(
+      null,
+    );
+    expect(resolveMediaPath("prequel-media://library/backgrounds")).toBe(null);
   });
 });

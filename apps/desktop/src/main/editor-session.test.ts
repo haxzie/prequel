@@ -21,7 +21,11 @@ import { MANIFEST_FILE_NAME, MANIFEST_VERSION } from "../shared/manifest.js";
 vi.mock("electron", () => ({
   shell: { openPath: async () => "", showItemInFolder: () => undefined, trashItem: async () => {} },
   dialog: { showMessageBox: async () => ({ response: 1 }) },
-  app: { getPath: () => tmpdir() },
+  // Its own corner of the temporary directory, not the root: the library
+  // lives under `userData`, and a suite that shared it with every other one
+  // would find a picture a different suite had shelved and conclude this one
+  // had nothing to fetch.
+  app: { getPath: () => join(tmpdir(), "prequel-editor-session-userdata") },
 }));
 
 /** Every probe this suite hands out, and whether one was ever asked for. */
@@ -61,7 +65,18 @@ vi.mock("./wallpaper.js", () => ({
   ensureWallpaper: () => Promise.resolve(false),
 }));
 
-vi.mock("./backgrounds.js", () => ({ ensureBackground: () => Promise.resolve(false) }));
+// A fresh project names a picture of ours rather than holding one — see
+// `shared/library.ts` — so providing it is a fetch onto the shelf, and this is
+// the call that stands in for it.
+vi.mock("./backgrounds.js", () => ({
+  ensureBackground: (file: string) => {
+    if (unprovidable) return Promise.resolve(null);
+    provided.push(file);
+    return Promise.resolve(`@library/backgrounds/${file}`);
+  },
+}));
+
+vi.mock("./music.js", () => ({ ensureMusic: () => Promise.resolve(null) }));
 
 const { readEditorSession, readSessionDetails } = await import("./editor-session.js");
 
@@ -153,7 +168,9 @@ describe("readSessionDetails", () => {
     const dir = recording("backgrounded");
 
     expect(await readSessionDetails(dir)).toMatchObject({ backgroundMissing: false });
-    expect(provided).toEqual([dir]);
+    // Fetched onto the shelf by name, not copied into the recording: one copy
+    // serves every project that opens on it.
+    expect(provided).toEqual(["monterey.jpg"]);
   });
 
   it("says so when the background could not be provided", async () => {

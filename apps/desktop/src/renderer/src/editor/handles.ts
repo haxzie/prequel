@@ -232,3 +232,139 @@ export function radiusFrom(rect: Rect, corner: Corner, point: Point): number {
   const most = Math.min(rect.width, rect.height) / 2;
   return Math.min(Math.max((x + y) / 2, 0), most);
 }
+
+/**
+ * The middle of a box, which is what every spin here is about.
+ *
+ * Its own function because three of the four below start with it and the
+ * centre is the one thing they must all agree on: a hit test about one point
+ * and a drawn ring about another is a handle that moves what it is nowhere
+ * near.
+ */
+export function middleOf(rect: Rect): Point {
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+}
+
+/**
+ * A point spun about another, by degrees clockwise.
+ *
+ * Clockwise because the frame's y runs down: the same matrix that turns a
+ * picture anticlockwise on paper turns it clockwise here, and naming the
+ * direction after the maths rather than after the screen is how a control
+ * comes to disagree with the thing it drags.
+ */
+export function spin(point: Point, about: Point, degrees: number): Point {
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const x = point.x - about.x;
+  const y = point.y - about.y;
+  return { x: about.x + x * cos - y * sin, y: about.y + x * sin + y * cos };
+}
+
+/**
+ * A pointer brought back into a spun box's own upright frame.
+ *
+ * What lets everything above go on working on a rotated picture. `pulled`,
+ * `handleAt` and the radius dots are all written against an axis-aligned
+ * rectangle, and that rectangle still exists — it is what the box would be at
+ * no rotation, and what the settings store. So the picture is not unspun; the
+ * *pointer* is, once, on the way in.
+ *
+ * The one thing it cannot do is make a resize feel right at every angle: an
+ * east handle on a box turned ninety degrees pulls the edge that is now at the
+ * bottom. That is correct — it is the picture's own east edge — and it is what
+ * every editor does.
+ */
+export function unspun(point: Point, rect: Rect, degrees: number): Point {
+  return degrees === 0 ? point : spin(point, middleOf(rect), -degrees);
+}
+
+/**
+ * Which corner's turn zone the pointer is in, if any.
+ *
+ * Just outside a corner, the way every canvas editor does it: on the handle is
+ * a resize, a little further out is a turn. There is no drawn knob, and that is
+ * the point of it — a knob is a fifth thing to aim at on a box that already has
+ * eight handles and four dots, and on a bubble a hundred pixels across it sits
+ * nearer the picture's middle than its own corner does.
+ *
+ * The zone is the quarter beyond the corner: both axes outside the box, which
+ * is a place no other gesture claims. Inside the corner belongs to the resize
+ * handle and the radius dot, and a zone that reached in there would turn a
+ * picture somebody was trying to pull.
+ *
+ * `near` is the resize handle's own tolerance, held clear so the two can never
+ * both answer; `reach` is how far the ring of air around the corner extends.
+ * Measured with the box's rotation undone, so the zone travels with the corner
+ * it belongs to.
+ */
+export function rotateCornerAt(
+  rect: Rect,
+  point: Point,
+  near: number,
+  reach: number,
+  degrees: number,
+): Corner | null {
+  const at = unspun(point, rect, degrees);
+  const right = rect.x + rect.width;
+  const bottom = rect.y + rect.height;
+
+  for (const corner of ["nw", "ne", "se", "sw"] as const) {
+    const west = corner === "nw" || corner === "sw";
+    const north = corner === "nw" || corner === "ne";
+    const x = west ? rect.x : right;
+    const y = north ? rect.y : bottom;
+
+    // Beyond the corner on both axes. A pointer level with the box on either
+    // axis is beside an edge, not off a corner.
+    if (west ? at.x >= x : at.x <= x) continue;
+    if (north ? at.y >= y : at.y <= y) continue;
+
+    const away = Math.hypot(at.x - x, at.y - y);
+    if (away > near && away <= reach) return corner;
+  }
+
+  return null;
+}
+
+/**
+ * The angle a pointer at this position is asking for, in degrees clockwise.
+ *
+ * Measured from straight up, because that is where a picture rests: the number
+ * this returns is the angle the picture has been turned *to*, so a pointer
+ * held exactly above the middle asks for none. A drag only ever uses the
+ * difference between two of these, so where the grab happened to land does not
+ * come into it — see the `rotate` grip.
+ *
+ * Normalised to a half turn either way rather than left to run: a bubble at
+ * 350 degrees and one at -10 are the same bubble, and only one of the two
+ * reads as nearly straight in a panel.
+ */
+export function angleFrom(rect: Rect, point: Point): number {
+  const middle = middleOf(rect);
+  // `atan2(x, -y)`, not the usual `atan2(y, x)`: zero is up and the angle
+  // grows clockwise, which is the convention `spin` turns in.
+  const degrees = (Math.atan2(point.x - middle.x, middle.y - point.y) * 180) / Math.PI;
+  return normaliseAngle(degrees);
+}
+
+/** Held to (-180, 180], so the same angle is always the same number. */
+export function normaliseAngle(degrees: number): number {
+  const turned = ((degrees + 180) % 360) - 180;
+  return turned <= -180 ? turned + 360 : turned;
+}
+
+/**
+ * The angle a drag settles on, snapped while Shift is held.
+ *
+ * Fifteen degrees, which holds the four straight angles and the diagonals and
+ * the halves between them — fine enough to be worth reaching for and coarse
+ * enough that landing on one is the point. Upright is a step, so Shift is also
+ * how a bubble is put back straight.
+ */
+export function snapAngle(degrees: number, snap: boolean): number {
+  return snap ? normaliseAngle(Math.round(degrees / ANGLE_STEP) * ANGLE_STEP) : degrees;
+}
+
+const ANGLE_STEP = 15;

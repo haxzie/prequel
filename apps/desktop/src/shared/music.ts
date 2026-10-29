@@ -24,6 +24,7 @@
 // Nanoseconds, from the manifest rather than from `project.ts` — that module
 // imports the two interfaces below, and taking its alias back would be a
 // cycle between the two files for the sake of one name.
+import { libraryParts } from "./library.js";
 import type { MediaTime as Ns } from "./manifest.js";
 
 /** The shortest a bed may be trimmed to. Below a second there is no bed. */
@@ -70,6 +71,26 @@ export const MUSIC_FILE_NAME = new RegExp(
   `^[a-z0-9][a-z0-9._-]*\.(${AUDIO_KINDS.join("|")})$`,
   "i",
 );
+
+/**
+ * Whether a project may play this, by name.
+ *
+ * Two shapes, because a bed comes from two places. An imported file is copied
+ * into the recording and named bare, as it always was. A track from the
+ * catalogue is named rather than held — one copy for the machine, see
+ * `shared/library.ts` — and arrives here as a reference.
+ *
+ * The reference is checked right through: the shared parser refuses anything
+ * that is not a shelf and a bare name, and the name is then held to the same
+ * pattern a recording's own file is. So a hand-edited `project.json` cannot
+ * reach a file outside the shelf, and cannot name a shelf that is not music's.
+ */
+export function playableFile(file: string): boolean {
+  if (MUSIC_FILE_NAME.test(file)) return true;
+
+  const shelved = libraryParts(file);
+  return shelved?.kind === "music" && MUSIC_FILE_NAME.test(shelved.file);
+}
 
 /**
  * The music the app ships, and the only bed it can lay with no network.

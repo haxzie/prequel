@@ -1849,6 +1849,37 @@ describe("the music row", () => {
     return run(start(), { type: "addMusic", at: 0, source: SONG, duration: 10 * S });
   }
 
+  it("takes back every bed on a song that never arrived", () => {
+    // The bed goes down before the file does — pressing Add Audio used to do
+    // nothing at all until the download finished — so this is what runs when
+    // the download fails. Both bars go, because both are that song.
+    const two = run(
+      run(withBed(), { type: "addMusic", at: 6 * S, source: SONG, duration: 10 * S }),
+      {
+        type: "dropMusicFile",
+        file: SONG.file,
+      },
+    );
+
+    expect(two.project.music).toEqual([]);
+    // And the entry with them: it describes a song this machine does not
+    // have, and the picker would go on offering it as though it did.
+    expect(two.project.musicFiles).toEqual([]);
+  });
+
+  it("leaves the beds that are on a different song", () => {
+    const state = run(
+      run(withBed(), { type: "addMusic", at: 6 * S, source: SHORT, duration: 10 * S }),
+      {
+        type: "dropMusicFile",
+        file: SHORT.file,
+      },
+    );
+
+    expect(state.project.music.map((bed) => bed.file)).toEqual([SONG.file]);
+    expect(state.project.musicFiles.map((file) => file.file)).toEqual([SONG.file]);
+  });
+
   it("lays a bed no longer than the edit it is laid in", () => {
     const state = withBed();
     const bed = state.project.music[0]!;

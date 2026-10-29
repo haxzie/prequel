@@ -30,14 +30,16 @@ import { DockMenuPopup } from "./dock-menu.js";
  */
 const SIZES: Record<DockView, { width: number; height: number }> = {
   setup: { width: 420, height: PANEL_HEIGHT },
-  // Eight wider than it was, which is the clock moving onto the Stop button:
-  // the button gained the number and the band beside the recording light lost
-  // it, and the button also carries the padding around it. Sized for the
-  // longest reading a take reaches — an hours field — with the drag band left
-  // taking up the difference, so the window holds still as the digits grow
-  // instead of widening twice during a recording. The pill is clipped to this
-  // figure, so the two have to move together or Stop loses its last digit.
-  recording: { width: 215, height: PANEL_HEIGHT },
+  // Only the guess the pill opens on: the row reports what it needs the moment
+  // it is drawn, exactly as the setup row does — see `windowSize`. Worth
+  // keeping close, because the frame after Record is pressed is drawn at this
+  // width, and a guess that is out by much arrives as a stretch on the end of
+  // the collapse.
+  //
+  // The row at a minutes reading, without the prompter's switch: the light,
+  // three round buttons, the Stop pill with the clock in it, and the insets at
+  // either end.
+  recording: { width: 192, height: PANEL_HEIGHT },
 };
 
 /**
@@ -62,8 +64,8 @@ const PROMPTER_CONTROL_WIDTH = 34;
  * switched to Photo was held open past its own contents and showed a band of
  * empty pill after the close button.
  */
-const MIN_SETUP_WIDTH = 180;
-const MAX_SETUP_WIDTH = 900;
+const MIN_PANEL_WIDTH = 180;
+const MAX_PANEL_WIDTH = 900;
 
 /** Distance from the bottom of the work area to the bottom of the panel. */
 const BOTTOM_MARGIN = 72;
@@ -90,8 +92,15 @@ export class DockWindow {
   /** Whether the recording pill carries the prompter's switch — see `PROMPTER_CONTROL_WIDTH`. */
   private prompterControl = false;
   private animation: ReturnType<typeof setInterval> | null = null;
-  /** The setup panel's measured width, once the renderer has reported one. */
-  private contentWidth: number | null = null;
+  /**
+   * Each view's measured width, once the renderer has reported one.
+   *
+   * Per view, not one number: both rows are sized to their contents and the
+   * two are nothing like each other, so a single figure would hold the pill at
+   * the setup row's width for the frame after Record was pressed — which is
+   * the one frame the collapse is animating through.
+   */
+  private readonly contentWidth: Partial<Record<DockView, number>> = {};
   /**
    * Stops the cursor poll, while one is running.
    *
@@ -202,16 +211,16 @@ export class DockWindow {
    * Device names are the reason: sizing for the longest possible one leaves a
    * gap after every short one, and sizing for a short one clips the rest.
    */
-  setContentWidth(width: number): void {
-    const clamped = Math.round(Math.min(Math.max(width, MIN_SETUP_WIDTH), MAX_SETUP_WIDTH));
-    if (this.contentWidth === clamped) return;
+  setContentWidth(view: DockView, width: number): void {
+    const clamped = Math.round(Math.min(Math.max(width, MIN_PANEL_WIDTH), MAX_PANEL_WIDTH));
+    if (this.contentWidth[view] === clamped) return;
 
     // The first report replaces a guess made before anything was measured.
     // Animating that would show the panel stretching every time it opened.
-    const measured = this.contentWidth !== null;
-    this.contentWidth = clamped;
+    const measured = this.contentWidth[view] !== undefined;
+    this.contentWidth[view] = clamped;
 
-    if (this.view === "setup") this.reposition({ animate: measured, duration: RESIZE_MS });
+    if (this.view === view) this.reposition({ animate: measured, duration: RESIZE_MS });
   }
 
   /**
@@ -296,10 +305,14 @@ export class DockWindow {
    */
   private windowSize(): { width: number; height: number } {
     const { width, height } = SIZES[this.view];
+    // Both rows report what they need; `SIZES` is only the guess the window
+    // opens on, before the renderer has measured anything. The recording
+    // pill's guess still allows for the prompter's switch, because the first
+    // frame after Record is drawn at this width and a pill that arrived a
+    // button short would visibly stretch.
     const panel =
-      this.view === "setup"
-        ? (this.contentWidth ?? width)
-        : width + (this.prompterControl ? PROMPTER_CONTROL_WIDTH : 0);
+      this.contentWidth[this.view] ??
+      (this.view === "recording" && this.prompterControl ? width + PROMPTER_CONTROL_WIDTH : width);
     return { width: panel + PANEL_INSET * 2, height: height + DOCK_HEADROOM + PANEL_INSET };
   }
 

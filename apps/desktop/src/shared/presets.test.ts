@@ -6,6 +6,7 @@
  * code review, and both look like carelessness rather than a bug.
  */
 import { describe, expect, it } from "vitest";
+import { libraryRef } from "./library.js";
 
 import {
   evenSize,
@@ -83,10 +84,13 @@ describe("the default background", () => {
     // was taken against reads as one image — but capturing it depends on
     // finding the desktop behind every window, and when that fails the first
     // thing anyone sees is a blank frame. It is still offered as `My wallpaper`.
+    //
+    // Named rather than held: the picture lives once for the machine and every
+    // recording points at it — see `shared/library.ts`.
     expect(DEFAULT_BACKGROUND.background).toEqual({
       kind: "image",
       source: "preset",
-      path: "monterey.jpg",
+      path: libraryRef("backgrounds", "monterey.jpg"),
     });
   });
 });

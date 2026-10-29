@@ -115,6 +115,7 @@ import {
   MusicIcon,
   WandIcon,
   MirrorIcon,
+  RotateIcon,
   OffsetIcon,
   OpacityIcon,
   PaddingIcon,
@@ -2021,6 +2022,10 @@ function CameraPanel({
   // the Border section gives below: in place, they still say what turning the
   // cutout off would give back.
   const cutout = layout.cameraCutout;
+  // The shape fitted to whoever is on camera, which is the one that cannot be
+  // turned — the outline is sampled from the footage and placed in the frame's
+  // own pixels. A cutout turns: its matte is sampled in the picture's own uv.
+  const follows = !cutout && layout.cameraShape === "blob" && cameraBlobs;
   // Where the camera is a card beside the screen, the arrangement decides how
   // big it is and where it sits — so those controls are unavailable rather than
   // visibly doing nothing. Shape is not among them: the camera is round because
@@ -2303,6 +2308,29 @@ function CameraPanel({
             }}
           />
         </Field>
+
+        {/* The same leaf a drag outside the bubble's corners writes, which is
+            the way it is usually set — this is where it is read, nudged a
+            degree at a time, and reset.
+
+            Greyed on the shape that follows somebody: that outline is placed
+            in the frame's own pixels and stays upright, so the bubble refuses
+            to turn — see the note on `turn` in `buildRenderPlan`. Greyed
+            rather than hidden, like every other control in here that one
+            setting takes away — a slider that vanished would take the panel's
+            shape with it. */}
+        <Slider
+          icon={<RotateIcon />}
+          label="Rotation"
+          {...field("layout", "cameraRotation")}
+          value={layout.cameraRotation}
+          min={-180}
+          max={180}
+          step={1}
+          format={(value) => `${value.toFixed(0)}°`}
+          disabled={off || follows}
+          onChange={(value) => set("layout", "cameraRotation", value)}
+        />
 
         <ToggleField
           icon={<MirrorIcon />}

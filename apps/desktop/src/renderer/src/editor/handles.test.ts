@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  angleFrom,
   cornerAt,
   handleAt,
   keepsAspect,
+  middleOf,
+  normaliseAngle,
   pulled,
   radiusAt,
   radiusDot,
   radiusFrom,
   radiusInset,
+  rotateCornerAt,
+  snapAngle,
+  spin,
   type Handle,
+  unspun,
 } from "./handles";
 
 /** 200 × 100, so a held ratio is obvious in the numbers rather than inferred. */
@@ -162,5 +169,96 @@ describe("the radius dot", () => {
   it("never asks for a radius a rectangle cannot hold", () => {
     expect(radiusFrom(box, "nw", { x: 100 + 400, y: 50 + 200 })).toBe(100);
     expect(radiusFrom(box, "nw", { x: 50, y: 0 })).toBe(0);
+  });
+});
+
+describe("turning a picture", () => {
+  it("spins clockwise on screen, where y runs down", () => {
+    // A point directly above the middle, turned a quarter turn, lands directly
+    // to the right of it. The opposite sign is the easy mistake and it is
+    // invisible in a screenshot of a square bubble.
+    const middle = middleOf(BOX);
+    const above = { x: middle.x, y: middle.y - 50 };
+    const turned = spin(above, middle, 90);
+
+    expect(turned.x).toBeCloseTo(middle.x + 50, 6);
+    expect(turned.y).toBeCloseTo(middle.y, 6);
+  });
+
+  it("brings a pointer back to where it would be on an upright box", () => {
+    // The whole of what makes `pulled` and the radius dots go on working: a
+    // point on the turned picture, unspun, is the point on the picture.
+    const corner = { x: BOX.x, y: BOX.y };
+    const drawn = spin(corner, middleOf(BOX), 37);
+    const back = unspun(drawn, BOX, 37);
+
+    expect(back.x).toBeCloseTo(corner.x, 6);
+    expect(back.y).toBeCloseTo(corner.y, 6);
+  });
+
+  it("reads an angle from straight up, clockwise", () => {
+    const middle = middleOf(BOX);
+
+    expect(angleFrom(BOX, { x: middle.x, y: middle.y - 80 })).toBeCloseTo(0, 6);
+    expect(angleFrom(BOX, { x: middle.x + 80, y: middle.y })).toBeCloseTo(90, 6);
+    expect(angleFrom(BOX, { x: middle.x, y: middle.y + 80 })).toBeCloseTo(180, 6);
+    expect(angleFrom(BOX, { x: middle.x - 80, y: middle.y })).toBeCloseTo(-90, 6);
+  });
+
+  it("gives one number for one angle, however far round the drag went", () => {
+    // Two turns and a bit is a bit. Left to run, a bubble nudged round twice
+    // reads as 730 degrees in a panel and nowhere near straight.
+    expect(normaliseAngle(730)).toBeCloseTo(10, 6);
+    expect(normaliseAngle(-190)).toBeCloseTo(170, 6);
+    // The seam: a half turn is 180 and never -180, so the two never flicker.
+    expect(normaliseAngle(180)).toBe(180);
+    expect(normaliseAngle(-180)).toBe(180);
+  });
+
+  it("snaps only while Shift is held, and lands on the straight angles", () => {
+    expect(snapAngle(7, false)).toBe(7);
+    expect(snapAngle(7, true)).toBe(0);
+    expect(snapAngle(88, true)).toBe(90);
+    // A hair past the half turn comes back as the half turn rather than as the
+    // same angle with the other sign.
+    expect(snapAngle(-178, true)).toBe(180);
+  });
+
+  it("turns from the air just outside a corner", () => {
+    // 12 out diagonally from the top left: past the handle, inside the reach.
+    expect(rotateCornerAt(BOX, { x: BOX.x - 12, y: BOX.y - 12 }, 10, 26, 0)).toBe("nw");
+    expect(
+      rotateCornerAt(BOX, { x: BOX.x + BOX.width + 9, y: BOX.y + BOX.height + 9 }, 10, 26, 0),
+    ).toBe("se");
+  });
+
+  it("leaves the corner handle and the inside of the box alone", () => {
+    // On the corner is a resize, and `handleAt` answers first — so the zone
+    // has to be silent there or the two would both claim the same press.
+    const corner = { x: BOX.x, y: BOX.y };
+    expect(rotateCornerAt(BOX, corner, 10, 26, 0)).toBe(null);
+    expect(rotateCornerAt(BOX, { x: BOX.x + 6, y: BOX.y + 6 }, 10, 26, 0)).toBe(null);
+    expect(handleAt(BOX, corner, 10, true)).toBe("nw");
+  });
+
+  it("does not answer beside an edge, only beyond a corner", () => {
+    // Level with the box on one axis is the air outside an edge, which is
+    // where a body drag of whatever is behind it has to stay reachable.
+    expect(rotateCornerAt(BOX, { x: BOX.x + BOX.width / 2, y: BOX.y - 12 }, 10, 26, 0)).toBe(null);
+    expect(rotateCornerAt(BOX, { x: BOX.x - 12, y: BOX.y + BOX.height / 2 }, 10, 26, 0)).toBe(null);
+  });
+
+  it("stops at the reach", () => {
+    expect(rotateCornerAt(BOX, { x: BOX.x - 40, y: BOX.y - 40 }, 10, 26, 0)).toBe(null);
+  });
+
+  it("travels with a turned picture", () => {
+    // The zone is measured with the rotation undone, so it is off the corner
+    // wherever that corner has got to — not where an upright box would have it.
+    const outside = { x: BOX.x - 12, y: BOX.y - 12 };
+    const carried = spin(outside, middleOf(BOX), 90);
+
+    expect(rotateCornerAt(BOX, outside, 10, 26, 90)).toBe(null);
+    expect(rotateCornerAt(BOX, carried, 10, 26, 90)).toBe("nw");
   });
 });

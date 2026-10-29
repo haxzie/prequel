@@ -14,6 +14,7 @@ import type {
   CaptureMode,
   DockMenu,
   DockState,
+  DockView,
   IpcResult,
   UpdateState,
   PermissionId,
@@ -260,7 +261,9 @@ export function registerIpc({
 
   ipcMain.handle(IPC_CHANNELS.dockMenu, (_event, menu: DockMenu) => flow.openMenu(menu));
 
-  ipcMain.handle(IPC_CHANNELS.dockWidth, (_event, width: number) => flow.setPanelWidth(width));
+  ipcMain.handle(IPC_CHANNELS.dockWidth, (_event, view: DockView, width: number) =>
+    flow.setPanelWidth(view, width),
+  );
 
   ipcMain.handle(IPC_CHANNELS.cameraError, (_event, message: string | null) =>
     flow.reportCameraError(message),
@@ -343,14 +346,16 @@ export function registerIpc({
     attempt(() => ensureThumbnail(file)),
   );
 
-  ipcMain.handle(IPC_CHANNELS.backgroundsEnsure, (_event, dir: string, file: string) =>
-    attempt(() => ensureBackground(dir, file)),
+  // No directory: these live once for the machine now — see `main/library.ts`
+  // — and the handler answers the reference a project stores.
+  ipcMain.handle(IPC_CHANNELS.backgroundsEnsure, (_event, file: string) =>
+    attempt(() => ensureBackground(file)),
   );
 
   ipcMain.handle(IPC_CHANNELS.musicCatalogue, () => attempt(() => musicCatalogue()));
 
-  ipcMain.handle(IPC_CHANNELS.musicEnsure, (_event, dir: string, file: string) =>
-    attempt(() => ensureMusic(dir, file)),
+  ipcMain.handle(IPC_CHANNELS.musicEnsure, (_event, file: string) =>
+    attempt(() => ensureMusic(file)),
   );
 
   ipcMain.handle(IPC_CHANNELS.wallpapersCatalogue, () => attempt(() => wallpapers()));

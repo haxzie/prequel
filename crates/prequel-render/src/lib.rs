@@ -23,6 +23,7 @@
 //! music row — the last of which is on the finished video's clock rather than
 //! the recording's, because that is what a bed is. See [`music`].
 
+pub mod library;
 pub mod mixer;
 pub mod music;
 pub mod peaks;

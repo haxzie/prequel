@@ -43,6 +43,9 @@ import { insideRecordings } from "./session.js";
 import { getRecorder, type TrackProbe } from "./recorder.js";
 import { BACKGROUND_PRESETS } from "../shared/backgrounds.js";
 import { ensureBackground } from "./backgrounds.js";
+import { libraryParts } from "../shared/library.js";
+import { libraryFile, shelfDir } from "./library.js";
+import { ensureMusic } from "./music.js";
 import { copyPresetBackground, ensureWallpaper } from "./wallpaper.js";
 
 /**
@@ -484,7 +487,32 @@ function blobTrack(manifest: Manifest): BlobTrack | null {
  * was set deliberately, and quietly rewriting it would undo a decision.
  */
 export async function withBackground(dir: string, project: Project): Promise<Project> {
+  // The beds as well, which are named rather than held now and so can be
+  // missing on a machine that has never played them — a recording moved off
+  // another Mac, or a cleared cache. Fetched beside the background, and not
+  // waited on by it: a bed that cannot be had is a quieter video, where a
+  // background that cannot be had changes what is on screen.
+  void provideMusic(project);
   return (await provideBackground(dir, project)) ? project : withFallback(project);
+}
+
+/**
+ * Puts every track this project names back on the shelf, if it is not there.
+ *
+ * Nothing to do in the ordinary case: the tracks were put there when they were
+ * chosen and one copy serves every recording. The exception is the whole
+ * reason a project names them rather than holding them — it can be opened on a
+ * machine that has never held this one.
+ */
+async function provideMusic(project: Project): Promise<void> {
+  for (const track of project.musicFiles) {
+    const shelved = libraryParts(track.file);
+    if (!shelved || existsSync(join(shelfDir(shelved.kind), shelved.file))) continue;
+
+    if (!(await ensureMusic(shelved.file))) {
+      console.warn(`[editor] could not provide ${track.file}`);
+    }
+  }
 }
 
 /**
@@ -508,21 +536,34 @@ export async function provideBackground(dir: string, project: Project): Promise<
   // the same reason the desktop picture is: the plan names a file inside the
   // recording, so one that is not there draws nothing.
   if (background.source === "preset") {
-    // Already beside the recording's own media, which is where it lands whether
-    // it was copied out of the bundle or downloaded. Asked first, and it is the
-    // answer almost every time: only one picture ships now, so without this
-    // every project that chose one of the other thirty-one would be handed a
-    // gradient the next time it was opened — with the picture it actually wants
-    // sitting unread in the same folder.
+    // One of ours, named rather than held — see `shared/library.ts`. On the
+    // shelf already is the answer almost every time; it is not there when this
+    // recording came off another Mac, or when the cache has been cleared, and
+    // then it is fetched exactly as choosing it in the picker would.
+    const shelved = libraryFile(background.path);
+    if (shelved) {
+      if (existsSync(shelved)) return true;
+
+      const parts = libraryParts(background.path);
+      if (parts && (await ensureBackground(parts.file))) return true;
+
+      console.warn(`[editor] could not provide ${background.path}`);
+      return false;
+    }
+
+    // A bare name: a project written before the library existed, which holds
+    // its own copy. Asked first and left exactly as it was — the file is in
+    // the recording and nothing has to move for it to draw.
     if (existsSync(join(dir, background.path))) return true;
 
     const preset = BACKGROUND_PRESETS.find((candidate) => candidate.file === background.path);
     if (preset && copyPresetBackground(dir, preset.id)) return true;
 
-    // Not one of the few that ship, and not here yet: fetch it, exactly as
-    // choosing it in the picker would. That is a recording opened on a machine
-    // which has never held this picture — moved off another Mac, or restored.
-    if (await ensureBackground(dir, background.path)) return true;
+    // Not one of the few that ship, and not in the recording: fetch it onto
+    // the shelf. The project goes on naming it bare, and the resolvers fall
+    // back to the shelf for a name the recording does not have — see
+    // `mediaPath` and `resolve_asset`.
+    if (await ensureBackground(background.path)) return true;
 
     console.warn(`[editor] could not provide ${background.path} for ${dir}`);
     return false;

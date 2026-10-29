@@ -1857,7 +1857,22 @@ export function buildRenderPlan(
         : null,
     );
 
-    const moving = motion.length > 0 ? { motion } : {};
+    /**
+     * How far the bubble is turned, in degrees clockwise.
+     *
+     * Every camera but the one whose shape is being fitted to a person. That
+     * outline is sampled from the footage and placed in output pixels — see
+     * `placedBlobs` — so it is the one part of a camera that does not ride on
+     * the quad the rest of it is drawn in, and a turned picture inside an
+     * upright silhouette is worse than a bubble that refuses to turn. The
+     * editor offers no knob on that shape for the same reason.
+     *
+     * A cutout does turn: its matte is sampled in the picture's own uv, so it
+     * comes round with the shoulders it is cutting out.
+     */
+    const turn = outline ? 0 : layout.cameraRotation;
+
+    const moving = turned(motion, shown, shape.radius, turn);
     // And the bubble goes soft under a fisheye with everything else outside the
     // glass. Its own call rather than the picture's track reused: the two items
     // are at different places on different grids, and `withGlassFocus` reads
@@ -1868,9 +1883,7 @@ export function buildRenderPlan(
     // reads a depth of field for a stroke or a shadow — a ring and a shadow are
     // the bubble's silhouette and sample nothing.
     const softly = glass.some((key) => key.shade > 0)
-      ? ((track) => (track.length > 0 ? { motion: track } : {}))(
-          withGlassFocus(motion, glass, shown, shape.radius, unit),
-        )
+      ? turned(withGlassFocus(motion, glass, shown, shape.radius, unit), shown, shape.radius, turn)
       : moving;
 
     if (!spilling && background.shadowOpacity > 0) {
@@ -1887,7 +1900,10 @@ export function buildRenderPlan(
         blur,
         dy: background.shadowY * against,
         color: rgba("#000000", background.shadowOpacity * (slot.card ? 1 : CAMERA_SHADOW)),
-        ...(shadowMotion.length > 0 ? { motion: shadowMotion } : {}),
+        // Turned with the bubble, about the same middle. The drop is applied
+        // to the corners by each rasteriser rather than here, so the shadow
+        // falls straight down off a picture that is leaning.
+        ...turned(shadowMotion, grow(outer, spread), outerShape.radius, turn),
       });
     }
 
@@ -1940,7 +1956,7 @@ export function buildRenderPlan(
         shape: outerShape,
         width: border,
         color: rgba(layout.cameraBorderColor, layout.cameraBorderOpacity),
-        ...(borderMotion.length > 0 ? { motion: borderMotion } : {}),
+        ...turned(borderMotion, outer, outerShape.radius, turn),
       });
     }
   } else if (leaving && enter && sources.camera) {
@@ -2001,6 +2017,11 @@ export function buildRenderPlan(
         exponent: SHAPE_EXPONENT[enter.from.layout.cameraShape],
       };
 
+      // At the angle it was being drawn at, like the look and the ring above:
+      // this bubble belongs to the clip that is ending, and standing it
+      // upright on the cut would be the last thing it did.
+      const turn = enter.from.layout.cameraRotation;
+
       if (!wasCutout && enter.from.background.shadowOpacity > 0) {
         items.push({
           kind: "shadow",
@@ -2012,7 +2033,7 @@ export function buildRenderPlan(
             "#000000",
             enter.from.background.shadowOpacity * (leaving.card ? 1 : CAMERA_SHADOW),
           ),
-          motion: shadowMotion,
+          ...turned(shadowMotion, gone, radius, turn),
         });
       }
 
@@ -2025,7 +2046,7 @@ export function buildRenderPlan(
         dstRect: gone,
         shape,
         mirror: enter.from.layout.cameraMirror,
-        motion,
+        ...turned(motion, gone, radius, turn),
         ...(wasCutout ? { matte: true } : {}),
         ...(rim > 0 ? { rim, fringe } : {}),
         // The look the camera was wearing on the far side of the cut, not the
@@ -2045,7 +2066,7 @@ export function buildRenderPlan(
           shape: { radius: radius + border, exponent: shape.exponent },
           width: border,
           color: rgba(enter.from.layout.cameraBorderColor, enter.from.layout.cameraBorderOpacity),
-          motion: borderMotion,
+          ...turned(borderMotion, gone, radius + border, turn),
         });
       }
     }
@@ -2662,6 +2683,64 @@ function edgeAnchor(before: number, after: number): number {
   const total = before + after;
   if (total <= 0) return 0.5;
   return clamp((before / total - 0.5) * ANCHOR_REACH + 0.5, 0, 1);
+}
+
+/**
+ * The resting box a picture must have for what is drawn from it to land here.
+ *
+ * The inverse of the anchoring in `shrunk`, and the editor's half of dragging a
+ * bubble a zoom has shrunk. The gesture is aimed at the picture on screen; the
+ * settings hold the box it rests in; and the two are not one for one, because
+ * the shrink keeps the bubble in the corner it is parked in — so moving the
+ * resting box also moves the anchor, and the drawn bubble travels about fifteen
+ * per cent further than the pointer did. Dragged against the raw delta, the
+ * bubble runs away from the hand.
+ *
+ * Here rather than in the editor because it is geometry, and geometry is
+ * computed once — `ANCHOR_REACH` and the clamp below are the same two numbers
+ * `edgeAnchor` is made of, and a second copy of them in the renderer is exactly
+ * the drift that rule exists to stop.
+ *
+ * `drawn` is where the picture should land, in output pixels, and `size` the
+ * size its resting box will have — the same size for a move, the pulled size
+ * divided by the shrink for a resize. Returns the resting box, which is what a
+ * drag writes.
+ *
+ * Nothing shrunk is the ordinary case and falls straight through: with no slack
+ * between the two sizes the anchor has nothing to distribute, and the answer is
+ * the drawn box itself.
+ */
+export function restingForDrawn(frame: Size, size: Size, drawn: Rect): Rect {
+  const solve = (length: number, rest: number, shown: number, want: number): number => {
+    // What the anchor shares out. Zero whenever the picture is drawn at the
+    // size its settings give it, which is every gesture but this one.
+    const slack = rest - shown;
+    if (Math.abs(slack) < 1e-9) return want;
+
+    // The span the anchor is read over — `edgeAnchor`'s `total`, which is the
+    // two margins added together and so does not move with the box.
+    const total = length - rest;
+    if (total <= 0) return want - slack / 2;
+
+    // `want = x + slack * ((x / total - 0.5) * ANCHOR_REACH + 0.5)`, unclamped,
+    // which is linear in x.
+    const gain = 1 + (slack * ANCHOR_REACH) / total;
+    const x = (want - slack * (0.5 - 0.5 * ANCHOR_REACH)) / gain;
+
+    // Where that lands outside the clamp the anchor is pinned, the gain is one
+    // again, and the offset is whichever end it pinned to.
+    const anchor = (x / total - 0.5) * ANCHOR_REACH + 0.5;
+    if (anchor <= 0) return want;
+    if (anchor >= 1) return want - slack;
+    return x;
+  };
+
+  return {
+    x: solve(frame.width, size.width, drawn.width, drawn.x),
+    y: solve(frame.height, size.height, drawn.height, drawn.y),
+    width: size.width,
+    height: size.height,
+  };
 }
 
 /**
@@ -4895,6 +4974,73 @@ function rotatedQuad(
  * divisor is 1 at every corner, which is what makes it the identity projection
  * rather than a special case.
  */
+/**
+ * A key's four corners, turned about the key's own middle.
+ *
+ * Rotation is carried as a `quad` rather than as an angle of its own, and that
+ * is the whole trick: both rasterisers already place a picture by four
+ * projected corners — it is how a perspective zoom leans — so a turned camera
+ * is a shape they can already draw. An angle on the item would be a third
+ * thing for each of them to apply, in the right order against the tilt they
+ * apply already, and two of those orders is a preview and an export that
+ * disagree.
+ *
+ * `w` is 1 at every corner. A rotation is affine: nothing moves towards or away
+ * from the eye, so there is no divisor to carry and the hardware's
+ * perspective divide is a divide by one.
+ *
+ * The order is `RectKey.quad`'s: top-left, top-right, bottom-left, bottom-right,
+ * each as `x, y, w`.
+ */
+function turnedCorners(key: RectKey, degrees: number): number[] {
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const middleX = key.x + key.width / 2;
+  const middleY = key.y + key.height / 2;
+
+  // Clockwise on screen, because y runs down — the direction `spin` in the
+  // editor's `handles.ts` turns, and the direction the knob is dragged.
+  const corner = (x: number, y: number): number[] => {
+    const dx = x - middleX;
+    const dy = y - middleY;
+    return [middleX + dx * cos - dy * sin, middleY + dx * sin + dy * cos, 1];
+  };
+
+  const right = key.x + key.width;
+  const bottom = key.y + key.height;
+  return [
+    ...corner(key.x, key.y),
+    ...corner(right, key.y),
+    ...corner(key.x, bottom),
+    ...corner(right, bottom),
+  ];
+}
+
+/**
+ * One of the camera's tracks with every key turned, as a motion field.
+ *
+ * A track of one where there was none, because a bubble that is simply sitting
+ * still at an angle has nothing else to move it — and a plan item can only
+ * carry corners on a key. It rests at `at: 0`: `rectAt` holds the first key
+ * backwards and the last one forwards, so a single key is the whole clip.
+ *
+ * The rectangle stays exactly what it was at every key, which is what keeps
+ * everything that reads a track honest — `pictureMoved` compares boxes, and a
+ * turn does not move the box the editor's handles are drawn around.
+ */
+function turned(
+  keys: RectKey[],
+  rest: Rect,
+  radius: number,
+  degrees: number,
+): { motion?: RectKey[] } {
+  if (degrees === 0) return keys.length > 0 ? { motion: keys } : {};
+
+  const track = keys.length > 0 ? keys : [{ at: 0, ...rest, radius }];
+  return { motion: track.map((key) => ({ ...key, quad: turnedCorners(key, degrees) })) };
+}
+
 function cornersOf(key: RectKey): number[] {
   if (key.quad && key.quad.length === 12) return [...key.quad];
 
@@ -6499,6 +6645,65 @@ export function rectAt(
 }
 
 /**
+ * Where a picture is being drawn now, and what put it there.
+ *
+ * The editor grabs pictures where they are rather than where their settings
+ * would rest them, so this is the one answer behind the ring, the hit testing
+ * and every gesture that writes a box back. Asked of the plan rather than of
+ * the zoom list, for the reason `pictureMoved` gives below.
+ *
+ * `rest` is the box the settings describe — what a drag reads and writes.
+ * `rect` is where that box is on screen at this instant. The two differ while a
+ * zoom has the picture, and the ratio between them is what a resize has to be
+ * divided by to land back in the settings.
+ *
+ * `card` says the rectangle itself moved, as against the *window* having moved
+ * inside a card that stood still — which is what a shot does wherever the
+ * arrangement crops, and is the difference between a picture that cannot be
+ * dragged and one that merely shows something else. See `shotTrack`.
+ */
+export function pictureDrawn(
+  plan: RenderPlan,
+  which: PlanSource,
+  at: number,
+): { rect: Rect; rest: Rect; card: boolean; window: boolean } | null {
+  const item = plan.items.find(
+    (candidate) => candidate.kind === "image" && candidate.source === which,
+  );
+  if (item?.kind !== "image") return null;
+
+  const rest = item.dstRect;
+  if (!item.motion || item.motion.length === 0) {
+    return { rect: rest, rest, card: false, window: false };
+  }
+
+  const now = rectAt(item.motion, at, rest, 0);
+  // A pixel of slack on both, so a track resting on numbers that went through a
+  // lerp does not read as movement.
+  const card =
+    Math.abs(now.x - rest.x) > 1 ||
+    Math.abs(now.y - rest.y) > 1 ||
+    Math.abs(now.width - rest.width) > 1 ||
+    Math.abs(now.height - rest.height) > 1;
+
+  // The window, in source pixels. The box stands exactly still through one of
+  // these, so the test above answers no for the whole of the shot.
+  const window =
+    now.src !== undefined &&
+    (Math.abs(now.src.x - item.srcRect.x) > 1 ||
+      Math.abs(now.src.y - item.srcRect.y) > 1 ||
+      Math.abs(now.src.width - item.srcRect.width) > 1 ||
+      Math.abs(now.src.height - item.srcRect.height) > 1);
+
+  return {
+    rect: { x: now.x, y: now.y, width: now.width, height: now.height },
+    rest,
+    card,
+    window,
+  };
+}
+
+/**
  * Whether a picture is away from the box its own settings put it in, now.
  *
  * What the preview's ring and its hit testing both ask before they put handles
@@ -6516,36 +6721,8 @@ export function rectAt(
  * they move.
  */
 export function pictureMoved(plan: RenderPlan, which: PlanSource, at: number): boolean {
-  const item = plan.items.find(
-    (candidate) => candidate.kind === "image" && candidate.source === which,
-  );
-  if (item?.kind !== "image" || !item.motion || item.motion.length === 0) return false;
-
-  const now = rectAt(item.motion, at, item.dstRect, 0);
-  // A pixel of slack, so a track resting on numbers that went through a lerp
-  // does not read as movement.
-  if (
-    Math.abs(now.x - item.dstRect.x) > 1 ||
-    Math.abs(now.y - item.dstRect.y) > 1 ||
-    Math.abs(now.width - item.dstRect.width) > 1 ||
-    Math.abs(now.height - item.dstRect.height) > 1
-  ) {
-    return true;
-  }
-
-  // The window, where that is what a shot moves: the box stands exactly still
-  // through one of those, so the test above answers no for the whole of a zoom
-  // and the ring and the handles stay up — drawn around a card whose picture is
-  // somewhere else, and draggable in the middle of a move. Source pixels rather
-  // than output, with the same pixel of slack, which is the stricter of the two
-  // on every recording larger than the frame.
-  return (
-    now.src !== undefined &&
-    (Math.abs(now.src.x - item.srcRect.x) > 1 ||
-      Math.abs(now.src.y - item.srcRect.y) > 1 ||
-      Math.abs(now.src.width - item.srcRect.width) > 1 ||
-      Math.abs(now.src.height - item.srcRect.height) > 1)
-  );
+  const drawn = pictureDrawn(plan, which, at);
+  return drawn !== null && (drawn.card || drawn.window);
 }
 
 /**
