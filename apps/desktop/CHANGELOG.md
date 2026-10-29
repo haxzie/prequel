@@ -1,5 +1,22 @@
 # @prequel/desktop
 
+## 0.8.0
+
+### Minor Changes
+
+- ce4059a: <!-- highlight: Turn the camera to any angle -->
+
+  Turn the camera to any angle: select it and drag from just outside a corner, or set the angle in the Camera panel.
+
+### Patch Changes
+
+- 5162c17: The timeline shows an audio row once you add audio to the project, and leaves the space to the clips until you do.
+- ce4059a: Click and drag the camera while a zoom is running, instead of the preview ignoring you until the zoom is over.
+- ce4059a: Wallpapers and music from the catalogue are kept once for the app instead of being copied into every recording.
+- ce4059a: Add Audio puts the bar on the timeline straight away, shimmering until the song itself has arrived.
+- a0f6c8a: Twenty 1984 Macintosh wallpapers in the background picker, under Retro.
+- d46489e: The recording time now sits on the Stop button, so the clock and the button you press are the same thing.
+
 ## 0.7.1
 
 ### Patch Changes
