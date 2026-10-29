@@ -119,26 +119,42 @@ export function Comments({
         )}
       </div>
 
-      {/* Pinned to the bottom of the panel, and sticky as well as last: in the
-          side panel it sits at the foot of a column the list scrolls inside,
-          and under the video on a narrow screen it stays against the bottom of
-          the viewport while the page scrolls past it. A comment box that
-          scrolls away is one nobody finds at the end of a long thread, which is
-          exactly where somebody has just finished reading. */}
-      <div className="sticky bottom-0 z-10 shrink-0 bg-bg pt-2">
+      {/* Where the box goes, which is not the same answer on both layouts.
+          Last in the source, because that is the order a screen reader and the
+          keyboard should take: read the thread, then answer it.
+
+          In the side panel it is pinned to the foot of the column the list
+          scrolls inside. A comment box that scrolls away is one nobody finds
+          at the end of a long thread, which is exactly where somebody has just
+          finished reading.
+
+          Under the video it comes first instead. The whole page scrolls there,
+          so a box at the end of the thread is below however many comments
+          there are — several screens down on a recording people have talked
+          about — and a reader arriving at the video has to scroll past all of
+          it to find the one thing they came to do. */}
+      <div className="order-first shrink-0 bg-bg pb-3 lg:order-none lg:sticky lg:bottom-0 lg:z-10 lg:pt-2 lg:pb-0">
         {signedIn ? (
           <Composer busy={busy} onSubmit={submit} />
         ) : (
-          // A button rather than a disabled box. Somebody who is not signed in
-          // cannot be told what they typed will be thrown away, so nothing is
-          // offered to type into until they are.
-          <button
-            type="button"
-            className="w-full rounded-xl border border-line bg-bg px-3 py-3 text-left text-sm text-muted transition-colors hover:border-muted/40 hover:text-fg"
-            onClick={onNeedsSignIn}
-          >
-            Sign in to leave a comment
-          </button>
+          // A line of text with a button on the end of it, in the box the
+          // composer will be. Nothing to type into until somebody is signed
+          // in — they cannot be told afterwards that what they wrote is being
+          // thrown away — and the whole row used to *be* the button, which
+          // read as a text field somebody had disabled.
+          //
+          // The same pill the composer's own Send wears, in the same corner,
+          // so the thing that replaces this is already drawn here.
+          <div className="flex items-center gap-3 rounded-xl border border-line bg-bg px-3 py-2.5">
+            <p className="text-sm text-muted">Sign in to leave a comment</p>
+            <button
+              type="button"
+              className="ml-auto h-8 shrink-0 rounded-full bg-fg px-4 text-xs font-medium text-bg transition-opacity hover:opacity-90"
+              onClick={onNeedsSignIn}
+            >
+              Sign in
+            </button>
+          </div>
         )}
 
         {error && (

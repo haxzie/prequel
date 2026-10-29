@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 /** A pair of marks the keyboard can wrap the selection in. */
 interface Mark {
@@ -41,6 +41,31 @@ export function Composer({
 }) {
   const field = useRef<HTMLTextAreaElement>(null);
   const [value, setValue] = useState("");
+
+  /**
+   * The box grows with what is in it, up to `max-h-48`, and then scrolls.
+   *
+   * In place of the corner grip, which is what a `resize-y` textarea offers
+   * and what this used to have: a grip is a control somebody has to notice,
+   * aim at and drag before they can see the paragraph they have just typed,
+   * and it leaves the box at whatever size the last person dragged it to.
+   *
+   * `auto` first, every time. `scrollHeight` of a box that is already tall
+   * enough is just its height, so measuring without the reset would let the
+   * field grow and never shrink — a deleted paragraph would leave the hole it
+   * was in.
+   *
+   * Keyed on the value rather than done in the change handler, so the two
+   * other things that write to the field — ⌘B wrapping a selection, and the
+   * box being emptied on a successful post — resize it too.
+   */
+  useLayoutEffect(() => {
+    const element = field.current;
+    if (!element) return;
+
+    element.style.height = "auto";
+    element.style.height = `${String(element.scrollHeight)}px`;
+  }, [value]);
 
   /**
    * Wraps the selection, or opens an empty pair where the caret is.
@@ -85,7 +110,7 @@ export function Composer({
         rows={2}
         placeholder={placeholder}
         aria-label="Comment"
-        className="block max-h-48 min-h-16 w-full resize-y bg-transparent px-3 py-2.5 text-sm leading-relaxed text-fg placeholder:text-muted/70 focus:outline-none"
+        className="block max-h-48 min-h-16 w-full resize-none bg-transparent px-3 py-2.5 text-sm leading-relaxed text-fg placeholder:text-muted/70 focus:outline-none"
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
           if (!(event.metaKey || event.ctrlKey)) return;
