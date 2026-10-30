@@ -21,6 +21,7 @@
  * edited in: a release is added at the top, with its `.mdx` beside it.
  */
 export const RELEASES = [
+  "0.8.1",
   "0.8.0",
   "0.7.1",
   "0.7.0",

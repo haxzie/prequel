@@ -1,5 +1,17 @@
 # @prequel/desktop
 
+## 0.8.1
+
+### Patch Changes
+
+- 79c72bc: <!-- highlight: A cut-out layout for the camera -->
+
+  A new arrangement stands you in the bottom right of a full-screen recording with your background cut away.
+
+- 79c72bc: The layout thumbnails draw each arrangement as windows on a plate of their own, which reads at a glance.
+- 79c72bc: Background music from the library plays in the exported video again.
+- 79c72bc: Opening Prequel brings up your recordings, and a Record Now button in the sidebar takes you straight to the panel.
+
 ## 0.8.0
 
 ### Minor Changes
