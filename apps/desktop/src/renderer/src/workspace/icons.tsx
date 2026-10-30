@@ -52,6 +52,26 @@ const FILL = { fill: "currentColor", fillOpacity: 0.22, stroke: "none" } as cons
  * camera in this app is the webcam, in the panel and in the editor's rail, and
  * a second meaning for it in the sidebar would put the two a click apart.
  */
+/**
+ * The record dot, for the one button in this sidebar.
+ *
+ * Deliberately not duotone, which is the rule the rest of this file is written
+ * to: those sit on navigation rows and have to carry weight that a tinted row
+ * cannot. This one sits on a button that is already a filled pill, and a
+ * duotone glyph on it would be a badge on a badge.
+ *
+ * A ring around a solid dot — the mark every recorder has used since tape, and
+ * the one thing in this window nobody has to be taught.
+ */
+export function RecordNowIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function ScreenshotsIcon() {
   return (
     <svg {...STROKE} aria-hidden="true">

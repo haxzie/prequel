@@ -148,7 +148,13 @@ impl MusicTrack {
                 false
             })
             .map(|bed| MusicBed {
-                file: dir.join(&bed.file),
+                // The same resolution the check above ran, not a fresh join:
+                // this is the path the reader opens, and a bed that passed the
+                // check on the shelf and was then handed `<recording>/@library/
+                // music/…` is a track that exists, is accepted, and plays
+                // nothing — a silent export with the bar still on the
+                // timeline. That is exactly what shipped.
+                file: resolve_asset(dir, library, &bed.file),
                 ..bed.clone()
             })
             .collect();
@@ -314,6 +320,46 @@ mod tests {
             fade_out: 2 * S,
             repeat: false,
         }
+    }
+
+    #[test]
+    fn opens_a_library_track_on_the_shelf_rather_than_in_the_recording() {
+        // The bug this is here for shipped: `prepare` checked the file on the
+        // shelf, accepted the bed, and then handed the reader
+        // `<recording>/@library/music/…`. The bed was in the mix, the bar was
+        // on the timeline, and the export came out silent.
+        let root = std::env::temp_dir().join("prequel-music-library-test");
+        let shelf = root.join("library").join("music");
+        std::fs::create_dir_all(&shelf).expect("shelf");
+        std::fs::write(shelf.join("slow-wander.m4a"), b"not really audio").expect("track");
+
+        let session = root.join("recording");
+        std::fs::create_dir_all(&session).expect("recording");
+
+        let shelved = MusicBed {
+            file: PathBuf::from("@library/music/slow-wander.m4a"),
+            ..bed()
+        };
+        let track = MusicTrack::prepare(
+            std::slice::from_ref(&shelved),
+            &session,
+            Some(&root.join("library")),
+            48_000.0,
+        )
+        .expect("the bed is on the shelf, so it is usable");
+
+        assert_eq!(track.beds[0].file, shelf.join("slow-wander.m4a"));
+
+        // And a recording's own file still resolves against the recording.
+        let imported = MusicTrack::prepare(&[bed()], &session, Some(&root.join("library")), 48_000.0);
+        assert!(imported.is_none(), "the recording does not hold that one");
+
+        std::fs::write(session.join("music-test.m4a"), b"not really audio").expect("import");
+        let imported = MusicTrack::prepare(&[bed()], &session, Some(&root.join("library")), 48_000.0)
+            .expect("now it does");
+        assert_eq!(imported.beds[0].file, session.join("music-test.m4a"));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

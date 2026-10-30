@@ -674,6 +674,8 @@ export const IPC_CHANNELS = {
   dockMenu: "dock:menu",
   /** Renderer → main: the panel's natural width, so the window can match it. */
   dockWidth: "dock:width",
+  /** The library asking for the recording panel, and to get out of the way. */
+  workspaceRecord: "workspace:record",
   /** Renderer → main: the camera preview failed, or recovered. */
   cameraError: "dock:cameraError",
   /**

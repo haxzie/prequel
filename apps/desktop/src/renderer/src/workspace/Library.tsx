@@ -9,7 +9,7 @@ import { Projects } from "../projects/Projects";
 import { ExternalIcon } from "../settings/icons";
 import { SettingsPane } from "../settings/Settings";
 import { AccountMenu } from "./AccountMenu";
-import { ExportsIcon, RecordingsIcon, ScreenshotsIcon, SettingsIcon } from "./icons";
+import { ExportsIcon, RecordingsIcon, RecordNowIcon, ScreenshotsIcon, SettingsIcon } from "./icons";
 
 /**
  * Everything the app window shows when no recording is open.
@@ -84,6 +84,48 @@ export function Library({
           to say where one thing ends, and at the distance they were drawn at a
           pane of eight bordered groups read as eight boxes. */}
       <nav className="drag flex w-48 shrink-0 flex-col gap-0.5 border-r border-white/8 p-3 pt-10">
+        {/* The one thing in here that is not a place to go.
+
+            First, because it is what the window is for: this is a library of
+            recordings, and the gesture it exists to lead to is making another
+            one. It is also the only way back to the panel from here without
+            going to the menu bar — opening the library now puts the panel
+            away, so a window with no way to ask for it back is a window
+            somebody has to close before they can record.
+
+            A filled pill rather than another row. Everything below changes
+            what this window shows; this one closes it and raises the panel
+            over whatever is behind — see `recordNow`. */}
+        <button
+          type="button"
+          onClick={() => void window.prequel.workspace.record()}
+          className={cn(
+            "no-drag mb-2 flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium",
+            // The recorder's own red — see `--editor-record`. It was the
+            // panel's light grey, which made the one button in this window
+            // look like the selected row two lines below it. Red is what this
+            // app's record controls are, from the light in the tray to the
+            // Stop button, and it is the only red in this window that is not a
+            // warning.
+            "bg-editor-record text-white transition-[filter] hover:brightness-110",
+            // Flat, with the light around it rather than on it. It wore the
+            // timeline's emboss for a while — a wash down the face, a lit top
+            // edge and a dark one under it — which is the bevel a bar on a
+            // strip of other bars needs to separate itself from them, and on a
+            // lone button it reads as a control from fifteen years ago.
+            //
+            // What is left is a halo in the button's own red, which lifts it
+            // off the sidebar without drawing an edge on it, and a hairline of
+            // white along the top: one line, at a fifth of the emboss's, so
+            // the fill has a top rather than a bevel.
+            "shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_2px_12px_rgba(229,72,77,0.35)]",
+            "[&_svg]:size-4 [&_svg]:shrink-0",
+          )}
+        >
+          <RecordNowIcon />
+          Record Now
+        </button>
+
         {SECTIONS.map((item) => (
           <button
             key={item.id}

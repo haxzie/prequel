@@ -2664,6 +2664,13 @@ function detached(preset: LayoutSettings["preset"]): LayoutSettings["preset"] | 
     case "over-padded":
     case "custom":
       return null;
+    // Dragged out of its corner, the person keeps the screen they were
+    // standing on: `over-full` is this arrangement with the box handed back to
+    // the camera's own four numbers. `over-padded` would put a margin round a
+    // picture that was full-bleed a moment ago, which is not what moving
+    // somebody asked for.
+    case "over-cutout":
+      return "over-full";
     case "split":
     case "camera-full":
     default:

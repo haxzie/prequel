@@ -1219,6 +1219,7 @@ function InspectorPanels(props: InspectorProps) {
                     frame={props.frame}
                     cameraSource={props.cameraSource}
                     cameraPresent={props.cameraOnClip}
+                    cameraMatte={props.cameraMatte}
                     fileUrl={props.fileUrl}
                     field={field}
                     set={set}
@@ -1731,6 +1732,7 @@ function LayoutPanel({
   frame,
   cameraSource,
   cameraPresent,
+  cameraMatte,
   fileUrl,
   field,
   set,
@@ -1739,6 +1741,8 @@ function LayoutPanel({
   frame: Size;
   cameraSource: Size | null;
   cameraPresent: boolean;
+  /** Whether the recording has a person matte, which one arrangement needs. */
+  cameraMatte: boolean;
   fileUrl: (file: string) => string;
   field: FieldProps;
   set: Setter;
@@ -1755,19 +1759,27 @@ function LayoutPanel({
       <Field {...field("layout", "preset")}>
         <LayoutPicker
           frame={frame}
-          // The composition's own background and padding, so a padded
-          // arrangement is told apart from a full-bleed one by the thing that
-          // actually differs between them.
+          // For the padding, which is what tells a padded arrangement from a
+          // full-bleed one. Not for the paint: a cell is a diagram and is
+          // drawn on a plate of its own — see `--layout-plate`.
           background={settings.background}
-          fileUrl={fileUrl}
           value={layout.preset}
           cameraPresent={cameraPresent}
+          // The cutout arrangement needs one, for the reason the Cutout
+          // control does: without a matte there is nothing to cut the person
+          // out of, and the frame would fill with the whole camera picture
+          // spilling past its box.
+          cameraMatte={cameraMatte}
           onChange={(preset) => {
             set("layout", "preset", preset);
             // The arrangement answers the shape, the same way it answers the
             // camera toggle below. It stays a control afterwards.
             const shape = cameraShapeFor(preset) ?? layout.cameraShape;
-            if (shape !== layout.cameraShape) {
+            // `|| layout.cameraCutout`, because a cutout has no shape: the
+            // leaf underneath it has been sitting unused and may already read
+            // as the one this arrangement wants, which would skip the radius
+            // and leave a squircle wearing whatever roundness was last set.
+            if (shape !== layout.cameraShape || layout.cameraCutout) {
               set("layout", "cameraShape", shape);
               // The roundness goes with it, for the reason the shape control
               // writes it: the geometry reads `cameraCornerRadius` and nothing
@@ -1783,6 +1795,27 @@ function LayoutPanel({
             // the same way — otherwise the Camera panel says the camera is on
             // while the frame plainly has no camera in it.
             set("layout", "cameraVisible", !SCREEN_ONLY.has(preset));
+
+            // The cutout, which one arrangement is about and the rest are
+            // not. Written both ways, like the camera toggle above: the
+            // thumbnails promise a person standing on the wallpaper in one
+            // cell and a bubble in the others, and a setting left behind makes
+            // every cell after the cutout one a picture of something else.
+            //
+            // It is the shape control's twin — a cutout has no shape at all,
+            // the matte is its outline — so leaving it on while the shape goes
+            // back to a squircle is two controls describing different cameras.
+            set("layout", "cameraCutout", cutoutFor(preset));
+
+            // And straightened. An angle is the same kind of setting the
+            // cutout is — part of the camera's form rather than of its
+            // picture — and every cell in the grid draws an upright one, so a
+            // tilt carried over from the last arrangement is the grid
+            // promising something the pick does not give.
+            //
+            // Only when it is actually turned, so picking an arrangement does
+            // not mark the angle as overridden on a clip that never set one.
+            if (layout.cameraRotation !== 0) set("layout", "cameraRotation", 0);
 
             // A full-frame arrangement starts flush to the edges, and square.
             //
@@ -1962,6 +1995,17 @@ function cameraShapeFor(preset: LayoutPreset): CameraShape | null {
   }
 }
 
+/**
+ * Whether an arrangement is about the camera's background being cut away.
+ *
+ * One arrangement, and a function rather than a `Set` so it reads like
+ * `cameraShapeFor` beside it — both answer "what does picking this say about
+ * the camera", and both are consulted in the same breath.
+ */
+function cutoutFor(preset: LayoutPreset): boolean {
+  return preset === "over-cutout";
+}
+
 /** Arrangements with no camera in them. */
 // Not the set that clears the padding — see `fillsTheFrame`. "Screen only,
 // padded" is in this group and is the arrangement whose whole point is the
@@ -1981,6 +2025,9 @@ const SLOTTED = new Set<LayoutPreset>([
   "beside",
   "beside-left",
   "split",
+  // The corner cutout decides where and how big as well — see `CUTOUT_CORNER`.
+  // Dragging the person in the preview is how it is let loose.
+  "over-cutout",
   // The column's height is the frame's and its width follows from that, so
   // both the Size slider and the Position map would be controls visibly doing
   // nothing. Dragging it in the preview is how it is let loose.

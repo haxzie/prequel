@@ -17,6 +17,7 @@ import {
   captionAt,
   cropToFrame,
   cursorAt,
+  cameraFloats,
   fillsTheFrame,
   layoutBoxes,
   maskReach,
@@ -58,6 +59,7 @@ import type { CursorKind } from "./manifest.js";
 const PRESETS: LayoutPreset[] = [
   "over-full",
   "over-padded",
+  "over-cutout",
   "over-column",
   "over-column-left",
   "beside",
@@ -7078,5 +7080,67 @@ describe("grabbing a picture a zoom has hold of", () => {
     const box = { x: 100, y: 50, width: 400, height: 300 };
 
     expect(restingForDrawn(LANDSCAPE, box, box)).toEqual(box);
+  });
+});
+
+describe("the camera cut out in the corner", () => {
+  const boxes = (frame: Size = LANDSCAPE) =>
+    layoutBoxes(
+      frame,
+      { ...DEFAULT_SETTINGS.layout, preset: "over-cutout" },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: CAMERA },
+    );
+
+  it("stands the person low and to the right, over a screen that fills the frame", () => {
+    const { screen, camera } = boxes();
+    if (!screen || !camera) throw new Error("both expected");
+
+    // The screen exactly as `over-full` places it — this arrangement is that
+    // one with somebody standing on it. Compared against it rather than
+    // against four numbers, because "full" still honours the padding the
+    // settings carry: what `fillsTheFrame` promises is that *picking* it
+    // clears that padding, which is the inspector's half of the bargain.
+    const full = layoutBoxes(
+      LANDSCAPE,
+      { ...DEFAULT_SETTINGS.layout, preset: "over-full" },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: CAMERA },
+    );
+    expect(screen.area).toEqual(full.screen?.area);
+
+    // Past the middle on both axes, and inside the frame on both.
+    const middle = {
+      x: camera.area.x + camera.area.width / 2,
+      y: camera.area.y + camera.area.height / 2,
+    };
+    expect(middle.x).toBeGreaterThan(LANDSCAPE.width / 2);
+    expect(middle.y).toBeGreaterThan(LANDSCAPE.height / 2);
+    expect(camera.area.x + camera.area.width).toBeLessThanOrEqual(LANDSCAPE.width);
+    expect(camera.area.y + camera.area.height).toBeLessThanOrEqual(LANDSCAPE.height);
+  });
+
+  it("gives the person no card to stand on", () => {
+    // What the shadow, the ring and the shape all read to decide they have no
+    // edge to dress — and what the plan reads to let the figure shrink out of
+    // a zoom's way.
+    expect(boxes().camera?.card).toBe(false);
+    expect(cameraFloats({ ...DEFAULT_SETTINGS.layout, preset: "over-cutout" })).toBe(true);
+  });
+
+  it("keeps its corner in a frame of any shape", () => {
+    // The box is fractions of the frame and of its shorter edge, so the
+    // arrangement survives 16:9 → 9:16 rather than walking off the bottom.
+    const { camera } = boxes(VERTICAL);
+    if (!camera) throw new Error("a camera expected");
+
+    expect(camera.area.x).toBeGreaterThan(0);
+    expect(camera.area.y).toBeGreaterThan(VERTICAL.height / 2);
+    expect(camera.area.x + camera.area.width).toBeLessThanOrEqual(VERTICAL.width);
+    expect(camera.area.y + camera.area.height).toBeLessThanOrEqual(VERTICAL.height);
+  });
+
+  it("clears the padding when it is picked, like every full-bleed arrangement", () => {
+    expect(fillsTheFrame("over-cutout")).toBe(true);
   });
 });

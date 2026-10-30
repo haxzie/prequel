@@ -94,6 +94,7 @@ export type Ns = MediaTime;
 export type LayoutPreset =
   | "over-full"
   | "over-padded"
+  | "over-cutout"
   | "over-column"
   | "over-column-left"
   | "beside"

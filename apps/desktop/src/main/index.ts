@@ -22,7 +22,12 @@ import {
 import { watchForErrors } from "./errors.js";
 import { initSentry } from "./sentry.js";
 import { initLogging, log, logPath } from "./log.js";
-import { loginItemState, seedLoginItem, startedByItself, wasOpenedAtLogin } from "./login-item.js";
+import {
+  loginItemState,
+  seedLoginItem,
+  startedForACommand,
+  wasOpenedAtLogin,
+} from "./login-item.js";
 import { missingPermissions } from "../shared/permissions.js";
 import { permissionStates } from "./permissions.js";
 import { getRecorder, type Recorder } from "./recorder.js";
@@ -207,9 +212,32 @@ if (!app.isPackaged) {
 // The argv is not ignored any more: macOS delivers a deep link this way when a
 // second copy is launched to follow one while this instance holds the lock,
 // which is the ordinary case for signing in with the app already running.
+/**
+ * Opened while it is already running — the Dock, Launchpad, Spotlight, or the
+ * Finder.
+ *
+ * macOS does not start a second copy for an app that is up: it sends the
+ * running one a reopen event, which Electron surfaces here. Without this,
+ * opening Prequel the way anybody opens an app did nothing whatsoever — there
+ * is no Dock icon to bounce and no window to raise, so the only sign it was
+ * running at all was the tray.
+ *
+ * Not while a take is in flight. The panel is the window for that, it is
+ * already on screen, and a library of past recordings thrown over the thing
+ * being recorded is the one place this window must never appear.
+ */
+app.on("activate", () => {
+  if (flow && flow.state().session.status !== "idle") return;
+  flow?.openProjects();
+});
+
 app.on("second-instance", (_event, argv) => {
-  handleDeepLinkArgv(argv);
-  flow?.open();
+  const link = handleDeepLinkArgv(argv);
+  // A deep link has somewhere of its own to go and has just been sent there.
+  // Everything else is somebody opening the app while it is already running —
+  // from the Finder, from Spotlight, from the launcher — which means the same
+  // thing as opening it cold, and gets the same window.
+  if (!link) flow?.openProjects();
 });
 
 void app.whenReady().then(() => {
@@ -436,8 +464,33 @@ void app.whenReady().then(() => {
     // A panel and a camera bubble over the desktop every time the machine boots
     // is something to be dismissed, which is the opposite of what opening at
     // login is for.
-    if (startedByItself()) log("info", "started by the system: staying in the menu bar");
-    else flow!.open();
+    //
+    // A launch somebody meant opens the library, not the recording panel.
+    // This app has no Dock icon, so double-clicking it in Applications or
+    // picking it out of Spotlight used to do nothing visible at all on a
+    // default install: opening at login is on, `startedByItself` is therefore
+    // true however the app was launched, and the branch above swallowed every
+    // manual launch. The library is also the better answer for the launches
+    // that did get through — somebody opening a recorder from the Finder is
+    // as likely to be after a take they made as a take they are about to
+    // make, and the panel is one press away in the menu bar either way.
+    //
+    // `wasOpenedAtLogin`, not `startedByItself`. That one is also true whenever
+    // the login item is merely *enabled*, which is the default — so it
+    // swallowed every manual launch on a default install, and changing what
+    // this branch opened changed nothing at all. The broader test is right for
+    // the recording panel, whose comment above explains why; it is wrong for
+    // a window somebody asked to see.
+    //
+    // What that gives up is the restart case: a Mac that reopens its apps
+    // relaunches Prequel through Launch Services, which sends no login event,
+    // so the library opens once after a restart. A window of your own
+    // recordings is a far smaller imposition than a recording panel and a
+    // camera bubble over the desktop, which is what the broader test exists to
+    // prevent.
+    if (wasOpenedAtLogin() || startedForACommand()) {
+      log("info", "started by the system: staying in the menu bar");
+    } else flow!.openProjects();
 
     /**
      * Then, quietly, whether there is a newer version.

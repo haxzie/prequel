@@ -493,6 +493,9 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       onNavigate: subscribe<string>("navigate"),
       onSection: subscribe("section"),
       ready: () => Promise.resolve(),
+      // Nothing to put away and no panel to raise: the gallery is one page,
+      // and a shot of the sidebar wants the button drawn, not pressed.
+      record: () => Promise.resolve(),
     },
 
     licence: {

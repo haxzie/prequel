@@ -112,6 +112,8 @@ function makeFlow(
     sections: [] as WorkspaceSection[],
     /** Recordings the editor was brought back to after an addition. */
     resumed: [] as string[],
+    /** How often the library was put away — Record Now's half of the gesture. */
+    closed: 0,
   };
   /** How many times the panel opening has asked whether there is a new version. */
   const updateChecks = { count: 0 };
@@ -226,6 +228,7 @@ function makeFlow(
       // No window in a test, which is the honest answer — `excludedIds` skips a
       // null the way it skips a destroyed one.
       browserWindow: () => null,
+      close: () => void (workspace.closed += 1),
     },
     quickView: {
       show: (capture: QuickViewCapture) => void quickView.shown.push(capture),

@@ -7349,6 +7349,12 @@ export function cameraFloats(layout: LayoutSettings): boolean {
     // camera's own — so it is a bubble that happens to sit in a slot rather
     // than a card, and everything that asks this question wants the former.
     case "stacked":
+    // Placed by the arrangement too, and with no card at all: a cut-out person
+    // stands on the screen rather than beside it, and shrinks out of a zoom's
+    // way like any other thing floating over the picture. The plan reads
+    // `Slot.card` for that, so this has to agree with it or the inspector
+    // greys a control the export then honours.
+    case "over-cutout":
       return true;
     case "custom":
       return !layout.cameraCard;
@@ -7371,8 +7377,19 @@ export function cameraFloats(layout: LayoutSettings): boolean {
  * wrong reason.
  */
 export function fillsTheFrame(preset: LayoutPreset): boolean {
-  return preset === "over-full" || preset === "screen-full";
+  return preset === "over-full" || preset === "screen-full" || preset === "over-cutout";
 }
+
+/**
+ * Where `over-cutout` stands somebody, as fractions of the frame and of its
+ * shorter edge.
+ *
+ * Low and to the right, and not in the corner: a cut-out person is drawn
+ * uncropped, so their shoulders spill past this box on both sides and the
+ * frame's edge cuts them off wherever they reach it. Parked flush to the
+ * corner, the spill left them half off the frame.
+ */
+const CUTOUT_CORNER = { x: 0.78, y: 0.72, size: 0.42 };
 
 export function layoutBoxes(
   frame: Size,
@@ -7440,6 +7457,44 @@ export function layoutBoxes(
       return {
         screen: { area: padded, fit: "contain", card: true },
         camera: withCamera ? free() : null,
+      };
+
+    // The person standing in the bottom right of a full-bleed screen, with
+    // their background cut away.
+    //
+    // The arrangement places the box rather than `free()` reading the camera's
+    // own four numbers, which is what makes it an arrangement at all: picked,
+    // it puts somebody in that corner at that size, where `over-full` puts
+    // them wherever the bubble was last dragged. Dragging afterwards still
+    // works — it falls out into `custom`, the way a drag out of any placed
+    // arrangement does.
+    //
+    // Bigger than the default bubble by about a fifth. A cut-out person has no
+    // card behind them, so the only thing carrying them is their own silhouette
+    // — at a bubble's size that reads as somebody standing a long way off.
+    //
+    // `card: false`, which is what the shadow, the ring and the shape all read
+    // to decide they have no edge to dress. The cutout itself is
+    // `cameraCutout`, a setting of the camera's: the arrangement writes it when
+    // it is picked and leaves it a control afterwards, exactly as it does with
+    // the shape — see `cameraCutoutFor`.
+    case "over-cutout":
+      return {
+        screen: { area: filled, fit: "cover", card: true },
+        camera: withCamera
+          ? {
+              area: boxAt(
+                frame,
+                CUTOUT_CORNER.x,
+                CUTOUT_CORNER.y,
+                CUTOUT_CORNER.size * unit,
+                CUTOUT_CORNER.size * unit,
+                cameraSlack(layout),
+              ),
+              fit: "cover",
+              card: false,
+            }
+          : null,
       };
 
     // The padded screen pushed left, with the camera standing over its right

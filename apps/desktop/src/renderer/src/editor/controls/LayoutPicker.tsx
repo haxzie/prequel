@@ -1,13 +1,5 @@
-import type { CSSProperties } from "react";
-
-import type {
-  Background,
-  BackgroundSettings,
-  LayoutSettings,
-  LayoutPreset,
-} from "../../../../shared/project";
+import type { BackgroundSettings, LayoutSettings, LayoutPreset } from "../../../../shared/project";
 import { DEFAULT_LAYOUT } from "../../../../shared/project";
-import { gradientCss } from "../../../../shared/presets";
 import { fillsTheFrame, layoutBoxes, presetFitsFrame, type Size } from "../../../../shared/layout";
 import { PersonIcon } from "../icons";
 import { cn } from "../../lib/cn";
@@ -36,10 +28,12 @@ import { cn } from "../../lib/cn";
  * changed — silently, in the one place whose whole job is to promise what the
  * export will look like.
  *
- * The composition's own background goes behind them, so a padded arrangement
- * draws its gap against the plate it will actually sit on — in near-black
- * against a near-black default, the six arrangements that differ from their
- * neighbours *only* by that gap were six copies of the same picture.
+ * Drawn on a plate of their own rather than on the composition's background.
+ * The background was behind them for a while, so a padded arrangement showed
+ * its gap against the thing it would really sit on — but a cell is a diagram,
+ * and a photograph behind one turns the grid into fourteen swatches of the
+ * same picture with some blocks on top. What the gap has to contrast with is
+ * the block beside it, which three fixed tones answer — see `--layout-plate`.
  *
  * The *geometry*, though, is fixed. A cell answers "what is this arrangement",
  * and that question has the same answer whatever the project's padding happens
@@ -89,6 +83,14 @@ const GROUPS: {
       { value: "beside-left", label: "Screen and camera side by side, camera at the left" },
       { value: "stacked", label: "Screen above the camera" },
       { value: "split", label: "Split down the middle" },
+      // Last of the eight, after the arrangements that put a whole camera
+      // picture somewhere: this is the one that puts a *person* there, and it
+      // is read as a variation on the first cell rather than as another way of
+      // dividing the frame.
+      {
+        value: "over-cutout",
+        label: "Full screen, camera cut out of its background at the bottom right",
+      },
     ],
   },
   {
@@ -171,16 +173,18 @@ const PORTRAIT_PLATE = "3rem";
 export function LayoutPicker({
   frame,
   background,
-  fileUrl,
   value,
   cameraPresent,
+  cameraMatte,
   onChange,
 }: {
   frame: Size;
-  /** The composition's background and padding, drawn as they will be. */
+  /**
+   * The composition's padding, which is all of this the grid uses: a cell is a
+   * diagram of an arrangement and is drawn on a plate of its own — see
+   * `--layout-plate`.
+   */
   background: BackgroundSettings;
-  /** Resolves a file inside the recording, for an image background. */
-  fileUrl: (file: string) => string;
   value: LayoutPreset;
   /**
    * Arrangements needing a camera are disabled without one, not hidden. A grid
@@ -188,13 +192,17 @@ export function LayoutPicker({
    * the empty space would be the only clue that anything was missing.
    */
   cameraPresent: boolean;
+  /**
+   * Whether the recording has a person matte.
+   *
+   * One arrangement needs it: with nothing to cut the person out of, the frame
+   * fills with the whole camera picture spilling past its box. Greyed rather
+   * than hidden, like every other cell that cannot be had on this recording —
+   * see the note on `fits`.
+   */
+  cameraMatte: boolean;
   onChange: (preset: LayoutPreset) => void;
 }) {
-  // Worked out once for all fourteen cells: it is the same background in each,
-  // and an image URL rebuilt per cell is fourteen identical requests for the
-  // browser to deduplicate.
-  const paint = backgroundCss(background.background, fileUrl);
-
   return (
     <div className="flex flex-col gap-2">
       {GROUPS.map((group) => (
@@ -209,9 +217,14 @@ export function LayoutPicker({
               // frame was made vertical would take the grid's shape with it,
               // and leave nothing to explain where it went.
               const fits = presetFitsFrame(preset.value, frame);
-              const label = fits
-                ? preset.label
-                : `${preset.label} — needs a frame wider than it is tall`;
+              // The one arrangement that asks something of the recording
+              // rather than of the frame.
+              const matted = preset.value !== "over-cutout" || cameraMatte;
+              const label = !fits
+                ? `${preset.label} — needs a frame wider than it is tall`
+                : matted
+                  ? preset.label
+                  : `${preset.label} — this recording was made before backgrounds could be removed`;
 
               return (
                 <button
@@ -220,16 +233,11 @@ export function LayoutPicker({
                   aria-label={label}
                   title={label}
                   aria-pressed={preset.value === value}
-                  disabled={(group.camera && !cameraPresent) || !fits}
+                  disabled={(group.camera && !cameraPresent) || !fits || !matted}
                   className={cn(CELL, preset.value === value && "ring-2 ring-selected ring-inset")}
                   onClick={() => onChange(preset.value)}
                 >
-                  <Plate
-                    frame={frame}
-                    preset={preset.value}
-                    background={background}
-                    paint={paint}
-                  />
+                  <Plate frame={frame} preset={preset.value} background={background} />
                 </button>
               );
             })}
@@ -264,48 +272,26 @@ export function LayoutPicker({
   );
 }
 
-/**
- * A background as CSS.
- *
- * The same three cases `toPaint` maps for the rasterisers, in the one language
- * a swatch can be painted in. `cover` and centred because that is how both of
- * them draw an image, so the cell samples what the frame will show.
- */
-function backgroundCss(background: Background, fileUrl: (file: string) => string): CSSProperties {
-  switch (background.kind) {
-    case "solid":
-      return { background: background.color };
-    case "gradient":
-      return { background: gradientCss(background) };
-    case "image":
-      return {
-        backgroundImage: `url("${fileUrl(background.path)}")`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-      };
-  }
-}
-
 /** One thumbnail: the frame, with whichever pictures the arrangement puts in it. */
 function Plate({
   frame,
   preset,
   background,
-  paint,
 }: {
   frame: Size;
   preset: LayoutPreset;
+  /** The composition's padding, for the geometry. Never its paint — see the
+      note on `--layout-plate`. */
   background: BackgroundSettings;
-  paint: CSSProperties;
 }) {
   // A frame of arbitrary size, laid out and then expressed as percentages, so
   // the plate is resolution-independent and needs no measuring.
   const boxes = layoutBoxes(
     frame,
     { ...DEFAULT_LAYOUT, preset } as LayoutSettings,
-    // Fixed, and only for the geometry — see `THUMB_PADDING`. The paint below
-    // still comes from the composition's own background untouched, which is
-    // what a gap is drawn against rather than what decides its size.
+    // Fixed, and only for the geometry — see `THUMB_PADDING`. The composition
+    // is read for its padding and nothing else; what the gap is drawn against
+    // is the plate, which is a tone of the picker's own.
     //
     // Zero for an arrangement that fills the frame, because picking one clears
     // the padding: a cell shows what you get the moment you choose it, and a
@@ -314,6 +300,11 @@ function Plate({
     { ...background, padding: fillsTheFrame(preset) ? 0 : THUMB_PADDING },
     THUMB_SOURCES,
   );
+
+  // Drawn as a person with nothing behind them. The arrangement writes
+  // `cameraCutout` when it is picked — see `cutoutFor` — so the cell has to
+  // promise what the pick will do rather than what the current settings say.
+  const cutout = preset === "over-cutout";
 
   const at = (box: { x: number; y: number; width: number; height: number }) => ({
     left: `${(box.x / frame.width) * 100}%`,
@@ -324,19 +315,14 @@ function Plate({
 
   return (
     <span
-      className="relative block overflow-hidden rounded-[6px] bg-black/40"
+      className="relative block overflow-hidden rounded-[6px] bg-layout-plate"
       // The width for a landscape frame and a set height for a portrait one —
       // see `PORTRAIT_PLATE` — so neither overflows the cell nor leaves it
       // mostly empty.
-      //
-      // The paint goes on last so an image that has not loaded — or one the
-      // recording never copied in — leaves the dark plate underneath rather
-      // than a transparent hole in the middle of the grid.
       style={{
         aspectRatio: `${frame.width} / ${frame.height}`,
         width: frame.width >= frame.height ? "100%" : undefined,
         height: frame.width >= frame.height ? undefined : PORTRAIT_PLATE,
-        ...paint,
       }}
     >
       {boxes.screen && (
@@ -344,38 +330,79 @@ function Plate({
           className="absolute overflow-hidden rounded-[2px] bg-layout-screen"
           style={at(boxes.screen.area)}
         >
-          {/* A sketch of something being recorded, rather than a blank block.
-              Four shapes and no more: this is drawn a few dozen pixels across
-              and, in `beside`, as a column narrower than it is tall — past about
-              this much detail the parts stop being separable and the whole
-              thing reads as noise on the plate.
+          {/* A sketch of something being recorded, rather than a blank block:
+              a window's three dots and three lines of content under them.
+
+              Six shapes and no more. This is drawn a few dozen pixels across
+              and, in `beside`, as a column narrower than it is tall — past
+              about this much detail the parts stop being separable and the
+              whole thing reads as noise on the plate. It was a title bar, a
+              sidebar and two coloured bands, which at this size was a block
+              with a stripe down it; dots and lines are what a window looks
+              like when it is drawn small, which is why every app that draws
+              one draws these.
+
+              The lights are the only colour. Everything else is one light
+              grey in two weights: two hues were there to tell the bands from
+              the chrome when both were solid bars, and nothing is a solid bar
+              now.
 
               Proportions rather than pixels, so the sketch squashes with the
               block instead of overflowing it. `overflow-hidden` on the parent
-              is what keeps the bands inside the rounded corner. */}
-          <span className="absolute inset-x-0 top-0 h-[20%] bg-layout-ui" />
-          <span className="absolute top-[20%] bottom-0 left-0 w-[26%] bg-layout-ui/60" />
-          <span className="absolute top-[36%] right-[10%] left-[34%] h-[14%] bg-layout-ui-alt" />
-          <span className="absolute top-[62%] right-[28%] left-[34%] h-[14%] bg-layout-ui" />
+              is what keeps it inside the rounded corner. */}
+          <span className="absolute top-[13%] left-[8%] flex items-center gap-[2px]">
+            {/* The traffic lights. Three pixels across, where the shape has
+                gone and only the colour is left — which is the point: nothing
+                else in this app is red, amber and green in a row, so the block
+                wearing them is a window before anything else about it is read.
+
+                An exact square in pixels, not a share of the block. They were
+                `h-[9%]` with `aspect-square`, which asks the browser to take a
+                width from a height that is itself a per cent of a per cent —
+                at four-odd pixels that lands between device pixels and the
+                dots drew as little ovals. Three pixels is a circle at 1x and
+                at 2x, in a block of any size, which is worth more here than
+                scaling with it: this is chrome, and chrome does not grow. */}
+            <span className="size-[3px] shrink-0 rounded-full bg-layout-light-close" />
+            <span className="size-[3px] shrink-0 rounded-full bg-layout-light-min" />
+            <span className="size-[3px] shrink-0 rounded-full bg-layout-light-max" />
+          </span>
+          <span className="absolute top-[34%] left-[8%] h-[9%] w-[62%] rounded-full bg-layout-ui" />
+          <span className="absolute top-[51%] left-[8%] h-[9%] w-[44%] rounded-full bg-layout-ui/70" />
+          <span className="absolute top-[68%] left-[8%] h-[9%] w-[54%] rounded-full bg-layout-ui/70" />
         </span>
       )}
       {boxes.camera && (
         <span
           className={cn(
-            "absolute grid place-items-center overflow-hidden bg-layout-camera text-black/50",
+            "absolute grid place-items-center overflow-hidden",
+            // No block behind a cut-out person: the matte is their outline,
+            // and a card under them is the one thing this arrangement is not.
+            //
+            // White, where the one standing on a block is `--layout-person`.
+            // That one is a mark on a mid grey with the block beside it saying
+            // "camera"; this one is alone on the screen, and it is the whole
+            // difference between this cell and the full-screen one two rows
+            // above — so it is the brightest thing in the grid rather than a
+            // tone of it.
+            cutout ? "text-white" : "bg-layout-camera text-layout-person",
             // The bubble reads as a bubble at this size only if it is round.
-            boxes.camera.card ? "rounded-[2px]" : "rounded-full",
+            cutout ? "" : boxes.camera.card ? "rounded-[2px]" : "rounded-full",
             // Both edges, so the glyph stays square and centres itself inside
             // whatever shape the block is — a tall column in `beside`, a wide
             // band in `stacked`. `meet` is the SVG default and does the rest.
-            "[&>svg]:h-[75%] [&>svg]:w-[75%]",
+            //
+            // The cut-out person fills their box instead and is pushed to its
+            // floor: they are drawn uncropped in the frame, standing on the
+            // bottom edge rather than floating in the middle of a bubble.
+            cutout ? "items-end [&>svg]:h-full [&>svg]:w-full" : "[&>svg]:h-[75%] [&>svg]:w-[75%]",
           )}
           style={at(boxes.camera.area)}
         >
-          {/* Says which block is the camera, and with both blocks now grey it
-              is the only thing that does. Dark on the lighter grey rather than
-              white: the block is a mid tone, and white on it is the pairing
-              that stops reading at this size. */}
+          {/* Says which block is the camera, and with both blocks grey it is
+              the only thing that does. Light on the mid grey, which is the way
+              round that survives being nine pixels across — see
+              `--layout-person`. */}
           <PersonIcon />
         </span>
       )}

@@ -87,9 +87,13 @@ export function deepLinkFromArgv(argv: string[]): string | null {
   return argv.find((argument) => argument.startsWith(`${SCHEME}://`)) ?? null;
 }
 
-export function handleDeepLinkArgv(argv: string[]): void {
+export function handleDeepLinkArgv(argv: string[]): boolean {
   const url = deepLinkFromArgv(argv);
   if (url) handle(url);
+  // Whether this launch was a link rather than somebody opening the app. The
+  // caller has a window to open for the second case and must not open it over
+  // a sign-in that is already going somewhere.
+  return url !== null;
 }
 
 function handle(url: string): void {

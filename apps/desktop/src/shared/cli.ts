@@ -655,6 +655,7 @@ export interface ProjectFieldNote {
 export const LAYOUT_SUMMARY: Record<LayoutPreset, string> = {
   "over-full": "The camera over a full-bleed screen",
   "over-padded": "The camera over a padded screen, on the background",
+  "over-cutout": "The camera cut out of its background, standing in the bottom right",
   "over-column": "The camera in a portrait column over the right of the screen",
   "over-column-left": "The same column, on the left",
   beside: "Screen and camera side by side, camera right",

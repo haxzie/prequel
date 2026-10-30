@@ -259,6 +259,8 @@ export function registerIpc({
     },
   );
 
+  ipcMain.handle(IPC_CHANNELS.workspaceRecord, () => flow.recordNow());
+
   ipcMain.handle(IPC_CHANNELS.dockMenu, (_event, menu: DockMenu) => flow.openMenu(menu));
 
   ipcMain.handle(IPC_CHANNELS.dockWidth, (_event, view: DockView, width: number) =>

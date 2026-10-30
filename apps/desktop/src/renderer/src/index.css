@@ -89,10 +89,15 @@
   --color-editor-muted: var(--editor-muted);
   --color-editor-accent: var(--editor-accent);
   --color-editor-danger: var(--editor-danger);
+  --color-editor-record: var(--editor-record);
+  --color-layout-plate: var(--layout-plate);
   --color-layout-screen: var(--layout-screen);
+  --color-layout-person: var(--layout-person);
+  --color-layout-light-close: var(--layout-light-close);
+  --color-layout-light-min: var(--layout-light-min);
+  --color-layout-light-max: var(--layout-light-max);
   --color-layout-camera: var(--layout-camera);
   --color-layout-ui: var(--layout-ui);
-  --color-layout-ui-alt: var(--layout-ui-alt);
   --color-slice-fill: var(--slice-fill);
   --color-slice-fill-active: var(--slice-fill-active);
   --color-slice-edge: var(--slice-edge);
@@ -653,33 +658,75 @@ body {
      warning renders in the body colour. */
   --editor-danger: #e5484d;
 
-  /* The two blocks in a layout thumbnail, standing in for the pictures.
-     Both are greys, and opaque: the thumbnail now draws the composition's own
-     background behind them, and a translucent block took that background's hue
-     — so a recording on a blue gradient and one on a red gradient disagreed
-     about what a screen looks like.
-     The camera is the darker of the two, and the difference has to survive
-     being nine pixels across. What actually answers "which block is the
-     camera" is the glyph on it; the step in tone is what makes the pair read as
-     two different things before the glyph is resolved. */
-  --layout-screen: #d5d9de;
-  --layout-camera: #9aa1a9;
+  /* Record, and nothing else — the library's one button that starts a take.
+     The recorder's red again, and restated a second time for the reason the
+     line above is restated once: `--dock-record` does not resolve under this
+     scope.
 
-  /* The skeleton drawn on the screen block: a title bar, a sidebar and two
-     bands of content.
+     The same value as the refusal red and deliberately its own token. They
+     mean opposite things — one is a thing you are warned about, the other is
+     the thing the app is for — and a button that reached for `--editor-danger`
+     would turn a tuned warning colour into a tuned record colour the first
+     time either moved. Same hex today; two names because they answer two
+     questions. */
+  --editor-record: #e5484d;
 
-     Blue and green rather than two more greys. The block underneath is already
-     grey, and a skeleton in the same family reads as texture — a smudge on the
-     plate rather than a picture of something being recorded. Two hues rather
-     than one because the bands have to be told apart from the chrome at a size
-     where neither is more than a couple of pixels tall.
+  /* A layout thumbnail: the plate the arrangement is drawn on, and the two
+     blocks standing in for the pictures.
 
-     Light, and opaque like the blocks they sit on. They are drawn over
-     `--layout-screen` rather than over the composition's own background, so
-     these could carry alpha safely — but keeping the whole set opaque means one
-     rule for the picker rather than an exception to remember. */
-  --layout-ui: #b9d0e8;
-  --layout-ui-alt: #b9dfc6;
+     Three steps up from the panel, in order. The plate is the darkest, which
+     is what makes a padded arrangement legible at all — six of the fourteen
+     differ from a neighbour *only* by the margin around the picture, and a gap
+     that does not contrast is six copies of the same cell. The screen is a
+     step above it and the camera a step above that, so the pair reads as two
+     different things before the glyph on one of them is resolved.
+
+     The plate is a fixed tone rather than the composition's own background.
+     It was the background for a while, so a gap was drawn against the plate it
+     would really sit on — but a thumbnail is a diagram of an arrangement, and
+     on a dark wallpaper the dark screen block disappeared into it while on a
+     bright one the whole grid turned into fourteen swatches of the same
+     picture. The panel under the grid is where the background is chosen; the
+     grid answers "where do the pictures go". */
+  --layout-plate: #202227;
+  --layout-screen: #2b2f36;
+  --layout-camera: #4b525b;
+
+  /* The person on the camera block. Light on a mid grey, which is the way
+     round that reads at nine pixels: the block is already a middle tone, and a
+     dark glyph on it is two dark things touching. */
+  --layout-person: #cdd3da;
+
+  /* macOS's own three. Drawn at two or three pixels across, where the shape
+     has gone and only the colours are left — which is exactly why they work:
+     nothing else in this app is red, amber and green in a row, so the block
+     wearing them is a window before anything else about it is read.
+
+     The system's values rather than an approximation. These are the one thing
+     in the picker that is a quotation. */
+  --layout-light-close: #ff5f57;
+  --layout-light-min: #febc2e;
+  --layout-light-max: #28c840;
+
+  /* The sketch drawn on the screen block: a window's three dots and three
+     lines of content.
+
+     One tone, carried at two weights by the alpha at the use site. It was two
+     — a blue and a green — which is what it took to tell a solid title bar
+     from a solid band of content when both were rectangles the same height.
+     Nothing in the sketch is a solid bar now: the dots and the rounded lines
+     are legible as a window at a dozen pixels across without needing a second
+     hue to separate them, and one colour keeps the plate from reading as a
+     smudge of two.
+
+     Light, because the block it is drawn on is dark now — the lines are the
+     text in a window, and text is the lightest thing in a dark one.
+
+     Alpha carries the weight, which is safe here in a way it is not on the
+     blocks themselves: these are drawn over `--layout-screen` and nothing
+     else, so there is no wallpaper underneath for a translucent line to take
+     its hue from. */
+  --layout-ui: #aab2bd;
 
   /* The timeline's own colours.
      Clips are purple so the strip reads as a distinct surface from the panels

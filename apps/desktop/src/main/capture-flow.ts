@@ -153,6 +153,8 @@ export interface CaptureFlowOptions {
     resumeEditing: (dir: string) => void;
     /** The window itself, for the capture's exclusion list. */
     browserWindow: () => BrowserWindow | null;
+    /** Puts it away, for Record Now — see `recordNow`. */
+    close: () => void;
   };
   /**
    * The card a finished capture lands in.
@@ -544,6 +546,24 @@ export class CaptureFlow {
    */
   openProjects(section: WorkspaceSection = "projects"): void {
     this.deps.workspace?.openSection(section);
+  }
+
+  /**
+   * Record Now, from the library's own sidebar.
+   *
+   * The panel comes up and the library goes away, which is the whole gesture:
+   * the two are the app's two states — looking at what was made, and making
+   * something — and the panel is for putting over the thing being recorded.
+   * Leaving the library open behind it would mean the first thing anybody
+   * records is a window full of their old recordings.
+   *
+   * `open` rather than merely showing the dock, so the picker for whichever
+   * mode was used last is already up — the same thing the tray's own icon
+   * does, because this is the same request made from somewhere else.
+   */
+  recordNow(): void {
+    this.deps.workspace?.close();
+    this.open();
   }
 
   /**

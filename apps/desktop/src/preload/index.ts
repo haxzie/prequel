@@ -817,6 +817,14 @@ const api = {
      * exists precisely because a push that arrives first is a push nobody hears.
      */
     ready: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.workspaceReady),
+
+    /**
+     * Asks for the recording panel, and for this window to get out of the way.
+     *
+     * Both halves in main, not here: the window cannot close itself and leave
+     * the panel to open afterwards — see `recordNow`.
+     */
+    record: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.workspaceRecord),
   },
 
   /**
