@@ -1,0 +1,25 @@
+HEADLINE WITH ONE WORD IN THE SERIF
+
+The lede. Two sentences: what landed, and what the mail is. Name a number if
+there is one - it does the work a superlative would.
+
+SECTION LABEL
+
+What somebody can now do, in the words on the buttons.
+
+ALSO NEW
+
+- The lead-in, and the sentence that finishes it.
+- The last one.
+
+Update Prequel: https://prequel.sh/download
+
+Prequel will offer you the update itself the next time you open it. If something
+here does not work the way you expect, reply to this email - it reaches me.
+
+Musthaq
+Creator of Prequel
+
+You are getting this because you have a Prequel account. Unsubscribe:
+{{unsubscribe_url}} - or choose which emails Prequel sends you at
+https://prequel.sh/app/settings
