@@ -10,18 +10,28 @@
  * across the breakpoints and the chips hold their proportions the whole way. A
  * chip with 6px of padding is a lozenge at one size and a hairline at the other.
  *
- * The field is solid and the word and mark are both knocked out of it in white.
- * A quarter-strength wash of the hue was what these carried on the dark site,
- * where the page did the work of making a tint read; on white a tint is nearly
- * the page itself, and neither white type nor a white glyph has anything to sit
- * against. Filled, all three clear AA at the size a heading sets them.
+ * A wash of the hue with the word and the mark set in it, rather than a solid
+ * field with both knocked out in white. The solid was forced: these carried a
+ * tint on the dark site, and when the page turned to paper a tint of anything
+ * was nearly the page itself, so the only way to make a chip read was to fill
+ * it. The sections are cards now — see `DemoSection` — and a tint over
+ * `--surface` has a ground to sit on again, which is what the dark page used
+ * to supply.
+ *
+ * Fifteen per cent, which is as faint as the field can go and still be a field.
+ * Each hue then sets its own word and glyph, and every one clears AA at the
+ * size a heading sets them — these are large text, so the floor is 3:1 and the
+ * weakest of the four is the accent at 3.1.
  *
  * `rounded-full` with the padding opened up to match. A full round eats into the
  * ends of a word — the same note is on the hero's title card, which is the shape
  * these now echo.
  *
  * Each section takes the colour its own timeline uses, which is the one thing
- * tying a heading to the picture beside it.
+ * tying a heading to the picture beside it — so a tone changed here has to be
+ * changed in that demo's `--track-accent` in `globals.css` too, or the heading
+ * stops naming the thing under it. Blue, orange, green, rose, in the order the
+ * sections run.
  *
  * Every chip carries `data-heading-chip`, which `SectionHeading` looks for to
  * relax its leading. Two chipped lines at the heading's default line height sit
@@ -54,12 +64,20 @@ function Chip({ tone, mark, children }: { tone: string; mark: ReactNode; childre
   return (
     <span
       data-heading-chip
-      className={`inline-flex items-baseline gap-[0.2em] rounded-full px-[0.45em] pt-[0.04em] pb-[0.12em] leading-[1] whitespace-nowrap text-white ${tone}`}
+      className={`inline-flex items-baseline gap-[0.2em] rounded-full px-[0.45em] pt-[0.04em] pb-[0.12em] leading-[1] whitespace-nowrap ${tone}`}
     >
       {children}
+      {/* Sized to the letters beside it, which takes more than matching the
+          cap height: a Lucide glyph is drawn inside about four fifths of its
+          own 24-unit box, so a mark set to the cap height draws at four
+          fifths of it and reads as a small icon next to a big word. `0.92em`
+          is the box that puts the *drawing* on the cap height.
+
+          Nudged down because the box's bottom sits on the baseline, which
+          leaves the glyph's middle above the middle of the letters. */}
       <span
         aria-hidden
-        className="inline-flex size-[0.68em] translate-y-[0.06em] items-center justify-center [&_svg]:size-full"
+        className="inline-flex size-[0.92em] translate-y-[0.1em] items-center justify-center [&_svg]:size-full"
       >
         {mark}
       </span>
@@ -68,17 +86,21 @@ function Chip({ tone, mark, children }: { tone: string; mark: ReactNode; childre
 }
 
 /** The zooms are the accent, which is what their playhead is drawn in. */
-const ZOOM_TONE = "bg-accent";
-/** The layouts are the clip's purple. `--lilac` and not `--iris`: the neat clip
-    stroke is #c000f0, and filled at that size on a white page it is the loudest
-    thing in the section by a distance — it pulls the eye off the picture the
-    heading is naming. `--lilac` is the same family two steps back. */
-const LAYOUT_TONE = "bg-lilac";
+const ZOOM_TONE = "bg-accent/15 text-accent";
+/** The layouts are the brand's orange, which is what their own track is drawn
+    in. It was the clip's purple, and the purple plus the teleprompter's magenta
+    two sections down were two notes of one hue with a green between them —
+    they read as one section interrupted rather than as two. The deep value and
+    not `--brand-from`, matching the track for the same reason the track picked
+    it: the bright orange is 3.6:1 here and this is 5.2:1. */
+const LAYOUT_TONE = "bg-brand-from-deep/15 text-brand-from-deep";
 /** The subtitles are green, which is what their own track is lit in. */
-const CAPTION_TONE = "bg-positive";
-/** The teleprompter is `--iris` — the fourth of the app's own accents, and the
-    one none of the three chips above have taken. */
-const SCRIPT_TONE = "bg-iris";
+const CAPTION_TONE = "bg-positive/15 text-positive";
+/** The teleprompter is `--brand-to`, the far end of the gradient whose near end
+    the layouts chip takes — the fourth hue, and one none of the three above it
+    have. It was `--iris`, the clip stroke's #c000f0, which is the loudest value
+    in the token set and took the last section's heading over. */
+const SCRIPT_TONE = "bg-brand-to/15 text-brand-to";
 
 /** A magnifier with a plus in it: zoom, rather than search. */
 export function ZoomWord({ children }: { children: string }) {

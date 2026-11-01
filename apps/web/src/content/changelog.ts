@@ -171,9 +171,11 @@ export async function published(): Promise<Release[]> {
  * shipped, which is never, but the badge is a small thing to lose and a home
  * page that fails to build over it is not.
  */
-export async function latest(): Promise<Pick<Release, "version" | "highlight"> | undefined> {
+export async function latest(): Promise<
+  Pick<Release, "version" | "date" | "highlight"> | undefined
+> {
   const [newest] = await published();
-  return newest && { version: newest.version, highlight: newest.highlight };
+  return newest && { version: newest.version, date: newest.date, highlight: newest.highlight };
 }
 
 /**

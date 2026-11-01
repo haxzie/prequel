@@ -4,13 +4,25 @@ import { Container, Eyebrow } from "@/components/Section";
 import { SITE } from "@/lib/site";
 
 /**
- * The one dark panel on the page: a chip with the mark set into its die, and
- * under it the sentence that Prequel is a native Mac app.
+ * Where the page turns over: a chip with the mark set into its die, and beside
+ * it the sentence that Prequel is a native Mac app.
  *
- * Dark where everything else is paper, on purpose. The section is about the
- * hardware, and silicon drawn on white reads as a diagram; on a deep field it
- * reads as the thing itself, lit from one side. It is the only place the site
- * goes dark, so it carries as a change of scene rather than as a theme.
+ * Dark because the section is about the hardware, and silicon drawn on white
+ * reads as a diagram; on a deep field it reads as the thing itself, lit from
+ * one side.
+ *
+ * It used to carry its own dark panel — a gradient on a rounded card, the only
+ * dark thing on an otherwise paper page. The rest of the page from here down
+ * is dark now (see the wrapper in `LandingBody`), so the panel became a card
+ * very slightly lighter than the ground it sat on, which is a seam rather than
+ * a frame. What is left is the ground itself, and the chip standing on it.
+ *
+ * The board hairlines are what the panel was really doing. They run from the
+ * chip's own edges out past the text, and the card's `overflow-hidden` was
+ * what stopped them at its corners; the section carries that now, so they
+ * cross the whole width instead of a card's. The gain is the point — a chip
+ * with traces running off it to the edges of the page is a board, where one
+ * inside a rounded rectangle was a picture of a board.
  *
  * The chip is drawn in CSS and not shipped as a picture. A rendered image of a
  * chip would need a light-theme twin and a 2x export, and would still fuzz at
@@ -24,13 +36,15 @@ import { SITE } from "@/lib/site";
  */
 
 /**
- * The panel's colours, in one place so the whole scene changes hue together:
- * the field behind everything, the substrate the die sits on, and the dark of
- * the screw heads. The notch is cut in the field's colour, so it needs none. The die itself is the shader and stays as it is.
+ * The scene's colours, in one place so the whole thing changes hue together:
+ * the substrate the die sits on, and the dark of the screw heads. The notch is
+ * cut in the page's own ground, so it needs none, and the die itself is the
+ * shader and stays as it is.
+ *
+ * `from` and `to` are gone with the panel they filled. The ground is `--bg`
+ * now, which is the one the rest of the dark run is on.
  */
 const PANEL = {
-  from: "#1b1b1f",
-  to: "#0c0c0f",
   substrate: "#202026",
   screw: "#141418",
   screwLit: "#34343c",
@@ -43,12 +57,14 @@ const DIE = 216;
 
 export function BuiltForMac() {
   return (
-    <section id="built-for-mac" className="py-24">
+    // `overflow-hidden` is load-bearing and not tidiness: the hairlines below
+    // are `inset-x-[-100vw]` and `inset-y-[-100vh]`, drawn that long so they
+    // reach whatever is around them rather than being measured. The card used
+    // to clip them. Without something clipping them they run off the document
+    // and open a horizontal scrollbar on every page this section is on.
+    <section id="built-for-mac" className="relative overflow-hidden py-20 lg:py-24">
       <Container>
-        <div
-          className="relative grid items-center gap-12 overflow-hidden rounded-3xl px-6 py-16 text-white sm:px-12 lg:grid-cols-2 lg:gap-16 lg:px-16 lg:py-20"
-          style={{ backgroundImage: `linear-gradient(180deg, ${PANEL.from} 0%, ${PANEL.to} 100%)` }}
-        >
+        <div className="relative grid items-center gap-12 text-fg lg:grid-cols-2 lg:gap-16">
           {/* The words on the left, the chip on the right, the way every demo
               above puts its picture beside its heading. On a phone the words
               come first and the chip sits under them: the sentence is the
@@ -57,15 +73,15 @@ export function BuiltForMac() {
             {/* The platform mark beside the requirement, which is the one line
                 of the section that is a fact rather than a sentence: the same
                 words the footer carries, from the same string. */}
-            <p className="mb-6 flex items-center justify-center gap-2 font-mono text-[11px] tracking-wider text-white/55 uppercase lg:justify-start">
-              <AppleIcon className="size-3.5 translate-y-[-0.5px] text-white/70" />
+            <p className="mb-6 flex items-center justify-center gap-2 font-mono text-[11px] tracking-wider text-muted uppercase lg:justify-start">
+              <AppleIcon className="size-3.5 translate-y-[-0.5px] text-muted" />
               {SITE.platform}
             </p>
             <Eyebrow>Native</Eyebrow>
             <h2 className="text-3xl leading-tight font-normal tracking-tight text-balance sm:text-4xl">
               Built for your Mac
             </h2>
-            <p className="mt-5 text-lg leading-relaxed text-pretty text-white/70">
+            <p className="mt-5 text-lg leading-relaxed text-pretty text-muted">
               Prequel is a native app for Apple Silicon. It records with the system&rsquo;s own
               capture, encodes on the video hardware and draws every frame in Metal. Your recordings
               stay on your disk.
@@ -159,13 +175,15 @@ function Chip() {
       ))}
       {/* The index notch on the right edge: a half-round bite out of the
           substrate, the mark a package carries to say which way up it goes.
-          Painted in the field's own colour with the hatch stopping at its
+          Painted in the ground's own colour with the hatch stopping at its
           rim, and shaded inside like the screw heads, so it reads as cut
-          through to the board behind rather than as a tab stuck on. */}
+          through to the board behind rather than as a tab stuck on. `--bg`
+          now that the panel it used to match is gone: the bite has to be
+          whatever is actually behind the substrate, which is the page. */}
       <span
         aria-hidden="true"
         className="absolute top-1/2 right-[-1px] h-7 w-3.5 -translate-y-1/2 rounded-l-full border border-r-0 border-white/10 shadow-[inset_2px_1px_3px_rgba(0,0,0,0.7),inset_-1px_-1px_1px_rgba(255,255,255,0.06)]"
-        style={{ backgroundColor: PANEL.to }}
+        style={{ backgroundColor: "var(--bg)" }}
       />
 
       {/* The die. The gradient is the fallback and the first paint; the

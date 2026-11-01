@@ -63,13 +63,16 @@ export function StarredBy({ className = "" }: { className?: string }) {
           tally is the one disc in the row that is not a picture, and reading as
           a gap in the stack rather than as a fifth face is the point.
 
-          The hairline is what keeps it a disc. `--bg` is a literal white, so on
-          a phone — where the frame behind this is gone from `sm` down — a white
-          fill on a white page leaves the count floating with no edge at all.
-          `border-fg/8` is the same line the tooltip below carries, which is the
-          site's idiom for an edge that has to exist without being drawn. */}
+          `--elevated` and not `--bg`. This used to be the page's own white with
+          a hairline around it to hold the shape, which worked while a grey
+          panel sat behind the whole row — the disc was white on grey and read
+          as a hole punched in it. That panel is gone, so the fill became white
+          on white and the count was left floating with nothing but a 1px line
+          to say it was a disc at all. The surface a step off the page is what
+          the row behind it used to supply, and the hairline stays on top of it
+          for the same reason the tooltip below carries one. */}
       <span
-        className={`${DISC} grid place-items-center border border-fg/8 bg-bg text-[10px] leading-none font-medium tracking-tight text-fg`}
+        className={`${DISC} grid place-items-center border border-fg/8 bg-elevated text-[10px] leading-none font-medium tracking-tight text-fg`}
       >
         {MORE}
       </span>

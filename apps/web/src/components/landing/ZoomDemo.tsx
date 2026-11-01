@@ -37,7 +37,8 @@ import { CameraFootage } from "@/components/landing/CameraFootage";
 import { ZoomWord } from "@/components/landing/marks";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
 import { ZOOM_STAGE } from "@/components/landing/stage";
-import { Container, SectionHeading } from "@/components/Section";
+import { DemoSection } from "@/components/landing/DemoSection";
+import { SectionHeading } from "@/components/Section";
 import { ASSETS } from "@/lib/assets";
 
 /**
@@ -85,9 +86,8 @@ const TOOLS = ["move", "frame", "shape", "pen", "text", "comment"] as const;
 
 export function ZoomDemo() {
   return (
-    <section className="py-24">
-      <Container>
-        {/* Two columns, and the wider one is the picture. The heading is three
+    <DemoSection>
+      {/* Two columns, and the wider one is the picture. The heading is three
             lines of type that read fine at 400px; the demo is a window with
             panels down both sides, and below about 560px its own labels stop
             being legible before the zoom has done anything.
@@ -99,8 +99,8 @@ export function ZoomDemo() {
             scale it settles for and the softer a 3.6x push looks. Halving the
             width buys back most of that on its own; the supersample below buys
             the rest. */}
-        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-16">
-          {/*
+      <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-16">
+        {/*
             The heading describes what the picture beside it is doing rather
             than claiming a result. The demo pushes in on four things in turn,
             so "Zooms that follow the action" can be checked against the screen
@@ -113,35 +113,35 @@ export function ZoomDemo() {
             each other they read as the page repeating itself: this one is the
             mechanism, that one is the time it saves.
           */}
-          <SectionHeading
-            eyebrow="Zoom and pan"
-            title={
-              <>
-                <ZoomWord>Zooms</ZoomWord> that follow the action
-              </>
-            }
-            lede="Prequel automatically zooms in when you click or type, then softens the rest of the window so viewers know where to look. Every zoom is added to the timeline, so you can move, retime or delete it at any time."
-            cta="Download for Mac"
-          />
+        <SectionHeading
+          eyebrow="Zoom and pan"
+          title={
+            <>
+              <ZoomWord>Zooms</ZoomWord> that follow the action
+            </>
+          }
+          lede="Prequel automatically zooms in when you click or type, then softens the rest of the window so viewers know where to look. Every zoom is added to the timeline, so you can move, retime or delete it at any time."
+          cta="Download for Mac"
+        />
 
-          {/*
+        {/*
             `role="img"` with a label, and everything inside it hidden. The
             parts are a few hundred boxes standing in for an application window;
             read out one at a time they are noise, and none of the text in them
             is worth reaching. One sentence describing what the picture shows is
             the whole of what a screen reader needs here.
           */}
-          {/* The hook sits out here rather than on the picture, because the
+        {/* The hook sits out here rather than on the picture, because the
               track below is part of this demo too: the reduced-motion rules and
               the slice a click seeks are both scoped by it, and a picture that
               owned the attribute would leave the timeline outside its own
               demo. */}
-          <div data-zoom-demo>
-            <div
-              role="img"
-              aria-label="A screen recording of a design tool, playing. The picture pushes in on an address being typed, on a new frame being drawn on the canvas, on a frame being selected, and on a tool being picked from the toolbar, each time with the rest of the window falling out of focus behind it, while the camera bubble holds its corner and a playhead crosses the four zoom slices on the timeline below."
-            >
-              {/*
+        <div data-zoom-demo>
+          <div
+            role="img"
+            aria-label="A screen recording of a design tool, playing. The picture pushes in on an address being typed, on a new frame being drawn on the canvas, on a frame being selected, and on a tool being picked from the toolbar, each time with the rest of the window falling out of focus behind it, while the camera bubble holds its corner and a playhead crosses the four zoom slices on the timeline below."
+          >
+            {/*
                 The stage: the wallpaper a recording sits on, and the frame that
                 crops it.
 
@@ -163,14 +163,14 @@ export function ZoomDemo() {
                 a picture edge, so each one needed a tighter push before it could
                 be centred.
               */}
-              <div
-                className="relative aspect-[16/10] overflow-hidden rounded-lg bg-[#0b0d11]"
-                style={{ perspective: "800px" }}
-              >
-                {/* The box everything is measured against: the zoom targets in
+            <div
+              className="relative aspect-[16/10] overflow-hidden rounded-lg bg-[#0b0d11]"
+              style={{ perspective: "800px" }}
+            >
+              {/* The box everything is measured against: the zoom targets in
                     `demo-screen` and the pointer's path in `demo-cursor` are
                     both percentages of this element. */}
-                {/*
+              {/*
                   Three nested boxes, and the nesting is what keeps the picture
                   sharp under a 3.6x push.
 
@@ -204,22 +204,22 @@ export function ZoomDemo() {
 
                   3. The push. Scale and translate only.
                 */}
-                <div className="animate-demo-tilt absolute inset-0">
+              <div className="animate-demo-tilt absolute inset-0">
+                <div
+                  className="origin-top-left"
+                  style={{ width: "200%", height: "200%", transform: "scale(0.5)" }}
+                >
                   <div
-                    className="origin-top-left"
-                    style={{ width: "200%", height: "200%", transform: "scale(0.5)" }}
+                    className="grain animate-demo-screen size-full overflow-hidden bg-cover bg-center"
+                    style={{ backgroundImage: `url(${ZOOM_STAGE})` }}
                   >
-                    <div
-                      className="grain animate-demo-screen size-full overflow-hidden bg-cover bg-center"
-                      style={{ backgroundImage: `url(${ZOOM_STAGE})` }}
-                    >
-                      {/* `@container` here, so `cqw` resolves against the doubled
+                    {/* `@container` here, so `cqw` resolves against the doubled
                           box: every length inside doubles in layout pixels and
                           halves again under the scale above, which is what makes
                           the supersample invisible to the layout and to the
                           targets measured off it. */}
-                      <div className="@container size-full">
-                        {/*
+                    <div className="@container size-full">
+                      {/*
                           The window floats on the background rather than
                           filling the frame, and the margin is doing real work.
 
@@ -243,30 +243,29 @@ export function ZoomDemo() {
                           and the margin around the window would read as a black
                           border rather than as the composited edge it is.
                         */}
-                        <div className="absolute inset-x-[8%] inset-y-[14%] overflow-hidden rounded-[0.9cqw] bg-[#1e1e1e] shadow-[0_3cqw_6cqw_-2cqw_rgb(0_0_0_/_0.8)] ring-1 ring-white/8">
-                          <BrowserChrome />
-                          <DesignTool />
-                        </div>
+                      <div className="absolute inset-x-[8%] inset-y-[14%] overflow-hidden rounded-[0.9cqw] bg-[#1e1e1e] shadow-[0_3cqw_6cqw_-2cqw_rgb(0_0_0_/_0.8)] ring-1 ring-white/8">
+                        <BrowserChrome />
+                        <DesignTool />
                       </div>
+                    </div>
 
-                      {/* Inside the push and outside the content, so its
+                    {/* Inside the push and outside the content, so its
                           percentages are the same numbers as the zoom targets.
                           `demo-click` counter-scales it against both the push
                           and the halving above — see the note there. */}
-                      <Pointer />
-                    </div>
+                    <Pointer />
                   </div>
                 </div>
-
-                <CameraBubble />
               </div>
-            </div>
 
-            <ZoomTrack />
+              <CameraBubble />
+            </div>
           </div>
+
+          <ZoomTrack />
         </div>
-      </Container>
-    </section>
+      </div>
+    </DemoSection>
   );
 }
 

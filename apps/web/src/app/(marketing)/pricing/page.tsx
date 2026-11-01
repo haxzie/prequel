@@ -23,7 +23,7 @@ export default function Pricing() {
             level={1}
             eyebrow="Pricing"
             title="Try for free. Upgrade when you are ready."
-            lede="Seven days with the whole app, then pick whichever fits. If you make a video now and then, buy it once and forget about it. If you are recording for work every week, Pro gives you unlimited storage for the links you share. It is the same app either way — the plan only decides how much you keep online."
+            lede="Seven days with the whole app, then pick whichever fits. If you make a video now and then, buy it once and forget about it."
             align="centre"
           />
         </Container>
@@ -48,9 +48,17 @@ export default function Pricing() {
             {PLANS.map((plan) => (
               <div
                 key={plan.name}
-                className={`squircle lit relative flex flex-col rounded-2xl border p-7 ${
-                  plan.featured ? "border-brand-to/60 bg-elevated" : "border-line bg-surface"
-                }`}
+                // Two identical cards. There were three marks on the
+                // recommended one — a badge, a brand-coloured border and the
+                // darker `--elevated` fill — and between them they made the
+                // card a visitor should look at the heaviest thing on a page
+                // that is otherwise paper, which reads as disabled rather than
+                // as picked. What picks it now is the only mark that points
+                // forwards: its button is the blue one, and the other is not.
+                //
+                // `rounded-3xl` is the radius the cards on the home page
+                // carry; these are the same object.
+                className="squircle lit relative flex flex-col rounded-3xl border border-line bg-surface p-7"
               >
                 {/* On one card only. A badge on both would be furniture: it is
                     there to say where to start, and it cannot say that twice. The
@@ -104,7 +112,7 @@ export default function Pricing() {
                 <p className="mt-1.5 text-xs text-muted">{plan.billing}</p>
                 <ButtonLink
                   href="/download"
-                  variant={plan.featured ? "primary" : "secondary"}
+                  variant={plan.featured ? "cta" : "secondary"}
                   className="mt-6 w-full"
                 >
                   Download for Mac

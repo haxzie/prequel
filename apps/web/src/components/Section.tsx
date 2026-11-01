@@ -89,7 +89,7 @@ export function SectionHeading({
           argue about and the setting is not ours to second-guess. */}
       {cta ? (
         <div className="mt-7">
-          <ButtonLink href="/download" size="sm" className="group">
+          <ButtonLink href="/download" size="sm" variant="cta" className="group">
             {cta}
             <ArrowRightIcon className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0" />
           </ButtonLink>

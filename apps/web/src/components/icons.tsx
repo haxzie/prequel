@@ -162,3 +162,27 @@ export function LinkedInIcon({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
+/**
+ * A parcel, for the release badge above the headline.
+ *
+ * Phosphor's duotone package, kept duotone: the faint face is what makes a
+ * 14px box read as a box rather than as a smudge of lines, and it is drawn in
+ * `currentColor` at 0.2 rather than a second fill, so the icon follows the text
+ * it sits beside through the pill's hover and needs no colour of its own.
+ *
+ * On a 256 grid, unlike every icon above it — Phosphor's own, left as it came
+ * rather than retraced onto 24 to match. `viewBox` is the only thing that has
+ * to agree with the path, and the caller still sizes it in CSS.
+ */
+export function PackageIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 256 256" fill="currentColor" className={className} aria-hidden="true">
+      <path
+        d="M128 129.09V232a8 8 0 0 1-3.84-1l-88-48.18a8 8 0 0 1-4.16-7V80.18a8 8 0 0 1 .7-3.25Z"
+        opacity=".2"
+      />
+      <path d="m223.68 66.15l-88-48.15a15.88 15.88 0 0 0-15.36 0l-88 48.17a16 16 0 0 0-8.32 14v95.64a16 16 0 0 0 8.32 14l88 48.17a15.88 15.88 0 0 0 15.36 0l88-48.17a16 16 0 0 0 8.32-14V80.18a16 16 0 0 0-8.32-14.03M128 32l80.34 44l-29.77 16.3l-80.35-44Zm0 88L47.66 76l33.9-18.56l80.34 44ZM40 90l80 43.78v85.79l-80-43.75Zm176 85.78l-80 43.79v-85.75l32-17.51V152a8 8 0 0 0 16 0v-44.45L216 90v85.77Z" />
+    </svg>
+  );
+}

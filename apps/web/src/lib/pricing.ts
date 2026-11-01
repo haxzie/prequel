@@ -150,7 +150,12 @@ export const LIFETIME_PLAN: Plan = {
     `${STORAGE_LIFETIME} of shared recordings, kept for ${RETENTION_LIFETIME}`,
   ],
   featured: true,
-  badge: PRICE_LIFETIME_WAS ? SALE_LABEL : "Recommended",
+  // A sale, or nothing. It used to fall back to "Recommended", which is a
+  // badge saying what the card's own price and the button on it already say —
+  // and a card wearing a tab reads as the one being pushed rather than the one
+  // that suits. The slot is still here because a sale is news and has to be
+  // visible at the price rather than only in the ticker.
+  badge: PRICE_LIFETIME_WAS ? SALE_LABEL : undefined,
 };
 
 export const PRO_PLAN: Plan = {
@@ -183,6 +188,10 @@ export const PLANS: Plan[] = [LIFETIME_PLAN, PRO_PLAN];
  * The look comes first — the zooms, the tilt, the focus, the shadow. They are
  * the reason the export is worth watching, and burying them under the capture
  * rows describes a screen recorder rather than the thing this one makes.
+ *
+ * Twenty-one rows, which is not an accident: the grid is three wide from `sm`
+ * up, and nineteen left the last row a single cell beside two holes. Any row
+ * added here wants two, not one.
  */
 export const INCLUDED: [string, string][] = [
   ["Zooms", "Automatic, from clicks and typing"],
@@ -191,6 +200,8 @@ export const INCLUDED: [string, string][] = [
   ["Camera", "Shaped, placed and sized afterwards"],
   ["Backgrounds", "Wallpaper, presets, gradients, solids"],
   ["Shadow", "Under the screen and the camera"],
+  ["Filters", "Seventeen looks, one per clip"],
+  ["Clicks", "Twelve marks, or none at all"],
   ["Capture", "Screen, window or region"],
   ["Sources", "Webcam, microphone, system audio"],
   ["Editor", "Cuts on a timeline, with waveforms"],

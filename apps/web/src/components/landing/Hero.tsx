@@ -2,8 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Container, Eyebrow } from "@/components/Section";
+import { PackageIcon } from "@/components/icons";
 import { DownloadCta } from "@/components/DownloadButton";
 import { StarredBy } from "@/components/StarredBy";
+import { ReleaseAge } from "@/components/landing/ReleaseAge";
 
 type HeroProps = {
   /** A node and not a string: the home page draws three of its words as chips.
@@ -19,7 +21,7 @@ type HeroProps = {
    * carry an eyebrow instead: a visitor who arrived at "record a demo" came
    * for that, and what shipped last week is the home page's news to tell.
    */
-  release?: { version: string; highlight: string };
+  release?: { version: string; highlight: string; date: string };
 };
 
 /**
@@ -81,12 +83,38 @@ export function Hero({ title, lede, eyebrow, release }: HeroProps) {
             >
               <Link
                 href="/docs/changelog"
-                className="group inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-elevated py-1 pr-3.5 pl-1.5 text-sm text-muted transition-colors hover:border-fg/20 hover:text-fg"
+                className="group inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-elevated py-1.5 pr-3.5 pl-3.5 text-sm text-muted transition-colors hover:border-fg/20 hover:text-fg"
               >
-                <span className="rounded-full bg-brand-from px-2 py-0.5 font-mono text-xs font-medium text-white">
-                  v{release.version}
-                </span>
+                {/* A parcel, for "something shipped". `size-4` and not the
+                    text's own height: the glyph is a box drawn to the edges of
+                    its box, so matched to the cap height of the sentence it
+                    sits a touch heavy. `shrink-0` because the highlight beside
+                    it is allowed to wrap, and a flex child with text in it will
+                    squeeze a sibling before it breaks a line. */}
+                <PackageIcon className="size-4 shrink-0" />
+                {/* What shipped comes next, and alone. The version used to lead
+                    as a filled chip, which made the pill open on the one part
+                    of it nobody is reading for — a number sized and coloured
+                    like a button, ahead of the sentence it labels. It is the
+                    footnote, so it is set as one. */}
                 <span className="text-pretty">{release.highlight}</span>
+                {/* The version and the age, hard against the arrow and divided
+                    off from the line they qualify. Hidden below `sm`, where the
+                    highlight is already wrapping to two lines and this would
+                    take a third: the pill's job on a phone is what shipped, not
+                    when. `ml-auto` so the pair sits at the right edge rather
+                    than against a wrapped highlight's ragged end.
+
+                    `accent` and not `brand-from`: the sun gradient is the
+                    product's colour and is already on the page in the icon and
+                    the buttons, so a third orange above the headline reads as a
+                    warning rather than as news. The playhead blue is the one
+                    other hue the site owns, and it is the editor's. */}
+                <span className="ml-auto hidden shrink-0 items-center gap-1.5 border-l border-line pl-2.5 text-xs text-muted/80 sm:flex">
+                  <span className="font-mono font-medium text-accent">v{release.version}</span>
+                  <span aria-hidden>·</span>
+                  <ReleaseAge date={release.date} />
+                </span>
                 <span aria-hidden className="transition-transform group-hover:translate-x-0.5">
                   →
                 </span>

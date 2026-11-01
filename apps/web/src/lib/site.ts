@@ -39,10 +39,16 @@ export const SITE = {
  * how a panel works is the person who asks what changed in it, and the header
  * is read by a stranger deciding whether to download at all.
  */
-export const NAV: { href: Route; label: string }[] = [
+export const NAV: { href: Route; label: string; owns?: string[] }[] = [
   { href: "/features", label: "Features" },
-  { href: "/usecases", label: "Use cases" },
-  { href: "/compare", label: "Compare" },
+  // `owns` is the rest of the section, for the header's current-page mark.
+  // Two of these pages are indexes of a family that does not live under their
+  // own path: the use cases list `/create/<slug>` and the comparison page
+  // lists `/alternatives/<slug>`. Matching on the item's own href alone would
+  // unlight the header the moment somebody follows a link off either index,
+  // which reads as having left the site rather than gone a level into it.
+  { href: "/usecases", label: "Use cases", owns: ["/create"] },
+  { href: "/compare", label: "Compare", owns: ["/alternatives"] },
   { href: "/pricing", label: "Pricing" },
   { href: "/docs", label: "Docs" },
   { href: "/blog", label: "Blog" },

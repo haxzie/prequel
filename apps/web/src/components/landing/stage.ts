@@ -1,7 +1,7 @@
 /**
  * The wallpaper each demo stands its composition on.
  *
- * The app's own backgrounds, three of the wallpapers the picker ships, rather
+ * The app's own backgrounds, five of the wallpapers the picker ships, rather
  * than a gradient invented for the site.
  * What the animations claim is that this is what the editor does to a
  * recording, and a stage nothing in the app can produce undercuts that in the
@@ -29,6 +29,27 @@ export const ZOOM_STAGE = "/sequoia.jpg";
 
 /** A cut-glass facet, under the two pictures as they re-frame. */
 export const LAYOUT_STAGE = "/facet.jpg";
+
+/**
+ * An alpenglow, under the canvas.
+ *
+ * The fifth, for the section that shows the camera selected on a frame. Warm
+ * where the other four are blue, green and violet, which is the one thing it
+ * has to be: that section is the furthest down the page, and arriving on a
+ * fourth cool wallpaper reads as having scrolled back into the demos.
+ */
+export const DESIGN_STAGE = "/alpenglow.jpg";
+
+/**
+ * A dune at night, under the pointers.
+ *
+ * The fourth, and the darkest on purpose: the pointer card's subject is a
+ * white glove and five saturated arrows, and every one of them disappears
+ * against a bright wallpaper. It is also the only stage here with a real
+ * window standing on it rather than a composition — which is what a pointer
+ * needs to be over, because a glove on an empty desktop is a sticker.
+ */
+export const POINTER_STAGE = "/dune.jpg";
 
 /**
  * A soft peony, under the words.

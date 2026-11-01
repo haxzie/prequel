@@ -24,7 +24,8 @@ import { CameraFootage } from "@/components/landing/CameraFootage";
 import { CatchUpGlyph, VoiceGlyph, WaitGlyph } from "@/components/landing/glyphs";
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
 import { ScriptWord } from "@/components/landing/marks";
-import { Container, SectionHeading } from "@/components/Section";
+import { DemoSection } from "@/components/landing/DemoSection";
+import { SectionHeading } from "@/components/Section";
 
 /**
  * The reading line, as the four shapes its words are lit in.
@@ -57,53 +58,51 @@ const BEAT = 6;
 
 export function TeleprompterDemo() {
   return (
-    <section className="py-24">
-      <Container>
-        {/* Picture left, heading right — the layouts demo's arrangement
+    <DemoSection>
+      {/* Picture left, heading right — the layouts demo's arrangement
             rather than the zoom and captions demos' either side of it. The
             run alternates: heading-left, picture-left, heading-left, and now
             picture-left again. Four in a row on the same side would read as
             one long column of type with decoration beside it; alternating
             them is what makes each one announce itself as a new thing to
             look at rather than the last one continuing. */}
-        <div
-          data-teleprompter-demo
-          className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.18fr)_minmax(0,0.82fr)] lg:gap-16"
-        >
-          {/* `role="img"` with everything inside hidden, as the three demos
+      <div
+        data-teleprompter-demo
+        className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.18fr)_minmax(0,0.82fr)] lg:gap-16"
+      >
+        {/* `role="img"` with everything inside hidden, as the three demos
               above do: read one node at a time this is a sentence, a pause
               and a jump forward, which is noise next to the one sentence
               describing all three. */}
-          <div>
-            <div
-              role="img"
-              aria-label="A camera recording, framed close on the speaker. A script hangs from the notch above them, four lines deep with the line being read second from the top. The words 'I', 'want' and 'to' light in turn as they are said, then 'show' lights and holds while a footer note pulses to say it is still listening, then the highlight jumps past two unsaid words and lands on 'cool', where it holds until the line begins again."
-            >
-              <div className="grain relative aspect-[16/10] overflow-hidden rounded-lg bg-[#0b0d11]">
-                <CameraFootage />
+        <div>
+          <div
+            role="img"
+            aria-label="A camera recording, framed close on the speaker. A script hangs from the notch above them, four lines deep with the line being read second from the top. The words 'I', 'want' and 'to' light in turn as they are said, then 'show' lights and holds while a footer note pulses to say it is still listening, then the highlight jumps past two unsaid words and lands on 'cool', where it holds until the line begins again."
+          >
+            <div className="grain relative aspect-[16/10] overflow-hidden rounded-lg bg-[#0b0d11]">
+              <CameraFootage />
 
-                <Island />
-              </div>
+              <Island />
             </div>
-
-            <TeleprompterTrack />
           </div>
 
-          <div>
-            <SectionHeading
-              eyebrow="Teleprompter"
-              title={
-                <>
-                  A <ScriptWord>teleprompter</ScriptWord> that follows your voice
-                </>
-              }
-              lede="Prequel hangs your script from the notch, just under the camera, and follows your voice — the word you're saying lights up as you say it. Wander off script and it waits for you; skip ahead or fall behind and it catches up within a couple of words."
-              cta="Download for Mac"
-            />
-          </div>
+          <TeleprompterTrack />
         </div>
-      </Container>
-    </section>
+
+        <div>
+          <SectionHeading
+            eyebrow="Teleprompter"
+            title={
+              <>
+                A <ScriptWord>teleprompter</ScriptWord> that follows your voice
+              </>
+            }
+            lede="Prequel hangs your script from the notch, just under the camera, and follows your voice — the word you're saying lights up as you say it. Wander off script and it waits for you; skip ahead or fall behind and it catches up within a couple of words."
+            cta="Download for Mac"
+          />
+        </div>
+      </div>
+    </DemoSection>
   );
 }
 

@@ -2,14 +2,6 @@ import type { ReactNode } from "react";
 
 import { ButtonLink } from "@/components/Button";
 import { Faq } from "@/components/Faq";
-import {
-  BackgroundIllustration,
-  CameraIllustration,
-  CursorIllustration,
-  ExportIllustration,
-  TimelineIllustration,
-  ZoomIllustration,
-} from "@/components/editor-illustrations";
 import { BuiltForMac } from "@/components/landing/BuiltForMac";
 import { CaptionsDemo } from "@/components/landing/CaptionsDemo";
 import { LayoutDemo } from "@/components/landing/LayoutDemo";
@@ -18,6 +10,8 @@ import { ZoomDemo } from "@/components/landing/ZoomDemo";
 import { CaptureStep, PlayerStep, TimelineStep } from "@/components/landing/step-visuals";
 import { Container, SectionHeading } from "@/components/Section";
 import { DownloadCta } from "@/components/DownloadButton";
+import { DesignIt } from "@/components/landing/DesignIt";
+import { Playables } from "@/components/landing/Playables";
 import type { FaqEntry } from "@/lib/faq";
 import { TRIAL_DAYS } from "@/lib/pricing";
 
@@ -52,80 +46,10 @@ const STEPS = [
 ];
 
 /**
- * The editor, as six outcomes.
- *
- * The title is what the reader gets and the body is how, which is the split a
- * dash was doing in the brief these were rewritten from. A card titled
- * "Backgrounds" names a control and leaves the reader to work out why they
- * would touch it; naming the outcome first is what makes the control worth
- * reading about.
- *
- * The bodies stay exact. An outcome with nothing checkable under it is the
- * failure mode at the other end, and the numbers here are all real: five camera
- * shapes in `CameraShape`, fifteen pointer styles in `CURSOR_STYLES`.
- */
-const FEATURES = [
-  {
-    title: "Guide attention automatically",
-    body: "Prequel zooms into the part of the screen that matters: the cursor, a region you draw, or whatever you are typing into. Set the level, the speed and how much the rest of the frame blurs.",
-    illustration: <ZoomIllustration />,
-  },
-  {
-    title: "Look present without taking over the video",
-    body: "Your camera stays framed and out of the way: circle, squircle, rounded, wide or portrait, in any corner and any size. It is never burned into the recording, so none of it is decided while you record.",
-    illustration: <CameraIllustration />,
-  },
-  {
-    title: "Make recordings look designed",
-    body: "Add a background, padding and a shadow without editing any of it by hand. Your own wallpaper by default, seven bundled presets, gradients and solids.",
-    illustration: <BackgroundIllustration />,
-  },
-  {
-    title: "Cut the parts nobody needs to see",
-    body: "Trim the pauses yourself, slice by slice, with a waveform under every clip. Layout, background and audio can all change mid-take.",
-    illustration: <TimelineIllustration />,
-  },
-  {
-    title: "Keep the pointer out of the way",
-    body: "Fifteen pointer styles, resized so the cursor survives a zoom. Smoothed while it travels, and hidden after a few seconds of stillness.",
-    illustration: <CursorIllustration />,
-  },
-  {
-    title: "Export the frame you approved",
-    body: "The preview and the exporter draw the same plan, so the file matches what you signed off in the editor.",
-    illustration: <ExportIllustration />,
-  },
-];
-
-const SPECS = [
-  ["Resolution", "Up to 4K"],
-  ["Frame rate", "Up to 120 fps"],
-  ["Codecs", "H.264 · HEVC"],
-  ["Encoding", "Hardware, VideoToolbox"],
-  ["Compositing", "Metal"],
-  ["Output", "Constant frame rate MP4"],
-];
-
-const PRESETS = [
-  "Landscape 16:9",
-  "4K",
-  "Vertical 9:16",
-  "Square 1:1",
-  "Portrait 4:5",
-  "YouTube",
-  "Shorts",
-  "TikTok",
-  "Reels",
-  "X",
-  "LinkedIn",
-];
-
-/**
  * Everything below the hero, shared by `/` and every `/create/<slug>` page.
  *
- * The arrays above stay with the loops that read them rather than moving to
- * `lib/`: `FEATURES` holds JSX, and a constant used in one place is just
- * indirection.
+ * `STEPS` stays with the loop that reads it rather than moving to `lib/`: it
+ * holds JSX, and a constant used in one place is just indirection.
  */
 export function LandingBody({ faq }: { faq: FaqEntry[] }) {
   return (
@@ -200,80 +124,49 @@ export function LandingBody({ faq }: { faq: FaqEntry[] }) {
           rolling. */}
       <TeleprompterDemo />
 
-      {/* After the four demos, the one section about the machine rather than
-          the take. It sits here because the demos have just shown four things
-          happening to a recording, and "all of that runs on the Mac's own
-          hardware" is the sentence those four earn. */}
-      <BuiltForMac />
+      {/* The foot of the page, in the dark.
+          
+          The run above is the argument — what Prequel does to a recording, one
+          demo at a time — and everything from here down is what you are left
+          deciding: whether the details are right, what it exports, and the
+          questions before you download it. The page turning over is what says
+          that, and it turns over on `BuiltForMac` because that section is
+          about the hardware — silicon on paper is a diagram, and the same
+          chip on a deep field is the thing itself.
+          
+          `data-theme="dark"` and not a set of `dark:` variants. The attribute
+          redefines the thirteen tokens for its whole subtree — see the note on
+          it in `globals.css` — so every `bg-surface`, `border-line` and
+          `text-muted` in here resolves to its dark value with no call site
+          edited. The cards inside were already built on the tokens; what is
+          below is the handful of places that were not.
+          
+          `-mb-32 pb-32` is the footer's own `mt-32` absorbed. Without it the
+          dark ends, 128px of paper follows, and then the footer — which reads
+          as a dark slab dropped on the page rather than as the page itself
+          turning over. The footer stays light because it is in the marketing
+          layout and every other page on the site has one. */}
+      <div data-theme="dark" className="-mb-32 bg-bg pb-32">
+        {/* First in the dark, and the reason the dark starts here: the one
+            section about the machine rather than the take. It follows the four
+            demos because they have just shown four things happening to a
+            recording, and "all of that runs on the Mac's own hardware" is the
+            sentence those four earn. */}
+        <BuiltForMac />
 
-      <section className="bg-surface/40 py-24">
-        <Container>
-          <SectionHeading
-            eyebrow="The editor"
-            title="Everything you would have done by hand"
-            lede="It opens by itself when you stop recording, on the take you just made. Nothing to import, nothing to line up."
-            cta="Download for Mac"
-            align="centre"
-          />
-          <div className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((feature) => (
-              <div key={feature.title} className="bg-bg">
-                <div className="relative h-36 overflow-hidden">{feature.illustration}</div>
-                <div className="p-7">
-                  <h3 className="text-[0.9375rem] font-medium text-fg">{feature.title}</h3>
-                  <p className="mt-2.5 text-sm leading-relaxed text-muted">{feature.body}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Container>
-      </section>
+        {/* Where the editor's six feature cells used to be. See `Playables`
+            for what replaced them and why. */}
+        <Playables />
 
-      <section className="py-24">
-        <Container className="grid items-start gap-12 lg:grid-cols-2 lg:gap-20">
-          <SectionHeading
-            eyebrow="Quality"
-            title="Videos stay sharp at 4K"
-            lede="Capture and export run on your Mac's own media engine. 1080p at 60 fps records without dropping frames, and 4K is a setting you pick."
-            cta="Download for Mac"
-          />
-          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line">
-            {SPECS.map(([label, value]) => (
-              <div key={label} className="bg-surface px-5 py-5">
-                <dt className="font-mono text-[11px] tracking-wider text-muted uppercase">
-                  {label}
-                </dt>
-                <dd className="mt-1.5 text-sm text-fg">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </Container>
-      </section>
+        {/* And the other half of the editor: that none of it is baked, and
+            the thing you are moving has handles on it. It follows the two
+            cards because they are the small decisions and this is the shape
+            of the whole thing. */}
+        <DesignIt />
 
-      <section className="pb-24">
-        <Container>
-          <SectionHeading
-            eyebrow="Formats"
-            title="Export in any frame"
-            lede="Turn one recording into different formats without manually reframing every element. Switch from landscape to vertical and the layout stays intact."
-            cta="Download for Mac"
-            align="centre"
-          />
-          <ul className="mx-auto mt-10 flex max-w-3xl flex-wrap justify-center gap-2">
-            {PRESETS.map((preset) => (
-              <li
-                key={preset}
-                className="rounded-full border border-line bg-surface px-4 py-2 text-sm text-muted"
-              >
-                {preset}
-              </li>
-            ))}
-          </ul>
-        </Container>
-      </section>
-
-      <CallToAction />
-      <Faq heading="Zooms, exports and the rest" entries={faq} />
+        <CallToAction />
+        <Faq heading="Zooms, exports and the rest" entries={faq} />
+      </div>
     </>
   );
 }
@@ -283,7 +176,6 @@ function CallToAction(): ReactNode {
     <section className="pb-8">
       <Container>
         <div className="squircle lit relative overflow-hidden rounded-3xl border border-line bg-surface px-6 py-16 text-center sm:px-16">
-          <div className="brand-gradient pointer-events-none absolute inset-x-0 top-0 h-px opacity-70" />
           <h2 className="text-3xl font-medium tracking-tight text-balance text-fg sm:text-4xl">
             Record demos worth sharing
           </h2>

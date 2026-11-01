@@ -41,3 +41,30 @@ const UNLIMITED_QUOTA_BYTES = Number.MAX_SAFE_INTEGER;
 export function formatQuota(bytes: number): string {
   return bytes >= UNLIMITED_QUOTA_BYTES ? "Unlimited" : formatBytes(bytes);
 }
+
+/** Milliseconds in a day, which is what makes the two day indices below. */
+const DAY_MS = 86_400_000;
+
+/**
+ * A date as an age — "Today", "Yesterday", "4 days ago".
+ *
+ * Counted in whole days apart rather than in elapsed hours: a release dated
+ * yesterday evening is "Yesterday" and not "16 hours ago", which is the way
+ * anybody reads a release date. Both sides are floored to a UTC day index for
+ * that, because the `.mdx` dates carry no time and no zone — treating them as
+ * local midnight would make the same release a day older west of Greenwich.
+ *
+ * Falls back to months past the first four weeks. "47 days ago" is arithmetic
+ * rather than news, and a badge saying it has stopped being a recency signal.
+ */
+export function relativeDay(iso: string, now: Date = new Date()): string {
+  const then = Math.floor(new Date(`${iso}T00:00:00Z`).getTime() / DAY_MS);
+  const days = Math.max(0, Math.floor(now.getTime() / DAY_MS) - then);
+
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 28) return `${days} days ago`;
+
+  const months = Math.max(1, Math.round(days / 30.44));
+  return months === 1 ? "Last month" : `${months} months ago`;
+}

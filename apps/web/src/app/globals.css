@@ -56,6 +56,20 @@
   --brand-from: #e14b15; /* sun gradient start */
   --brand-to: #ac1860; /* sun gradient end */
   --accent: #4e84f9; /* the playhead */
+  /* The download button, and only it.
+
+     Apple's own — the fill on every buy button on apple.com, read off the page
+     rather than taken from a brand guide. Deliberately not a darkened
+     `--accent`: this is the one control on the site asking for a Mac app to be
+     installed, and it is worth the ten degrees of hue between the two to have
+     it in the blue a Mac owner has clicked a hundred times. `--accent` is the
+     playhead and stays where it is, because every other blue on the site is
+     drawing the product rather than selling it.
+
+     The value above cannot do this job in any case: white on `--accent` is
+     3.5:1 and this is 4.7:1, which clears AA for the button's own label. Apple
+     landing in the same place is not a coincidence — it is the same floor. */
+  --accent-deep: #0071e3;
   --iris: #c000f0; /* the clip stroke */
   /* The clip handles in the icon, and inline `<code>` in the prose. On paper it
      is the second job that fixes the value: `#eeacff` is a handle against
@@ -104,13 +118,21 @@
 }
 
 /*
-  The signed-in app, the sign-in page and the desktop handoff.
+  The signed-in app, the sign-in page, the desktop handoff — and the foot of
+  the landing page.
 
   The thirteen values the site shipped with, unchanged. Dark is not a preference
   on these pages: the editor being recorded is dark, the player is dark, and the
   dashboard is the same product as both. The attribute is set in each group's
   layout — `(auth)/layout.tsx` and `app/app/layout.tsx` — and never on `html`,
-  which is what keeps the public pages out of it.
+  which is what keeps the public pages out of it by default.
+
+  One public page opts in: `LandingBody` wraps everything from the "try them"
+  cards down in this attribute, so the page turns over for its last third. It
+  is the same mechanism and not a copy of it — the whole point of the thirteen
+  being tokens is that a subtree can be handed the other set and every utility
+  inside it follows. A section wanting dark is the case this was built for; it
+  simply had not come up on a public page before.
 
   `@theme inline` above is what makes this work at all: it substitutes the
   `var()` into every utility rather than the value, so `bg-surface` inside this
@@ -146,6 +168,7 @@
   --color-brand-from: var(--brand-from);
   --color-brand-to: var(--brand-to);
   --color-accent: var(--accent);
+  --color-accent-deep: var(--accent-deep);
   --color-iris: var(--iris);
   --color-lilac: var(--lilac);
   --color-brand-from-deep: var(--brand-from-deep);
@@ -1768,7 +1791,7 @@
 
 /*
   The captions track is green where the zoom track is blue and the layouts one
-  purple. Three demos in a run need three, or the second and third read as the
+  orange. Four demos in a run need four, or the second and third read as the
   same control repeated — and this is the one whose subject is words rather than
   the picture, which is the difference the colour is carrying.
 */
@@ -1777,21 +1800,27 @@
 }
 
 /*
-  The layouts track is purple where the zoom track is blue.
+  The layouts track is orange where the zoom track is blue.
 
   One custom property rather than a second set of keyframes and a second ruler:
   `DemoTimeline` draws both, so the colour is the only thing that differs and it
-  is inherited rather than passed. The purple is the point — the zoom demo's
-  slices are the blue of the playhead, and these are the colour of the clips the
-  playhead runs over. `--lilac` rather than the neat `--iris` the clip stroke is
-  actually drawn in, matching the section's heading chip: filled at this size on
-  a white page, #c000f0 is the loudest thing on the screen and pulls the eye off
-  the picture the track belongs to. Nothing sets
-  `--track-accent` above this, so the zoom track keeps the `var(--accent)`
-  fallback written at each use site.
+  is inherited rather than passed. Nothing sets `--track-accent` above this, so
+  the zoom track keeps the `var(--accent)` fallback written at each use site.
+
+  The brand's own orange, which was spoken for until this week: it filled the
+  download button, and a run of section accents is not the place to repeat the
+  one colour that means "click this". The button is Apple's blue now and the
+  orange is free. `--brand-from-deep` and not `--brand-from` for the reason the
+  zoom track takes a deepened accent — these slices are filled solid with an
+  11px label in white, and white on #e14b15 is 4:1. The deep value holds 5.9:1
+  and is plainly the same orange.
+
+  This was `--lilac`, which went with the heading chip above it: the purple and
+  the teleprompter's magenta below were two notes of the same hue separated by
+  a green, and read as one section interrupted rather than as two.
 */
 [data-layout-demo] {
-  --track-accent: var(--lilac);
+  --track-accent: var(--brand-from-deep);
 }
 
 /*
@@ -1812,13 +1841,18 @@
 }
 
 /*
-  The teleprompter's track is `--iris` — the fourth of the app's own accents,
-  and the one none of the three demos above it have taken. A fourth track in
-  the blue, purple or green one of them already owns would read as that demo
+  The teleprompter's track is `--brand-to`, the far end of the brand gradient
+  whose near end the layouts track above now takes. A fourth track in the blue,
+  orange or green one of the three above already owns would read as that demo
   carrying on rather than as its own.
+
+  It was `--iris`, the clip stroke's #c000f0, and that is the loudest value in
+  the token set — a whole track of it at the foot of the run pulled the eye
+  past the three demos that come first. `--brand-to` is the same half of the
+  wheel at a value the page can hold, and white on it is 6.9:1.
 */
 [data-teleprompter-demo] {
-  --track-accent: var(--iris);
+  --track-accent: var(--brand-to);
 }
 
 /*
@@ -1925,6 +1959,605 @@
 /* A one-pixel top highlight, the thing that keeps a card from reading as flat.
    Cheap version of a two-layer border. The colour is a token because the
    direction reverses between the themes — see the note beside `--lit`. */
+/*
+  ── The canvas, being edited ───────────────────────────────────────────────
+
+  The camera in `DesignIt` is not a still of a selected object, it is one being
+  worked on. Four states on a sixteen-second loop, and — this is the part the
+  first version got wrong — *one thing changes per drag*. A transition that
+  resized, rounded and turned the camera at once was three controls moving with
+  one hand on the mouse, which is not a thing that happens.
+
+      hold A → drag a corner  → B   bigger
+      hold B → drag a radius  → C   rounder
+      hold C → drag the grip  → D   turned
+      hold D → reset          → A
+
+  The cursor's own track below sits on whichever handle is about to move, so
+  the hand and the change agree. Every stop is shared with the readout beside
+  the canvas: the panel's figures are these same four states.
+
+  `width` and not `scale`, which is the one place this breaks the usual rule.
+  A scale would take the selection and its handles with it, and a handle that
+  grows with the object it is sizing is not how any editor has ever drawn one —
+  handles are screen furniture and stay put. Same for `left`/`top` on the
+  cursor: its path is a set of fractions of a canvas whose size is not known
+  here, which a transform cannot express. The cost is a layout per frame,
+  contained to one absolutely-positioned subtree, on a section that is
+  otherwise still.
+*/
+@keyframes camera-shape {
+  /* A, and the corner drag out of it. */
+  0%,
+  15% {
+    width: 26%;
+    rotate: 0deg;
+  }
+  /* B, held through the radius drag and into the rotate. */
+  25%,
+  65% {
+    width: 34%;
+    rotate: 0deg;
+  }
+  /* D: the only change here is the angle. */
+  75%,
+  90% {
+    width: 34%;
+    rotate: -6deg;
+  }
+  100% {
+    width: 26%;
+    rotate: 0deg;
+  }
+}
+
+.animate-camera-shape {
+  animation: camera-shape 16s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+/* The corner radius: flat until the second drag, then a circle for the rest of
+   the loop. 50% is as far as the control goes. */
+@keyframes camera-corners {
+  0%,
+  40% {
+    border-radius: 22%;
+  }
+  50%,
+  90% {
+    border-radius: 50%;
+  }
+  100% {
+    border-radius: 22%;
+  }
+}
+
+.animate-camera-corners {
+  animation: camera-corners 16s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+/*
+  The picture itself: the same corners, and the shadow under it.
+
+  One class declaring two keyframe tracks rather than two classes on the
+  element. `animation` is a single property — two `animate-*` utilities is
+  whichever rule is emitted last, and the other does nothing. The pointer card
+  has the same note; it is the one trap this file keeps setting.
+*/
+@keyframes camera-shadow {
+  0%,
+  15% {
+    box-shadow: 0 14px 32px -12px rgb(0 0 0 / 0.45);
+  }
+  25%,
+  90% {
+    box-shadow: 0 24px 52px -14px rgb(0 0 0 / 0.55);
+  }
+  100% {
+    box-shadow: 0 14px 32px -12px rgb(0 0 0 / 0.45);
+  }
+}
+
+.animate-camera-face {
+  animation:
+    camera-corners 16s cubic-bezier(0.45, 0, 0.2, 1) infinite,
+    camera-shadow 16s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+/*
+  The radius handles.
+
+  Four small grips a design tool puts *inside* the corners, which is the pair
+  of marks that says a corner can be rounded rather than only dragged. They sit
+  at the radius: as the corner opens up they travel inwards, and at a full
+  circle they are as far in as they go.
+
+  Drawn as the corners of one invisible square whose inset is animated, rather
+  than four handles each with their own track. The square's corners are already
+  in the right places, and four tracks would be four chances for one of them to
+  drift out of step with the radius it is reporting.
+*/
+@keyframes radius-frame {
+  0%,
+  40% {
+    inset: 13%;
+  }
+  50%,
+  90% {
+    inset: 29%;
+  }
+  100% {
+    inset: 13%;
+  }
+}
+
+.animate-radius-frame {
+  animation: radius-frame 16s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+/*
+  The hand.
+
+  It parks on the handle it is about to pull, pulls it, and travels to the
+  next. The positions are fractions of the canvas and the figures come from
+  where the camera's own box is at that moment — so a change to `camera-shape`
+  above is a change here too, or the cursor lets go of a corner that has moved
+  out from under it.
+
+  The grab is a dip in `scale`, on its own track so it composes with the path:
+  the same arrangement the pointer card uses, and for the same reason.
+*/
+@keyframes editor-cursor {
+  /* Parked on the bottom-right corner of A. */
+  0%,
+  15% {
+    left: 35.5%;
+    top: 61%;
+  }
+  /* Dragging it out to B. */
+  25% {
+    left: 43.5%;
+    top: 74%;
+  }
+  /* Travelling up to the radius grip at the top-left corner. */
+  36% {
+    left: 14%;
+    top: 25%;
+  }
+  /* Pulling it in: the corner opens to a circle. */
+  40% {
+    left: 14%;
+    top: 25%;
+  }
+  50% {
+    left: 20%;
+    top: 35%;
+  }
+  /* Up to the rotate grip above the box. */
+  61% {
+    left: 26%;
+    top: 10%;
+  }
+  65% {
+    left: 26%;
+    top: 10%;
+  }
+  /* Turning it: the grip swings left as the box takes its angle. */
+  75% {
+    left: 21%;
+    top: 11.5%;
+  }
+  /* And away, before everything resets. */
+  90%,
+  100% {
+    left: 48%;
+    top: 30%;
+  }
+}
+
+@keyframes editor-cursor-grab {
+  0%,
+  13% {
+    scale: 1;
+  }
+  15%,
+  25% {
+    scale: 0.86;
+  }
+  27%,
+  38% {
+    scale: 1;
+  }
+  40%,
+  50% {
+    scale: 0.86;
+  }
+  52%,
+  63% {
+    scale: 1;
+  }
+  65%,
+  75% {
+    scale: 0.86;
+  }
+  77%,
+  100% {
+    scale: 1;
+  }
+}
+
+.animate-editor-cursor {
+  animation:
+    editor-cursor 16s cubic-bezier(0.45, 0, 0.2, 1) infinite,
+    editor-cursor-grab 16s ease-out infinite;
+}
+
+/*
+  A figure in the readout.
+
+  Four values stacked in the same slot, each up for its quarter of the loop and
+  switching as the drag that changes it finishes. Opacity only — a number that
+  slid or scaled would be a thing happening in the panel, and the thing
+  happening is on the canvas.
+*/
+@keyframes readout-value {
+  /* `steps(1, end)` holds the value of the frame it starts on, which is what
+     makes these two stops a switch rather than a fade. */
+  0% {
+    opacity: 1;
+  }
+  25% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-readout-value {
+  animation: readout-value 16s steps(1, end) infinite;
+}
+
+/*
+  ── The "Try them" cards ───────────────────────────────────────────────────
+
+  Four cards near the foot of the landing page, each one a thing to press.
+  Everything below is a keyframe track, which is the reason none of it is a
+  utility: Tailwind has no way to say "blur from 6px to nothing at the moment
+  this word is spoken", and a style that is only a track is clearer written as
+  one.
+
+  Every animation here is started by a press and is a few hundred milliseconds
+  long. `prefers-reduced-motion` turns each of them off at the foot of this
+  block rather than one by one — what the cards are showing survives without
+  the motion in every case but the captions, which is handled there.
+*/
+
+/* The pointer arriving as it is picked. Scale and not a slide: the pointer is
+   already where it points, and moving it would say the pick had moved it. */
+@keyframes pointer-land {
+  0% {
+    transform: scale(0.72);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/*
+  The pointer, in use.
+
+  A cursor at rest in the middle of a picture is a sticker; one that moves is
+  somebody's hand. The path is four stops with a hold at each, because that is
+  what a pointer actually does — it crosses to a thing, sits on it, crosses to
+  the next. A continuous drift reads as a balloon on a string.
+
+  The `translate` *property* and not a `transform`. The arrival animation on
+  the same element scales it, and two animations writing `transform` means the
+  last one declared wins and the other is dropped. `translate`, `rotate` and
+  `scale` are their own properties and compose with `transform` rather than
+  replacing it, so the pointer can land and travel at once.
+
+  Pixels and not percentages: a percentage here resolves against the element,
+  and the element is a sprite nearly twice the card's width — ten per cent of
+  it would put the hand outside the county.
+*/
+@keyframes pointer-drift {
+  0%,
+  10% {
+    translate: 0 0;
+  }
+  24%,
+  36% {
+    translate: 92px 44px;
+  }
+  50%,
+  60% {
+    translate: 34px 86px;
+  }
+  74%,
+  86% {
+    translate: 126px 10px;
+  }
+  100% {
+    translate: 0 0;
+  }
+}
+
+/*
+  The press itself.
+
+  The `scale` property rather than a `transform`, for the same reason the drift
+  uses `translate`: three animations run on this one element and each has to
+  write a property of its own or the last one declared is the only one that
+  does anything. A pointer dips a little as it goes down and comes straight
+  back — four of them in the cycle, at the moments the drift is at a stop.
+*/
+@keyframes pointer-click {
+  0%,
+  5%,
+  8%,
+  23%,
+  26%,
+  49%,
+  52%,
+  73%,
+  76%,
+  100% {
+    scale: 1;
+  }
+  6.5%,
+  24.5%,
+  50.5%,
+  74.5% {
+    scale: 0.88;
+  }
+}
+
+/*
+  What a press leaves behind.
+
+  Two of the app's twelve marks, drawn here as closely as CSS allows. Which one
+  a pointer gets is not a free choice: `cursorArrivesWith` in the app hands
+  every one of the teacher's sticks the chalk mark, because that is what a
+  stick *does* to the thing it touches — so the card does the same, and the
+  arrows get `ripple`, the quiet one at the head of the picker's list.
+
+  Both run on the pointer's own 11s cycle with a delay per stop, so a mark
+  appears exactly when the pointer that drew it arrives. Only `opacity` and
+  `scale` move; the stop's position is a static `translate` written inline,
+  which is data rather than style.
+*/
+/*
+  Chalk: the knock, and the dust.
+
+  A port of `click_chalk` in `shaders.metal`, which `ChalkMark` has the full
+  note on. What matters here is the clock. The app gives this mark 650ms —
+  the longest in its table, because the knock is over in a few frames and
+  everything after it is dust hanging in the air. The pointer's cycle is 11s,
+  so 650ms is 5.9% of it, and every stop below is that fraction of the app's
+  own timeline:
+
+      t = 1/7  →  0.84%   the knock is gone
+      t = 1    →  5.9%    the dust has gone with it
+
+  Written as one long animation with a delay rather than a short one that
+  repeats, because the mark has to fire once per pointer cycle and a 650ms
+  animation set to repeat fires seventeen times.
+*/
+@keyframes chalk-hit {
+  0% {
+    opacity: 0.95;
+    scale: 1;
+  }
+  /* `clamp(1 - t * 7)` — the disc shrinks as it fades, so the knock reads as
+     a strike rather than as a dot being turned off. */
+  0.84% {
+    opacity: 0;
+    scale: 0.2;
+  }
+  100% {
+    opacity: 0;
+    scale: 0.2;
+  }
+}
+
+.animate-chalk-hit {
+  animation: chalk-hit 11s linear infinite;
+}
+
+@keyframes chalk-puff {
+  0% {
+    translate: calc(var(--dx) * 0) calc(var(--dy) * 0);
+    scale: var(--s0);
+    opacity: 0;
+  }
+  0.4% {
+    opacity: var(--a);
+  }
+  /* `e` is an ease-out, so most of the travel is in the first third and the
+     cloud is still thinning for the rest. Brightness falls with `1 - e` and
+     the whole mark is cut by a smoothstep over the last 40%, which is these
+     two stops. */
+  2.4% {
+    translate: calc(var(--dx) * 0.78) calc(var(--dy) * 0.78);
+    scale: calc((var(--s0) + 1) / 2);
+    opacity: calc(var(--a) * 0.5);
+  }
+  5.9% {
+    translate: var(--dx) var(--dy);
+    scale: 1;
+    opacity: 0;
+  }
+  100% {
+    translate: var(--dx) var(--dy);
+    scale: 1;
+    opacity: 0;
+  }
+}
+
+.animate-chalk-puff {
+  animation: chalk-puff 11s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+}
+
+/*
+  Ripple: arm 0, and what the name tags get.
+
+  The quiet one at the head of the app's picker — a ring that grows and thins.
+  `0.15 + 0.8 * e` for the radius and `1 - t` for the fade, on the same 11s
+  carrier as the chalk above. Its own duration in the app is 420ms, which is
+  3.8% of the cycle.
+*/
+@keyframes ripple-mark {
+  0% {
+    scale: 0.18;
+    opacity: 0.9;
+    border-width: 3px;
+  }
+  3.8% {
+    scale: 1;
+    opacity: 0;
+    border-width: 1px;
+  }
+  100% {
+    scale: 1;
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+.animate-ripple-mark {
+  animation: ripple-mark 11s cubic-bezier(0.2, 0.8, 0.3, 1) infinite;
+}
+
+/*
+  Both at once, from one class.
+
+  Not two — `animation` is one property, so two `animate-*` classes on the same
+  element is not "run both", it is whichever rule the stylesheet emits last,
+  and the other is silently dropped. The pointer arrived without landing for
+  exactly as long as it took to notice. The same trap as two display utilities
+  on one element, which the header's download button has a note about.
+*/
+.animate-pointer {
+  animation:
+    pointer-land 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both,
+    pointer-drift 11s cubic-bezier(0.4, 0, 0.2, 1) infinite,
+    pointer-click 11s linear infinite;
+}
+
+/*
+  A keycap, in the dark.
+
+  Barely a step off the ground and a hairline round it, which is all a cap is
+  when the light is off: the board in `MacKeyboard` is read from the gaps
+  between the caps and from the fade across the whole thing, not from any one
+  key being visible.
+
+  `--surface` over `--bg` is that step. Both are tokens, so the board follows
+  whatever theme it is dropped into rather than carrying its own.
+*/
+[data-cap] {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+/*
+  A key being struck.
+
+  The glow is the whole of it. On a board with no bevel there is no travel to
+  read, and a cap that only changed colour would read as selected — but a key
+  that lights the dark around it reads as the thing making the sound, which is
+  what this card is for. One pixel of drop under it as well, which is less
+  travel than a nudge: enough that a run of keys ripples rather than blinks.
+
+  `--accent` and not the brand orange: the blue is already what "now" means
+  everywhere else in this section — the playhead, the selected pointer, the
+  caption being spoken.
+*/
+@keyframes key-press {
+  0%,
+  100% {
+    transform: translateY(0);
+    background: var(--surface);
+    border-color: var(--line);
+    color: var(--muted);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  40% {
+    transform: translateY(1px);
+    background: color-mix(in oklab, var(--accent) 22%, var(--surface));
+    border-color: color-mix(in oklab, var(--accent) 70%, var(--line));
+    color: var(--fg);
+    box-shadow:
+      0 0 18px -2px color-mix(in oklab, var(--accent) 55%, transparent),
+      0 0 46px -6px color-mix(in oklab, var(--accent) 35%, transparent);
+  }
+}
+
+.animate-key-press {
+  animation: key-press 420ms ease-out infinite;
+}
+
+/* The ring a press throws off, and the dip of the pointer making it. Both run
+   on the clip's own cadence — the audition clicks roughly twice a second — so
+   the ring and what you hear stay in step for the first few. */
+@keyframes click-ring {
+  0% {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0.8;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.4);
+    opacity: 0;
+  }
+}
+
+.animate-click-ring {
+  animation: click-ring 620ms ease-out infinite;
+}
+
+@keyframes click-dip {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  12% {
+    transform: scale(0.88);
+  }
+}
+
+.animate-click-dip {
+  animation: click-dip 620ms ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-camera-shape,
+  .animate-camera-corners,
+  .animate-camera-face,
+  .animate-radius-frame,
+  .animate-editor-cursor,
+  .animate-readout-value,
+  .animate-pointer,
+  .animate-chalk-hit,
+  .animate-chalk-puff,
+  .animate-ripple-mark,
+  .animate-key-press,
+  .animate-click-ring,
+  .animate-click-dip {
+    animation: none;
+  }
+}
+
 @utility lit {
   box-shadow: inset 0 1px 0 0 var(--lit);
 }

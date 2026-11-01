@@ -35,7 +35,8 @@ import { DemoTimeline } from "@/components/landing/DemoTimeline";
 import { type Layout, LayoutGlyph } from "@/components/landing/glyphs";
 import { LayoutsWord } from "@/components/landing/marks";
 import { LAYOUT_SCREEN, LAYOUT_STAGE } from "@/components/landing/stage";
-import { Container, SectionHeading } from "@/components/Section";
+import { DemoSection } from "@/components/landing/DemoSection";
+import { SectionHeading } from "@/components/Section";
 
 /**
  * The six the picture plays, in order.
@@ -66,67 +67,65 @@ const LAYOUTS = [
 
 export function LayoutDemo() {
   return (
-    <section className="py-24">
-      <Container>
-        {/* The picture leads on this one and the heading follows it, the
+    <DemoSection>
+      {/* The picture leads on this one and the heading follows it, the
             mirror of the zoom demo above. Two sections running heading-left,
             picture-right in sequence read as one long column of type with
             decoration beside it; alternating them makes the second section
             announce itself as a different thing to look at. */}
-        <div
-          data-layout-demo
-          className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.18fr)_minmax(0,0.82fr)] lg:gap-16"
-        >
-          {/*
+      <div
+        data-layout-demo
+        className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.18fr)_minmax(0,0.82fr)] lg:gap-16"
+      >
+        {/*
             `role="img"` with a label, everything inside hidden. The parts are
             boxes standing in for two pictures; read out one at a time they are
             noise, and the sentence below is the whole of what is worth reaching.
           */}
-          <div>
-            <div
-              role="img"
-              aria-label="One recording, re-framed. The screen and the camera move between six layouts in turn: the camera as a bubble over a full-frame screen, then over a padded one, then side by side with it, then below it, then each taking half of a split frame, and finally the camera alone filling the frame."
-            >
-              {/*
+        <div>
+          <div
+            role="img"
+            aria-label="One recording, re-framed. The screen and the camera move between six layouts in turn: the camera as a bubble over a full-frame screen, then over a padded one, then side by side with it, then below it, then each taking half of a split frame, and finally the camera alone filling the frame."
+          >
+            {/*
                 The stage: the wallpaper the composition sits on, and the frame
                 that crops it. `@container` so the radii in the keyframes can be
                 written in `cqw` and stay proportional at every width — a fixed
                 pixel radius is a different-looking corner on a 300px card and a
                 700px one.
               */}
-              <div className="grain @container relative aspect-[16/9] overflow-hidden rounded-lg">
-                <div
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{ backgroundImage: `url(${LAYOUT_STAGE})` }}
-                />
+            <div className="grain @container relative aspect-[16/9] overflow-hidden rounded-lg">
+              <div
+                className="absolute inset-0 bg-cover bg-center"
+                style={{ backgroundImage: `url(${LAYOUT_STAGE})` }}
+              />
 
-                {/* Both boxes are absolute and both are always mounted. A
+              {/* Both boxes are absolute and both are always mounted. A
                     camera that unmounted for the screen-only layouts would
                     have nowhere to travel from when it came back, and the
                     journey between the boxes is the whole argument. */}
-                <ScreenBox />
-                <CameraBox />
-              </div>
+              <ScreenBox />
+              <CameraBox />
             </div>
-
-            <LayoutTrack />
           </div>
 
-          <div>
-            <SectionHeading
-              eyebrow="Layouts"
-              title={
-                <>
-                  Switch <LayoutsWord>layouts</LayoutsWord> clip by clip
-                </>
-              }
-              lede="Choose from fourteen layouts for the same take: camera in the corner, beside the screen, split with it or hidden entirely. Use one layout for the whole video, or change it clip by clip."
-              cta="Download for Mac"
-            />
-          </div>
+          <LayoutTrack />
         </div>
-      </Container>
-    </section>
+
+        <div>
+          <SectionHeading
+            eyebrow="Layouts"
+            title={
+              <>
+                Switch <LayoutsWord>layouts</LayoutsWord> clip by clip
+              </>
+            }
+            lede="Choose from fourteen layouts for the same take: camera in the corner, beside the screen, split with it or hidden entirely. Use one layout for the whole video, or change it clip by clip."
+            cta="Download for Mac"
+          />
+        </div>
+      </div>
+    </DemoSection>
   );
 }
 

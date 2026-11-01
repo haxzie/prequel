@@ -97,7 +97,7 @@ export function NavMenu() {
 
             <div className="my-2 border-t border-line" />
 
-            <ButtonLink href="/download" size="sm" className="w-full">
+            <ButtonLink href="/download" size="sm" variant="cta" className="w-full">
               <AppleIcon className="-mt-0.5 size-4" />
               Download
             </ButtonLink>

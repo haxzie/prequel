@@ -4,6 +4,7 @@ import { NAV } from "@/lib/site";
 
 import { ButtonLink } from "./Button";
 import { AppleIcon } from "./icons";
+import { NavLinks } from "./NavLinks";
 import { NavMenu } from "./NavMenu";
 import { Container } from "./Section";
 
@@ -49,21 +50,11 @@ export function Nav() {
               to make room, and the next addition takes a slot rather than
               adding one. The same links are in the menu at the other end of
               the header — see `NavMenu`. */}
-          <nav className="hidden items-center gap-1 lg:flex">
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                // Full `--fg` rather than muted, so the row reads as navigation
-                // rather than as small print. The hover moves to a background
-                // instead of a colour: the text is already at the end of its
-                // range, and a link with no hover state at all reads as inert.
-                className="rounded-full px-3 py-2 text-sm whitespace-nowrap text-fg transition-colors hover:bg-fg/8"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          {/* A client component, and the only one in the header: the row draws
+              a selection box that follows the cursor and rests on the current
+              section, which needs the path and the labels' measured widths.
+              See `NavLinks`. */}
+          <NavLinks items={NAV} />
         </div>
 
         {/* A plain `div` rather than a second `<nav>`. Two navigation landmarks
@@ -92,7 +83,7 @@ export function Nav() {
               decided by Tailwind's emit order, not by the order they are
               written in, and `inline-flex` is the one that wins. */}
           <span className="ml-1.5 hidden lg:block">
-            <ButtonLink href="/download" size="sm">
+            <ButtonLink href="/download" size="sm" variant="cta">
               <AppleIcon className="-mt-0.5 size-4" />
               Download
             </ButtonLink>

@@ -47,7 +47,8 @@ import {
 import { DemoTimeline } from "@/components/landing/DemoTimeline";
 import { SubtitlesWord, TextWord } from "@/components/landing/marks";
 import { CAPTIONS_SCREEN, CAPTIONS_STAGE } from "@/components/landing/stage";
-import { Container, SectionHeading } from "@/components/Section";
+import { DemoSection } from "@/components/landing/DemoSection";
+import { SectionHeading } from "@/components/Section";
 import { ASSETS } from "@/lib/assets";
 
 /**
@@ -101,80 +102,77 @@ type Look = (typeof BEATS)[number]["look"];
 
 export function CaptionsDemo() {
   return (
-    <section className="py-24">
-      <Container>
-        {/* Heading left, picture right: the arrangement the zoom demo has and
+    <DemoSection>
+      {/* Heading left, picture right: the arrangement the zoom demo has and
             the layouts demo mirrors. Three sections in a row all leading with
             the picture would read as a gallery rather than as an argument made
             three times. */}
-        <div
-          data-captions-demo
-          className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-16"
-        >
-          <div>
-            <SectionHeading
-              eyebrow="Subtitles"
-              title={
-                <>
-                  <SubtitlesWord>Subtitles</SubtitlesWord> you can edit like{" "}
-                  <TextWord>text</TextWord>
-                </>
-              }
-              lede="Prequel transcribes every word on your Mac when the editor opens. Fix captions by typing in the transcript, choose a subtitle style or delete a sentence to remove it from the video."
-              cta="Download for Mac"
-            />
-          </div>
+      <div
+        data-captions-demo
+        className="grid items-center gap-12 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] lg:gap-16"
+      >
+        <div>
+          <SectionHeading
+            eyebrow="Subtitles"
+            title={
+              <>
+                <SubtitlesWord>Subtitles</SubtitlesWord> you can edit like <TextWord>text</TextWord>
+              </>
+            }
+            lede="Prequel transcribes every word on your Mac when the editor opens. Fix captions by typing in the transcript, choose a subtitle style or delete a sentence to remove it from the video."
+            cta="Download for Mac"
+          />
+        </div>
 
-          {/*
+        {/*
             `role="img"` with a label and everything inside hidden, as the two
             demos above do. Read out one node at a time this is the same
             sentence five times over, which is noise. The sentence here is the
             whole of what is worth reaching.
           */}
-          <div>
-            <div
-              role="img"
-              aria-label="One line of subtitles over a screen recording, shown in four looks in turn: a look that brings each word into focus on the moment it is said, a plain subtitle plate, a plate that lights each word as it is spoken, and a band across the full width of the frame. Then the caption editor slides in, a sentence is selected in the transcript and deleted, and those words leave the video with it."
-            >
-              {/* The stage: the wallpaper the composition stands on and the
+        <div>
+          <div
+            role="img"
+            aria-label="One line of subtitles over a screen recording, shown in four looks in turn: a look that brings each word into focus on the moment it is said, a plain subtitle plate, a plate that lights each word as it is spoken, and a band across the full width of the frame. Then the caption editor slides in, a sentence is selected in the transcript and deleted, and those words leave the video with it."
+          >
+            {/* The stage: the wallpaper the composition stands on and the
                   frame that crops it. `@container` so everything inside can be
                   sized in `cqw` and stay proportional at every width. In the app
                   a caption is a fraction of the frame's shorter edge, and
                   written in pixels here it would be a different size at every
                   breakpoint. */}
-              <div className="grain @container relative aspect-[16/9] overflow-hidden rounded-lg">
-                <div
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{ backgroundImage: `url(${CAPTIONS_STAGE})` }}
-                />
+            <div className="grain @container relative aspect-[16/9] overflow-hidden rounded-lg">
+              <div
+                className="absolute inset-0 bg-cover bg-center"
+                style={{ backgroundImage: `url(${CAPTIONS_STAGE})` }}
+              />
 
-                <ScreenBox />
-                <CameraBubble />
+              <ScreenBox />
+              <CameraBubble />
 
-                {/* All five beats mounted, one visible at a time. One keyframe
+              {/* All five beats mounted, one visible at a time. One keyframe
                     and a delay per beat rather than five keyframes: each is on
                     screen for its own fifth of the period and hidden for the
                     rest, which is the same animation shifted five times. */}
-                {BEATS.map((beat, index) => (
-                  <div
-                    key={beat.id}
-                    data-captions-beat={index}
-                    className="animate-captions-look absolute inset-x-0 bottom-[9%] flex justify-center opacity-0"
-                    style={{ animationDelay: `${index * BEAT}s` }}
-                  >
-                    <CaptionLine look={beat.look} words={beat.look === "blur"} />
-                  </div>
-                ))}
+              {BEATS.map((beat, index) => (
+                <div
+                  key={beat.id}
+                  data-captions-beat={index}
+                  className="animate-captions-look absolute inset-x-0 bottom-[9%] flex justify-center opacity-0"
+                  style={{ animationDelay: `${index * BEAT}s` }}
+                >
+                  <CaptionLine look={beat.look} words={beat.look === "blur"} />
+                </div>
+              ))}
 
-                <Inspector />
-              </div>
+              <Inspector />
             </div>
-
-            <CaptionsTrack />
           </div>
+
+          <CaptionsTrack />
         </div>
-      </Container>
-    </section>
+      </div>
+    </DemoSection>
   );
 }
 

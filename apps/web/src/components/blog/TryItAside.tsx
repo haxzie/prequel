@@ -66,7 +66,11 @@ export function TryItAside() {
       </div>
       {/* Indented to the text above rather than the panel edge — the mark's
           width plus the row's gap. */}
-      <ButtonLink href="/download" className="relative mt-5 ml-[calc(var(--mark-size)_+_1.5rem)]">
+      <ButtonLink
+        href="/download"
+        variant="cta"
+        className="relative mt-5 ml-[calc(var(--mark-size)_+_1.5rem)]"
+      >
         Download for Mac
       </ButtonLink>
     </aside>

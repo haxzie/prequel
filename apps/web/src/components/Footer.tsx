@@ -11,7 +11,12 @@ import { DownloadCta } from "./DownloadButton";
 
 export function Footer() {
   return (
-    <footer className="mt-32 border-t border-line">
+    // `bg-bg` and not a transparent footer. The landing page's dark run ends
+    // by pulling this up into its own trailing padding — see the wrapper in
+    // `LandingBody` — and a footer with no background of its own let that dark
+    // show through under ink-coloured text. Painting the page's own ground
+    // here is a no-op on every other page and the seam on that one.
+    <footer className="mt-32 border-t border-line bg-bg">
       {/* Two rows. The top one is the brand beside the links a visitor
           actually comes to a footer for — the site pages and the address.
           The three long lists are an SEO path to pages the header does not
