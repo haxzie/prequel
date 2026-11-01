@@ -458,9 +458,9 @@ const SHAPES = [
  * Which hands, in the order the picker shows them, and what each is called in
  * `CURSOR_STYLES`.
  *
- * Four, and chosen to be four answers rather than four materials: a plain
- * white glove and its black twin, which between them suit anything; and two
- * that are frankly toys.
+ * Five, and chosen to be five answers rather than five materials: a plain
+ * white glove and its black twin, which between them suit anything; something
+ * warm and wooden for a lesson; and two that are frankly toys.
  *
  *
  * `handle` is the rod drawn under a bare glove, and is only read for one that
@@ -474,6 +474,7 @@ const HANDS = [
   // one.
   { id: "stick", label: "white", from: "hands/hand_white.png", handle: "dark" },
   { id: "stick-black", label: "black", from: "hands/hand_black.png", handle: "dark" },
+  { id: "stick-wood", label: "wooden", from: "hands/hand_wood.png", handle: "dark" },
   { id: "stick-pink", label: "pink", from: "hands/hand_pink.png", handle: "silver" },
   { id: "stick-blue", label: "fuzzy blue", from: "hands/hand_blue.png", handle: "dark" },
 ];

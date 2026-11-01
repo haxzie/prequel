@@ -1845,9 +1845,9 @@ export const CURSOR_STYLES = [
   // field cannot express at any number of tones.
   //
   // In pairs, which is what fixes the order: the white glove and its black twin
-  // first, because between them they suit any recording; then the pink and the
-  // fuzzy blue, which are frankly toys and are where somebody goes looking for
-  // one.
+  // first, because between them they suit any recording; then the wooden one
+  // for a lesson; then the pink and the fuzzy blue, which are frankly toys and
+  // are where somebody goes looking for one.
   //
   // Leaned onto the default pointer's own angle, which that script takes from
   // `STICK_TILT` rather than picking: hand and handle share one axis, pointing
@@ -1886,12 +1886,12 @@ export const CURSOR_STYLES = [
   // The mark is `chalk` on every one of them, and that is the point of it: it
   // is what a stick *does* to the thing it touches, and a pointer that knocked
   // a puff of dust loose in one material and drew a heart in another would be
-  // four props rather than one in four finishes. White, because chalk is — the
+  // five props rather than one in five finishes. White, because chalk is — the
   // picker writes the mark's own colour along with it, so the tone comes free.
   //
   // The sound is still each one's own, because that is the other half: these
-  // are a dense rubber glove, a satin bow and a handful of fur, and they do not
-  // land alike.
+  // are a dense rubber glove, a lathe-turned dowel, a satin bow and a handful
+  // of fur, and they do not land alike.
   //
   // Written on choosing it, like the colour a click mark arrives in: the three
   // are the user's from then on, and picking the stick again puts them back.
@@ -1919,6 +1919,16 @@ export const CURSOR_STYLES = [
     arrives: { mark: "chalk", sound: "tok" },
     shapes: {
       arrow: { file: "cursor-stick-black.png", hotspot: { x: 0.045, y: 0.025 } },
+    },
+  },
+  {
+    id: "stick-wood",
+    label: "Wooden pointer",
+    reach: 2.2,
+    swatch: "cursor-stick-wood-swatch.png",
+    arrives: { mark: "chalk", sound: "walnut" },
+    shapes: {
+      arrow: { file: "cursor-stick-wood.png", hotspot: { x: 0.045, y: 0.025 } },
     },
   },
   {
