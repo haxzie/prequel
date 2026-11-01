@@ -8,19 +8,16 @@
  * distance field cannot express at any number of tones. The stick used to be
  * drawn there and is not any more, for exactly that reason.
  *
- * Four of the hands are ours, under `artwork/hands`. The wooden one is
- * TinyHand's, which is MIT licensed, and the credit sits here beside the
- * artwork rather than in a notice file — the same place `make-cursor.mjs`
- * credits Font Awesome, and for the same reason. Nothing of its code is here;
- * this reads its PNG.
+ * Every hand is ours, under `artwork/hands`.
  *
  * ## What this has to change about them
  *
  * A source image is portrait and upright: the hand at the top, and under it
- * either a rod of one width ending in a rounded butt, or nothing at all.
- * TinyHand's is a layer in a live app, so its rod is stretched to whatever
- * length the pointer is from the edge of the screen at that moment; ours are
- * bare gloves and are given a rod here.
+ * either a rod of one width ending in a rounded butt, or nothing at all. A
+ * hand that brings its own rod keeps it, repeated to whatever length is
+ * needed; a bare glove is given one here. All of them are bare today, and the
+ * other path is kept because a hand drawn on a stick is the obvious thing for
+ * somebody to hand this next.
  *
  * Ours is one still sprite, and `reach` in `contract.ts` sizes it against the
  * frame so that the rod leaves the picture from anywhere in the picture. So the
@@ -461,12 +458,10 @@ const SHAPES = [
  * Which hands, in the order the picker shows them, and what each is called in
  * `CURSOR_STYLES`.
  *
- * Five, and chosen to be five answers rather than five materials: a plain white
- * glove and its black twin, which between them suit anything; something warm
- * and wooden for a lesson; and two that are frankly toys.
+ * Four, and chosen to be four answers rather than four materials: a plain
+ * white glove and its black twin, which between them suit anything; and two
+ * that are frankly toys.
  *
- * `from` is the folder as well as the file — `hands` is ours and `tinyhand`
- * is theirs, credited at the top of this file.
  *
  * `handle` is the rod drawn under a bare glove, and is only read for one that
  * came without a stick. The pink one takes the silver rod because its glove is
@@ -479,7 +474,6 @@ const HANDS = [
   // one.
   { id: "stick", label: "white", from: "hands/hand_white.png", handle: "dark" },
   { id: "stick-black", label: "black", from: "hands/hand_black.png", handle: "dark" },
-  { id: "stick-wood", label: "wooden", from: "tinyhand/hand_wood.png", handle: "dark" },
   { id: "stick-pink", label: "pink", from: "hands/hand_pink.png", handle: "silver" },
   { id: "stick-blue", label: "fuzzy blue", from: "hands/hand_blue.png", handle: "dark" },
 ];
