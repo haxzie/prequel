@@ -1,0 +1,40 @@
+You pressed record, talked for twenty minutes, pressed stop, and Loom said the upload failed. Nothing warned you while it was happening.
+
+Loom publishes no page on recording offline. Everything below is assembled from the pages it does publish, read in November 2026.
+
+## What Loom ties to your connection
+
+Loom's stated minimum is "at least 5mbps upload speed to record successfully with Loom". Read the wording. A recording succeeding, not an upload finishing.
+
+Its page on a video stuck in processing goes further: "If you experienced an interruption while recording (wifi or internet dropout) or during processing, your video may not upload with success."
+
+The Mac page for a failed upload says which half broke. "There was likely an interruption to your internet connection which caused the recording to fail."
+
+## The desktop app and the extension are not the same
+
+- **Desktop app.** "Loom temporarily saves your recording files to your computer's disk space while you record." Those parts land in `~/Movies/Loom/Temporary/`, and they are what Support asks for when an upload fails.
+- **Chrome extension.** No local copy at all. Loom: "recovery is not possible as parts are not stored on your local machine."
+
+A dropout on the extension takes the whole take with it. On the desktop app there may be parts to hand over, and [Loom crashed and lost your recording](/articles/loom-lost-recording-recovery) covers how to find them. If the video is stuck at processing and not lost, [Loom stuck in processing](/articles/loom-stuck-in-processing) has Loom's own order of steps. Getting your takes off Loom altogether is a separate job: [how to download a Loom video as an MP4](/articles/download-loom-video-mp4).
+
+## Recording offline is a request, not a feature
+
+Recording with no connection is an open suggestion on Atlassian's own issue tracker, filed against the desktop recorder, unassigned and unresolved. The ask is for "the ability to use Loom while not having an internet connection to record, only needing to be connected to a Internet connection to Upload the videos".
+
+An accountant in a thread on r/taxpros described how the failure arrives. Loom "needs to be connected to the internet during the video so when my internet glitches, the video doesn't work. It also doesn't tell me that it doesn't work, so I find out when I try to stop the recording."
+
+![A thread on r/taxpros about using Loom to talk clients through their tax return](/blog/quotes/loom-needs-connection.webp)
+
+[Read it on r/taxpros](https://www.reddit.com/r/taxpros/comments/uguaoo/does_anyone_use_loom_or_a_similar_service_to/)
+
+## Record to your disk, upload if you want to
+
+Prequel writes every take to your disk as it records. A session is a folder under `~/Movies/Prequel` holding ordinary files: `screen.mp4`, `camera.mp4`, `mic.m4a` and `system.m4a`, with a `session.json` that says when each one started. [Where files live](/docs/where-files-live) lists every one.
+
+Nothing in recording or exporting touches the network. A share link is something you ask for afterwards, from a finished export, and [share links](/docs/share-links) covers that half. Hotel wifi, a train, a customer site on a locked-down network: the recording does not know and does not care.
+
+![The Prequel editor with the Audio panel open, showing separate microphone and system audio tracks](/articles/prequel/editor-audio.webp)
+
+Record the next long one where there is no signal at all.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $39 once. [See what it costs](/pricing).

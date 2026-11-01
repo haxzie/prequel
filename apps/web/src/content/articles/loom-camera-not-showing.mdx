@@ -1,0 +1,42 @@
+Your face was in the preview and it is not in the video. Loom documents three separate reasons for that, and which one applies depends on the recorder you used.
+
+Loom's own pages, read in November 2026, are the source for everything below.
+
+## The camera is granted twice, in two places
+
+Loom's two recorders ask two different systems for permission, and a grant to one means nothing to the other.
+
+- **Chrome extension.** "The extension is granted permissions via Chrome." Loom sends you to the extension's own entry in Chrome's site settings, asks you to set the camera and microphone to **Allow**, and then to restart Chrome.
+- **Desktop app.** "The desktop app requires permissions granted via your operating system."
+
+On a Mac the desktop app wants three ticks, not one. Loom's instruction is to open Privacy and confirm Loom is checked under "Camera", "Accessibility" and the "Screen recording module". A camera that works in a browser and fails in the app is usually missing the second or the third.
+
+Loom also runs a test page at `loom.com/webcam-mic-test` to separate a Loom fault from a Mac fault. If the camera fails there too, the problem sits below Loom, and [the permission macOS asks for](/glossary/screen-recording-permission) explains what the system is gating.
+
+## The bubble cannot follow you everywhere
+
+This part is designed, not broken. On the extension the camera bubble "can't follow you if you switch to a different desktop application or a completely separate Chrome window", and it "can't appear on top of PDFs opened in Chrome". Some sites block it outright: Loom names Facebook and Instagram. Loom's advice in those cases is to use the desktop app.
+
+Adding the bubble part way through a take is possible, with a condition. "You can only switch between screen only and screen and camera while recording", and only if that setting was switched on before you started.
+
+## The camera is capped lower than the screen
+
+Camera-only recordings on the Chrome extension are "Limited to 720p", and the Windows desktop app cannot record camera-only above 1080p. A camera that looks soft next to a crisp screen may be doing what Loom documents. [Why a Loom recording is not the quality you set](/articles/loom-video-quality) covers the screen half of the same question, and if the microphone is what went missing, [recording a Loom with the mic off](/articles/loom-record-without-mic) has that. A take that never arrived at all is [Loom stuck in processing](/articles/loom-stuck-in-processing).
+
+A thread on r/techsupport gathered the desktop app's camera behaviour alongside its other faults, including having to add the camera by hand after the recording had already started.
+
+![A thread on r/techsupport titled Ongoing bugs using Loom software for video recording](/blog/quotes/loom-ongoing-bugs.webp)
+
+[Read it on r/techsupport](https://www.reddit.com/r/techsupport/comments/w2w43f/ongoing_bugs_using_loom_software_for_video/)
+
+## One take, two files
+
+Prequel records the camera to its own file. `camera.mp4` sits beside `screen.mp4` in the session folder, so the camera is never burned into the picture: you move it, resize it, reshape it and reframe it after the take, and the first pass has already framed it for you. [The camera](/docs/camera) covers the controls, and [camera and microphone](/docs/camera-and-microphone) covers picking the devices.
+
+macOS asks for permission once, and [permissions](/docs/permissions) says which ones Prequel needs and why.
+
+![The Prequel editor with the Layout panel open and the camera framed in the corner of the picture](/articles/prequel/editor-layout.webp)
+
+Put your face back in the next one.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $39 once. [See what it costs](/pricing).

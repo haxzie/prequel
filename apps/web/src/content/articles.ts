@@ -324,6 +324,7 @@ const ENTRIES: Article[] = [
       "loom-login-atlassian",
       "how-to-cancel-a-screen-recorder-subscription",
       "download-loom-video-mp4",
+      "loom-restrict-who-can-view",
     ],
     faq: [
       {
@@ -368,6 +369,7 @@ const ENTRIES: Article[] = [
       "download-loom-video-mp4",
       "loom-login-atlassian",
       "how-to-cancel-a-screen-recorder-subscription",
+      "export-your-loom-library",
     ],
     faq: [
       {
@@ -411,6 +413,8 @@ const ENTRIES: Article[] = [
       "loom-video-quality",
       "cap-crash-lost-recording",
       "loom-login-atlassian",
+      "loom-needs-internet",
+      "loom-deleted-video-recovery",
     ],
     faq: [
       {
@@ -454,6 +458,8 @@ const ENTRIES: Article[] = [
       "loom-video-quality",
       "tella-export-stuck",
       "download-loom-video-mp4",
+      "loom-needs-internet",
+      "loom-camera-not-showing",
     ],
     faq: [
       {
@@ -497,6 +503,9 @@ const ENTRIES: Article[] = [
       "how-to-cancel-loom",
       "download-loom-video-mp4",
       "tella-no-free-plan",
+      "loom-deleted-video-recovery",
+      "loom-record-without-mic",
+      "loom-restrict-who-can-view",
     ],
     faq: [
       {
@@ -533,6 +542,7 @@ const ENTRIES: Article[] = [
       "how-to-cancel-loom",
       "loom-stuck-in-processing",
       "loom-free-plan-limits",
+      "export-your-loom-library",
     ],
     faq: [
       {
@@ -604,7 +614,12 @@ const ENTRIES: Article[] = [
     readingMinutes: 3,
     topics: ["recording", "fixes"],
     reference: "loom-ongoing-bugs",
-    related: ["loom-lost-recording-recovery", "loom-stuck-in-processing", "loom-login-atlassian"],
+    related: [
+      "loom-lost-recording-recovery",
+      "loom-stuck-in-processing",
+      "loom-login-atlassian",
+      "loom-camera-not-showing",
+    ],
     faq: [
       {
         question: "Why does my Loom video look blurry?",
@@ -1302,6 +1317,7 @@ const ENTRIES: Article[] = [
       "tella-audio-out-of-sync",
       "tella-iphone-black-rectangle",
       "screen-recording-audio-out-of-sync",
+      "mac-screen-recording-permission-broken",
     ],
     faq: [
       {
@@ -1683,6 +1699,271 @@ const ENTRIES: Article[] = [
         question: "Why is my microphone silent in the recording?",
         answer:
           "Either the microphone was off when the recording started, the wrong device was selected, or the app was not granted the Microphone permission. Check the level meter before you start: a recorder that shows one tells you it hears you before a word is lost.",
+      },
+    ],
+  },
+  {
+    slug: "loom-needs-internet",
+    title: "Does Loom need an internet connection to record?",
+    excerpt:
+      "Loom's documented minimum is 5 Mbps upload to record successfully, a dropout during a take is documented as causing the recording to fail, and offline recording is an open request on Atlassian's own tracker. What the desktop app keeps on disk and what the extension does not.",
+    date: "2026-11-01",
+    readingMinutes: 3,
+    topics: ["recording", "fixes"],
+    reference: "loom-needs-connection",
+    related: [
+      "loom-stuck-in-processing",
+      "loom-lost-recording-recovery",
+      "loom-camera-not-showing",
+      "mac-screen-recording-permission-broken",
+    ],
+    faq: [
+      {
+        question: "Does Loom work offline?",
+        answer:
+          "Loom publishes no offline recording mode, and recording without a connection is an open, unassigned suggestion on Atlassian's own issue tracker, filed against the desktop recorder. Loom's documented minimum is at least 5 Mbps of upload speed to record successfully.",
+      },
+      {
+        question: "What happens to a Loom recording if my internet drops?",
+        answer:
+          "Loom says an interruption while recording or during processing may mean the video does not upload, and its Mac page attributes a failed upload to an interruption that caused the recording to fail. The desktop app keeps recording parts on your disk; the Chrome extension keeps no local copy, so a dropout there takes the take with it.",
+      },
+      {
+        question: "Where does the Loom desktop app store a recording on a Mac?",
+        answer:
+          "In ~/Movies/Loom/Temporary/, in a folder named after the video ID. Loom temporarily saves recording files to your disk while you record, and those parts are what Support asks for when an upload fails.",
+      },
+      {
+        question: "Can I record my screen on a Mac with no internet connection?",
+        answer:
+          "Yes, with a recorder that works locally. Prequel writes every take to a folder under ~/Movies/Prequel as it records, and nothing in recording or exporting touches the network. A share link is optional and comes afterwards.",
+      },
+    ],
+  },
+  {
+    slug: "loom-camera-not-showing",
+    title: "Why your camera is missing from a Loom recording",
+    excerpt:
+      "Loom grants the camera through Chrome for the extension and through macOS for the desktop app, and the Mac needs three ticks and not one. Where the camera bubble cannot follow you, and the 720p cap Loom documents on camera-only recordings.",
+    date: "2026-11-01",
+    readingMinutes: 3,
+    topics: ["fixes", "audio"],
+    reference: "loom-ongoing-bugs",
+    related: [
+      "loom-video-quality",
+      "loom-record-without-mic",
+      "loom-stuck-in-processing",
+      "loom-needs-internet",
+      "mac-screen-recording-permission-broken",
+    ],
+    faq: [
+      {
+        question: "Why is my camera not showing in a Loom recording?",
+        answer:
+          "Loom asks for the camera in two different places. The Chrome extension is granted permission through Chrome's own site settings; the desktop app is granted it by macOS. On a Mac the desktop app needs Loom checked under Camera, Accessibility and the screen recording module, so a camera that works in the browser can still fail in the app.",
+      },
+      {
+        question: "Can I turn the Loom camera on part way through a recording?",
+        answer:
+          "Loom says you can only switch between screen only and screen and camera while recording, and only if that setting was enabled before you started. On the Mac desktop app you can turn the camera off during a take to hide it.",
+      },
+      {
+        question: "Why does the Loom camera bubble disappear when I change app?",
+        answer:
+          "Loom documents this as a limit of the Chrome extension: the bubble cannot follow you to a different desktop application or a separate Chrome window, and cannot appear over PDFs opened in Chrome. Loom's advice is to use the desktop app instead.",
+      },
+      {
+        question: "Why is my Loom camera blurry when the screen looks sharp?",
+        answer:
+          "Loom limits camera-only recordings on the Chrome extension to 720p, and the Windows desktop app cannot record camera-only above 1080p. Loom also says webcam recordings may be lower quality than screen recordings.",
+      },
+    ],
+  },
+  {
+    slug: "loom-deleted-video-recovery",
+    title: "Can you recover a deleted Loom video?",
+    excerpt:
+      "No. Loom documents that a deleted video is immediately and permanently purged, that Support cannot recover one, and that there is no trash to restore from. The archive feature is the only safety net and you have to choose it first.",
+    date: "2026-11-01",
+    readingMinutes: 3,
+    topics: ["fixes", "sharing"],
+    reference: "loom-deleted-video",
+    related: ["loom-lost-recording-recovery", "export-your-loom-library", "loom-free-plan-limits"],
+    faq: [
+      {
+        question: "Can I get back a Loom video I deleted?",
+        answer:
+          "No. Loom documents that when the video owner deletes a video it is immediately and permanently deleted, that all associated data is purged from its servers, and that the video cannot be accessed even with the original link. Loom also states that its Support cannot recover deleted videos.",
+      },
+      {
+        question: "Does Loom have a trash or recently deleted folder?",
+        answer:
+          "Loom documents no trash, no bin and no recently deleted list. Pages describing a 30-day Loom trash are describing something Loom does not document. The only reversible option is Archive, which hides a video without purging it and can be undone at any time.",
+      },
+      {
+        question: "Can a Loom workspace admin restore a deleted video?",
+        answer:
+          "Loom documents no admin restore on any plan. Admins appear in its deletion page only as a route that causes permanent deletion, through deleting a user's account during off-boarding.",
+      },
+      {
+        question: "Does the Loom share link still work after the video is deleted?",
+        answer:
+          "No. Loom says a deleted video can no longer be accessed even with the original link, and it documents no way to redirect an old link to a new video.",
+      },
+    ],
+  },
+  {
+    slug: "loom-record-without-mic",
+    title: "Recording a Loom with the microphone off",
+    excerpt:
+      "Turning the mic off beforehand is a setting. Loom documents no mute button while recording, no mute shortcut, and an editor that can replace or delete a segment but not silence one. What Atlassian's own tracker says about it.",
+    date: "2026-11-01",
+    readingMinutes: 3,
+    topics: ["audio", "recording"],
+    reference: "loom-mute-mid-recording",
+    related: ["loom-camera-not-showing", "loom-free-plan-limits", "loom-restrict-who-can-view"],
+    faq: [
+      {
+        question: "Can I record a Loom without a microphone?",
+        answer:
+          "Yes. Loom's recording panel lets you select a microphone source or turn the microphone off before you start, and it offers a camera-only mode if you do not want to record your screen.",
+      },
+      {
+        question: "Can I mute my mic part way through a Loom recording?",
+        answer:
+          "Loom documents no mute control during a recording and no mute keyboard shortcut. The pause it does document covers the whole recording, picture and sound together, and changing the microphone once a take has started is not documented.",
+      },
+      {
+        question: "Can I mute part of a finished Loom video?",
+        answer:
+          "Not in Loom. An open suggestion on Atlassian's own issue tracker states that the section editing tools only allow replacing or deleting the segment, and names exporting the video and editing it elsewhere as the workaround.",
+      },
+      {
+        question: "How do I silence part of a screen recording but keep the picture?",
+        answer:
+          "In Prequel the microphone and the Mac's system audio are recorded to separate files, and Include and Volume are per-clip settings. Cut the timeline where the narration should stop and turn Include off for the microphone on that clip, and the picture continues with no voice over it.",
+      },
+    ],
+  },
+  {
+    slug: "loom-restrict-who-can-view",
+    title: "Who can watch a Loom video, and what each plan allows",
+    excerpt:
+      "Loom's three privacy levels are on every plan, and the allow-list needs your recipients to hold a Loom account. Password protection, link expiry and disabling downloads are paid, and two of them need an Atlassian-managed workspace.",
+    date: "2026-11-01",
+    readingMinutes: 4,
+    topics: ["sharing", "pricing"],
+    reference: "loom-restrict-viewers",
+    related: [
+      "export-your-loom-library",
+      "loom-free-plan-limits",
+      "loom-record-without-mic",
+      "loom-bill-went-up",
+    ],
+    faq: [
+      {
+        question: "Can I password-protect a Loom video?",
+        answer:
+          "Only on a paid plan. Loom documents password protection for Business, Business + AI and Enterprise users, and notes that password-protected videos cannot be added to Spaces.",
+      },
+      {
+        question: "How do I share a Loom with only certain people?",
+        answer:
+          "Set the video to Restricted, or choose Only people added can access under Link Settings, and add their email addresses. Loom's condition is that each recipient has to be logged into a Loom account with that email to watch, so somebody who has never used Loom must create an account.",
+      },
+      {
+        question: "Are Loom videos public by default?",
+        answer:
+          "A Loom set to Public can be viewed by anyone with the link, with no login or Loom account needed. Loom says its videos are not indexed by search engines outside Atlassian, and that workspace admins can disable the option to make a video public.",
+      },
+      {
+        question: "Can I set a Loom link to expire?",
+        answer:
+          "Link expiry is documented for Enterprise and Business + AI, and only on Atlassian-managed workspaces. Loom also says creators can remove the public link expiration on their own videos, so the rule behaves as a default and not a lock.",
+      },
+      {
+        question: "How do I send a screen recording without uploading it anywhere?",
+        answer:
+          "Record and export locally. Prequel records and exports on your Mac without touching the network, so the result is an MP4 you can send through whatever channel your organisation already approves. A share link is an extra you ask for afterwards.",
+      },
+    ],
+  },
+  {
+    slug: "export-your-loom-library",
+    title: "How to get your videos out of Loom",
+    excerpt:
+      "There is no bulk download: Loom's bulk actions are move, archive, delete and change access. Downloads are one at a time, paid-only and role-gated, captions do not come with the file, and Loom documents no window to collect them after you cancel.",
+    date: "2026-11-01",
+    readingMinutes: 4,
+    topics: ["export", "sharing"],
+    reference: "loom-price-increase",
+    related: [
+      "download-loom-video-mp4",
+      "how-to-cancel-loom",
+      "loom-deleted-video-recovery",
+      "loom-restrict-who-can-view",
+    ],
+    faq: [
+      {
+        question: "Can I download all my Loom videos at once?",
+        answer:
+          "No. Loom's bulk actions are move, archive, delete and change access, and download is not among them. Its only download page is per-video, and Loom documents no account-level data export: the only thing it calls an export is an engagement analytics CSV.",
+      },
+      {
+        question: "Can I download Loom videos on the free plan?",
+        answer:
+          "No. Loom says the download feature is only available on Business, Business + AI and Enterprise plans, and that users on the Starter free plan cannot download videos. Creator Lite and Viewer roles have no download permission on any plan.",
+      },
+      {
+        question: "What is missing from a downloaded Loom video?",
+        answer:
+          "Loom says trims are kept in the MP4, and that CTAs, filler word and silence removal, chapters and closed captions are not included in the downloaded file. Videos using Variables cannot be downloaded at all, and nor can videos over 20 GB.",
+      },
+      {
+        question: "Should I download my Loom videos before cancelling?",
+        answer:
+          "Yes. Downloading needs a paid plan and downgrading puts you on Starter, where downloads are not available. Loom documents both halves separately and documents no window in which somebody who has left may collect their files, so save first and cancel second.",
+      },
+      {
+        question: "Can I move Loom videos to another account?",
+        answer:
+          "Loom says it does not currently have a way to transfer content from one account to another. Its workspace transfer tool only works out of a legacy Loom workspace, covers your personal library, does not recreate Spaces and does not redirect links you have already sent.",
+      },
+    ],
+  },
+  {
+    slug: "mac-screen-recording-permission-broken",
+    title: "When macOS stops letting an app record your screen",
+    excerpt:
+      "The pane was renamed in Sequoia, the consent prompt now returns monthly and Apple documents neither. The fix sequence for a permission that is ticked and still captures nothing, and what Cmd+Shift+5 can actually record on each macOS.",
+    date: "2026-11-01",
+    readingMinutes: 4,
+    topics: ["fixes", "recording"],
+    related: [
+      "loom-camera-not-showing",
+      "before-you-press-record",
+      "tella-system-audio-not-recording",
+    ],
+    faq: [
+      {
+        question: "Where is the screen recording permission on a Mac?",
+        answer:
+          "In System Settings, under Privacy & Security. On macOS 14 Sonoma it is called Screen Recording. From macOS 15 Sequoia onwards it is called Screen & System Audio Recording, and it can allow an app to record the screen and audio or just the audio.",
+      },
+      {
+        question: "Why does macOS keep asking me to allow screen recording?",
+        answer:
+          "Sequoia introduced a recurring consent prompt for screen recording. It appeared weekly and on every reboot in the early betas, and Apple moved it to monthly and dropped the reboot trigger before 15.0 shipped. Apple has never documented the prompt or its cadence.",
+      },
+      {
+        question: "Screen recording permission is enabled but the capture is black. What now?",
+        answer:
+          "Apple documents no fix for this symptom. Community practice is to quit the app first, toggle the permission off and on, remove the app with the minus button so it asks again, reset the decision with tccutil reset ScreenCapture and the app's bundle id, and restart the Mac.",
+      },
+      {
+        question: "Can Cmd+Shift+5 record system audio on a Mac?",
+        answer:
+          "Not before macOS 27. Apple's Include System Audio option for the built-in screenshot tool arrives in macOS 27, so on macOS 14, 15 and Tahoe 26 it records the microphone only. QuickTime Player's documented options list a microphone at every version.",
       },
     ],
   },

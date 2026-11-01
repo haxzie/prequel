@@ -1,0 +1,39 @@
+Turning the microphone off before you record is a setting. Turning it off part way through is not. Loom has no mute button while recording, no mute shortcut, and its editor cannot silence a stretch of a finished video while keeping the picture.
+
+Loom's own pages and Atlassian's own issue tracker, read in November 2026, are the source for all of this.
+
+## Before you start: supported
+
+The mic is one of the choices on the recording panel. "Select a microphone source or turn off your microphone. You will also see an audio indicator capturing audio before you start recording." If you want nothing of your screen either, "You can choose Camera only if you don't want to record any of your screens."
+
+## While recording: one pause, and it takes both
+
+Loom documents a single pause. "Loom allows you to pause and resume your video during recording", on `option/alt + shift + P`. It covers the whole take, picture and sound together. There is no mute control in the documented recording controls and none in the keyboard shortcuts.
+
+Changing the microphone once a take has started is not documented either. The source is picked beforehand: "Which Audio Source you would like your audio to be captured from". The camera can be switched mid-take, and the mic cannot, which is a surprising asymmetry once you have hit it. [Why your camera is missing from a Loom recording](/articles/loom-camera-not-showing) covers the camera side.
+
+## Afterwards: replace or delete, never mute
+
+Atlassian's own tracker carries an open suggestion for muting a time range, filed in February 2026 and still unresolved. Its description states the current limitation plainly: "Today, the section editing tools only allow replacing or deleting the segment."
+
+The workaround it names is to leave and come back. "Users would need to export the Loom and edit it in a third-party video editor to mute specific sections, then re-upload." Getting a video out of Loom to do that is [its own job](/articles/export-your-loom-library), and on the free plan it is not possible at all. Trimming and stitching at all is a paid feature, and filler-word and silence removal sit higher again, so the free plan has none of it. [Loom's free plan limits](/articles/loom-free-plan-limits) lists what Starter does include.
+
+Somebody on r/atlassian asked for exactly this on a Mac: mic off by default, on for a few sentences, off again, without stopping the recording.
+
+![A thread on r/atlassian asking whether Loom can pause just the audio without pausing the video](/blog/quotes/loom-mute-mid-recording.webp)
+
+[Read it on r/atlassian](https://www.reddit.com/r/atlassian/comments/1vj7hsw/loom_can_you_pause_just_audio_without_pausing/)
+
+## Audio you can set per clip
+
+Prequel records the microphone and the Mac's own sound to separate files, `mic.m4a` and `system.m4a`, so the mix is a decision you make afterwards. In the **Audio** panel each source has **Include** and **Volume**.
+
+Those are per-clip settings. Cut the timeline where you want the narration to stop, turn **Include** off for the microphone on that clip, and the picture carries on with no voice over it. [The timeline and cuts](/docs/timeline-and-cuts) covers the cut and [audio](/docs/audio) covers the panel.
+
+A silent screen recording does not have to be silent, either: Prequel can make the keyboard and click sounds from the moments you typed, so there is something to hear without a microphone in the room.
+
+![The Prequel editor with the Audio panel open, showing separate microphone and system audio tracks](/articles/prequel/editor-audio.webp)
+
+Record the next one with the mic off and decide later.
+
+Prequel needs an Apple Silicon Mac on macOS 14 or later. [Download Prequel for Mac](/download) and try it free for 7 days, with no watermark on anything you export. After that it is $9 a month or $39 once. [See what it costs](/pricing).
