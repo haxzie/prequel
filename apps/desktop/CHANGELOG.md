@@ -1,5 +1,22 @@
 # @prequel/desktop
 
+## 0.9.0
+
+### Minor Changes
+
+- 61a6c01: Captions redraw around the playhead first and appear as you change them, instead of after the whole recording has been drawn.
+- 61a6c01: Two layouts stand you cut out on the bottom edge with the screen padded, rounded and turned away from you — and you can resize yourself.
+- 61a6c01: Five pointer sticks in the Cursor panel — a white glove, a black one, carved wood, pink on silver, and fuzzy blue.
+- 61a6c01: Tilt and yaw any clip with the new dials in the Recording panel, and Depth now reaches a far stronger lean.
+
+  <!-- highlight: Tilt your recording, and point at it with a stick -->
+
+### Patch Changes
+
+- 61a6c01: The cut-out camera now stands on the bottom edge of the frame instead of floating just above it.
+- 61a6c01: Exporting no longer gets stuck on "Preparing" after you choose where to save a long recording.
+- 61a6c01: A zoom's named angles now set its depth as well, so each one is a whole look rather than two numbers.
+
 ## 0.8.1
 
 ### Patch Changes
