@@ -1,5 +1,13 @@
 # @prequel/desktop
 
+## 0.9.1
+
+### Patch Changes
+
+- 117c88e: The Recording panel puts Border above Angle, in the order the picture is built up.
+
+  <!-- highlight: Border before Angle in the Recording panel -->
+
 ## 0.9.0
 
 ### Minor Changes
