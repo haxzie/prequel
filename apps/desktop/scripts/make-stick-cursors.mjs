@@ -8,9 +8,11 @@
  * distance field cannot express at any number of tones. The stick used to be
  * drawn there and is not any more, for exactly that reason.
  *
- * The wooden hand is TinyHand's, which is MIT licensed — `NOTICE.md` at the
- * root carries the notice that licence asks for. Nothing of its code is here;
- * this reads its PNG. The other three are ours, under `artwork/hands`.
+ * Four of the hands are ours, under `artwork/hands`. The wooden one is
+ * TinyHand's, which is MIT licensed, and the credit sits here beside the
+ * artwork rather than in a notice file — the same place `make-cursor.mjs`
+ * credits Font Awesome, and for the same reason. Nothing of its code is here;
+ * this reads its PNG.
  *
  * ## What this has to change about them
  *
@@ -463,8 +465,8 @@ const SHAPES = [
  * glove and its black twin, which between them suit anything; something warm
  * and wooden for a lesson; and two that are frankly toys.
  *
- * `from` is the folder as well as the file — `hands` is ours, `tinyhand` is
- * TinyHand's and carries the notice in `NOTICE.md`.
+ * `from` is the folder as well as the file — `hands` is ours and `tinyhand`
+ * is theirs, credited at the top of this file.
  *
  * `handle` is the rod drawn under a bare glove, and is only read for one that
  * came without a stick. The pink one takes the silver rod because its glove is
