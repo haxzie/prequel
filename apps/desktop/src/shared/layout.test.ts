@@ -28,6 +28,7 @@ import {
   placement,
   restingForDrawn,
   presetFitsFrame,
+  screenYawFor,
   LOUPE_REACH,
   rectAt,
   shapeAspect,
@@ -4742,6 +4743,40 @@ describe("perspective", () => {
     expect(convergence(near)).toBeGreaterThan(convergence(far));
   });
 
+  it("reaches a lean worth dragging the control for", () => {
+    // The bug: the eye range was 1.2 to 4 and the whole travel of the slider
+    // moved a 12° tilt from 1.030 to 1.102 times as wide at the near edge —
+    // seven per cent, for a control whose entire job is that splay. It read as
+    // a slider that did nothing.
+    //
+    // A ratio rather than the constants, because what went wrong is not a
+    // number in the source: it is how much of a difference somebody can see
+    // between the two ends of the control.
+    const convergence = (q: number[]) => (q[9]! - q[6]!) / (q[3]! - q[0]!);
+
+    expect(convergence(cornersFor(12, 0, 1)!)).toBeGreaterThan(1.14);
+    // And the far end is still a slab turned on its side rather than a second
+    // caricature, which is the other half of the range meaning something.
+    expect(convergence(cornersFor(12, 0, 0)!)).toBeLessThan(1.04);
+  });
+
+  it("keeps every corner clear of the eye at the extremes", () => {
+    // What bounds how close `NEAR_EYE` may come. `rotatedQuad` clamps a corner
+    // at a fifth of the eye distance rather than letting it pass behind the
+    // eye, and a picture that hits that clamp stops responding to the control
+    // at one corner while the other three carry on — which reads as the tilt
+    // breaking, not as a limit.
+    for (const [rotateX, rotateY] of [
+      [45, 45],
+      [-45, -45],
+      [45, -45],
+    ]) {
+      const q = cornersFor(rotateX!, rotateY!, 1)!;
+      // Comfortably above the clamp's 0.2 at every corner.
+      for (let index = 2; index < q.length; index += 3) expect(q[index]).toBeGreaterThan(0.3);
+    }
+  });
+
   it("leaves the middle of the range where it always was", () => {
     // Every project written before `depth` existed reads back at 0.5, and has
     // to look exactly as it did. The default is the old constant.
@@ -6680,7 +6715,160 @@ describe("a screenshot's focus area", () => {
   });
 });
 
-describe("a screenshot leaning", () => {
+describe("the leaning cutout pair", () => {
+  const boxesFor = (preset: "over-cutout" | "over-cutout-lean" | "over-cutout-lean-left") =>
+    layoutBoxes(LANDSCAPE, { ...DEFAULT_SETTINGS.layout, preset }, DEFAULT_SETTINGS.background, {
+      screen: SCREEN,
+      camera: { width: 1280, height: 720 },
+    });
+
+  const middle = (box: { x: number; width: number }) => box.x + box.width / 2;
+
+  it("stands the person where the plain cutout does, and reflects it", () => {
+    // One box through `mirror` rather than a second corner written out: two
+    // sets of numbers meant to be mirror images come to differ by a few pixels
+    // nobody can explain, and this is the assertion that says they have not.
+    const plain = boxesFor("over-cutout");
+    const right = boxesFor("over-cutout-lean");
+    const left = boxesFor("over-cutout-lean-left");
+
+    expect(middle(right.camera!.area)).toBeCloseTo(middle(plain.camera!.area));
+    expect(middle(right.camera!.area) + middle(left.camera!.area)).toBeCloseTo(LANDSCAPE.width);
+    // And still a cut-out person rather than a card, which is what the shadow,
+    // the ring and the shape all read.
+    expect(right.camera!.card).toBe(false);
+    expect(left.camera!.card).toBe(false);
+  });
+
+  it("turns the edge nearest the person away from them", () => {
+    // The whole point of the pair, and the half of it that is not geometry: a
+    // yaw with the wrong sign leans the recording *into* the person, which
+    // reads as the two fighting for the same corner. Pinned on the drawn
+    // corners rather than on the constant, because the sign that matters is
+    // the one `rotatedQuad` ends up applying.
+    const edges = (yaw: number) => {
+      const plan = buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: null },
+        settings({ layout: { ...DEFAULT_SETTINGS.layout, screenRotateY: yaw } }),
+      );
+      const q = image(plan, "screen")!.motion![0]!.quad!;
+      // Top-left, top-right, bottom-left, bottom-right — three numbers each.
+      return { left: q[7]! - q[1]!, right: q[10]! - q[4]! };
+    };
+
+    const right = edges(screenYawFor("over-cutout-lean"));
+    expect(right.right).toBeLessThan(right.left);
+
+    const left = edges(screenYawFor("over-cutout-lean-left"));
+    expect(left.left).toBeLessThan(left.right);
+  });
+
+  it("pads and rounds the recording, where the plain cutout fills the frame", () => {
+    // What the pair is for: the recording has to be an *object* for the lean
+    // to be a lean of something. Full bleed there is nothing to turn — the
+    // near corner leaves the frame and what is left reads as a picture that
+    // has gone slightly wrong.
+    for (const preset of ["over-cutout-lean", "over-cutout-lean-left"] as const) {
+      const screen = boxesFor(preset).screen!;
+      expect(screen.card, `${preset} is a card`).toBe(true);
+      expect(screen.area.x, `${preset} is inset`).toBeGreaterThan(0);
+      expect(screen.area.y, `${preset} is inset`).toBeGreaterThan(0);
+    }
+
+    // And the one it is a variation on is untouched. `fit` is the difference
+    // that survives whatever the composition's padding happens to be: the
+    // plain cutout *fills* its box and is cropped to do it, where these are
+    // contained in theirs. `fillsTheFrame` is the other half — it is what
+    // clears the padding on the way in, and these two must not.
+    expect(boxesFor("over-cutout").screen!.fit).toBe("cover");
+    expect(boxesFor("over-cutout-lean").screen!.fit).toBe("contain");
+    expect(fillsTheFrame("over-cutout")).toBe(true);
+    expect(fillsTheFrame("over-cutout-lean")).toBe(false);
+  });
+
+  it("stands the plain cutout on the bottom edge too", () => {
+    // It used to float a hand's width above it. All three cutouts put
+    // somebody in the same place now — the arrangements differ in what is
+    // behind them, not in where they stand — and `cutoutBox` is the one
+    // function that decides it.
+    const camera = layoutBoxes(
+      LANDSCAPE,
+      { ...DEFAULT_SETTINGS.layout, preset: "over-cutout" },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: { width: 1280, height: 720 } },
+    ).camera!;
+
+    expect(camera.area.y + camera.area.height).toBeCloseTo(LANDSCAPE.height);
+    // And still held off the side, which is a different question: the spill
+    // past this box is what reaches the edge of the frame.
+    expect(camera.area.x + camera.area.width).toBeLessThan(LANDSCAPE.width);
+  });
+
+  it("stands the person on the bottom edge, at every size", () => {
+    // Flush, not floating: `boxAt` centres on a point and would leave a gap
+    // under them that changed with their size, so the look would hold at one
+    // setting of a slider and nowhere else.
+    for (const height of [0.3, 0.45, 0.6]) {
+      for (const preset of ["over-cutout-lean", "over-cutout-lean-left"] as const) {
+        const camera = layoutBoxes(
+          LANDSCAPE,
+          { ...DEFAULT_SETTINGS.layout, preset, cameraHeight: height, cameraWidth: height },
+          DEFAULT_SETTINGS.background,
+          { screen: SCREEN, camera: { width: 1280, height: 720 } },
+        ).camera!;
+
+        expect(camera.area.y + camera.area.height, `${preset} at ${String(height)}`).toBeCloseTo(
+          LANDSCAPE.height,
+        );
+      }
+    }
+  });
+
+  it("takes the person's size from the camera's own slider", () => {
+    const sized = (height: number) =>
+      layoutBoxes(
+        LANDSCAPE,
+        {
+          ...DEFAULT_SETTINGS.layout,
+          preset: "over-cutout-lean",
+          cameraHeight: height,
+          cameraWidth: height,
+        },
+        DEFAULT_SETTINGS.background,
+        { screen: SCREEN, camera: { width: 1280, height: 720 } },
+      ).camera!.area.height;
+
+    expect(sized(0.6)).toBeCloseTo(sized(0.3) * 2);
+  });
+
+  it("leaves the plain cutout's size to the arrangement", () => {
+    // Deliberately not resizable, and the reason is other people's saves:
+    // every recording already in this arrangement is drawn at
+    // `CUTOUT_CORNER.size`, and reading the camera's own slider instead would
+    // resize all of them the next time they were opened.
+    const at = (height: number) =>
+      layoutBoxes(
+        LANDSCAPE,
+        { ...DEFAULT_SETTINGS.layout, preset: "over-cutout", cameraHeight: height },
+        DEFAULT_SETTINGS.background,
+        { screen: SCREEN, camera: { width: 1280, height: 720 } },
+      ).camera!.area;
+
+    expect(at(0.3)).toEqual(at(0.6));
+  });
+
+  it("leaves every other arrangement square on", () => {
+    // The pick writes this yaw onto the clip, so an arrangement that quietly
+    // answered with one would tilt a composition nobody asked to tilt.
+    expect(screenYawFor("over-cutout")).toBe(0);
+    expect(screenYawFor("over-full")).toBe(0);
+    expect(screenYawFor("beside")).toBe(0);
+    expect(screenYawFor("custom")).toBe(0);
+  });
+});
+
+describe("a clip leaning", () => {
   const leaning = (patch: Partial<LayoutSettings>) =>
     buildRenderPlan(
       LANDSCAPE,
@@ -6717,6 +6905,75 @@ describe("a screenshot leaning", () => {
     // anywhere, and it must not be treated as though it had.
     const plan = leaning({ screenRotateX: -14, screenRotateY: 9 });
     expect(pictureMoved(plan, "screen", 0)).toBe(false);
+  });
+
+  /**
+   * A zoom that rests inside the take rather than filling it, so the track has
+   * both ends of the move in it: a sample at rest and a sample held fully in.
+   */
+  const pushing = (over: Partial<ZoomSlice> = {}): ZoomSlice[] => [
+    {
+      ...DEFAULT_ZOOM,
+      id: "z",
+      source: { start: 1_000_000_000, end: 3_000_000_000 },
+      ...over,
+    } as ZoomSlice,
+  ];
+
+  const zoomedOver = (patch: Partial<LayoutSettings>, zooms: ZoomSlice[]) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, ...patch } }),
+      null,
+      zooms,
+    );
+
+  it("holds the pose through a zoom that states no angle of its own", () => {
+    // The failure this exists for: the pose only reached the plan where there
+    // were no zoom keys, so a tilted recording stood upright the instant a
+    // push-in began and lay back down when it ended — a picture flipping
+    // between two poses with nothing on the timeline saying it should.
+    const plan = zoomedOver({ screenRotateX: 12, screenPerspective: 0.6 }, pushing({ level: 1.5 }));
+    const keys = image(plan, "screen")!.motion ?? [];
+
+    expect(keys.length).toBeGreaterThan(1);
+    for (const key of keys) expect(key.quad).toHaveLength(12);
+  });
+
+  it("lets a zoom's own angle replace the pose and hands it back afterwards", () => {
+    // A replacement, not a sum: the Angle tab's figures have to mean the same
+    // thing on a tilted clip as on a flat one. So the shot eases out of the
+    // pose into its own lean, and the first key — the picture at rest, before
+    // the move begins — is still the pose.
+    const zooms = pushing({ level: 1.5, rotateX: -30, perspective: 0.6, speed: 0.4 });
+    const posed = zoomedOver({ screenRotateX: 20, screenPerspective: 0.6 }, zooms);
+    const flat = zoomedOver({}, zooms);
+
+    const first = (plan: RenderPlan) => (image(plan, "screen")!.motion ?? [])[0]!;
+    const held = (plan: RenderPlan) => {
+      const keys = image(plan, "screen")!.motion ?? [];
+      return keys[Math.floor(keys.length / 2)]!;
+    };
+
+    // At rest the two differ, because one clip is tilted and the other is not.
+    expect(first(posed).quad).toHaveLength(12);
+    expect(first(flat).quad).toBeUndefined();
+    // Held fully in they are the same four corners: the zoom's lean is what is
+    // on screen, whatever pose it was reached from.
+    expect(held(posed).quad).toEqual(held(flat).quad);
+  });
+
+  it("changes nothing about a flat clip under a flat zoom", () => {
+    // The pose's default has to be inert all the way through the sampler, or
+    // every existing project's zooms move by a rounding error.
+    const zooms = pushing({ level: 1.5 });
+    expect(image(zoomedOver({}, zooms), "screen")!.motion).toEqual(
+      image(
+        buildRenderPlan(LANDSCAPE, { screen: SCREEN, camera: null }, settings(), null, zooms),
+        "screen",
+      )!.motion,
+    );
   });
 });
 

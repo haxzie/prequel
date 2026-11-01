@@ -1178,6 +1178,10 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     // set of bitmaps, for the row the pointer came to rest on.
     drawnProject,
     captionFrame,
+    // Only to decide what to draw first. Passed as a getter, not a value: this
+    // moves sixty times a second during playback and nothing about the pixels
+    // depends on it, so it must not be a reason to redraw anything.
+    media.sourceAt,
   );
   const fonts = useFonts();
   const textBitmaps = useTextBitmaps(session, drawnProject, captionFrame, fonts);

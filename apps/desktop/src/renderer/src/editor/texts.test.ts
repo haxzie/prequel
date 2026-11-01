@@ -475,7 +475,7 @@ describe("every other edit", () => {
       { type: "split", at: 4 * S },
       { type: "addZoom", at: 6 * S },
       { type: "setFrame", frame: { width: 1080, height: 1920, presetId: null } },
-      { type: "applyToAll", section: "layout" },
+      { type: "applyToAll", parts: [{ section: "layout" }] },
       { type: "deleteRange", source: { start: 7 * S, end: 8 * S } },
     );
     expect(after.project.texts).toBe(texts);

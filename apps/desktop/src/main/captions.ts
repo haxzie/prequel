@@ -61,6 +61,55 @@ export async function writeBitmap(
 }
 
 /**
+ * Which of these bitmaps are already on disk.
+ *
+ * The renderer asks before it draws. `writeBitmap` has always skipped a file
+ * that exists — the name is a hash of everything the pixels depend on, so the
+ * same name is the same picture — but it skipped it *after* the renderer had
+ * painted the thing, encoded a PNG and shipped it over IPC. On a long
+ * recording that is thousands of round trips to be told we already had it.
+ *
+ * One call for the whole set rather than one per file, because the round trip
+ * is the cost being avoided and a thousand cheap ones is the same bill.
+ *
+ * A name that escapes the recording is simply reported absent. It will be
+ * refused by `writeBitmap` when the draw gets to it, which is the one place
+ * that decision belongs.
+ */
+export function haveBitmaps(kind: unknown, dir: string, files: readonly string[]): string[] {
+  const folder = bitmapDir(kind);
+  if (!folder) return [];
+
+  return files.filter((file) => {
+    const path = within(dir, folder, file);
+    return path !== null && existsSync(path);
+  });
+}
+
+/**
+ * Writes a batch of bitmaps, skipping the ones already there.
+ *
+ * The same work `writeBitmap` does, with one round trip instead of one each.
+ * A cue is up to three layers and a long recording is thousands of cues, and
+ * the IPC — serialise, switch, write, reply — was costing more than the
+ * drawing it was carrying.
+ *
+ * Answers per file, in the order they were given, so the caller can tell which
+ * of its layers landed. A cue whose layers did not all write is dropped
+ * wholesale by the caller rather than left as a word floating over the
+ * footage.
+ */
+export async function writeBitmaps(
+  kind: unknown,
+  dir: string,
+  files: readonly { file: string; bytes: Uint8Array }[],
+): Promise<(string | null)[]> {
+  const written: (string | null)[] = [];
+  for (const one of files) written.push(await writeBitmap(kind, dir, one.file, one.bytes));
+  return written;
+}
+
+/**
  * Deletes bitmaps of one kind that nothing refers to any more.
  *
  * Every change to the look or the size writes a new set under new names, so

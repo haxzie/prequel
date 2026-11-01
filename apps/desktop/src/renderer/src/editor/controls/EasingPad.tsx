@@ -6,9 +6,9 @@ import { cn } from "../../lib/cn";
 /**
  * The zoom's easing, set by dragging the curve itself.
  *
- * The same argument `PerspectivePad` makes: nobody arrives knowing what a
- * control point at (0.8, 0) feels like, so the control is a picture of the
- * result. This one is the curve every motion tool draws — After Effects, Figma
+ * Nobody arrives knowing what a control point at (0.8, 0) feels like, so the
+ * control is a picture of the result. This one is the curve every motion tool
+ * draws — After Effects, Figma
  * and the browser's own devtools all show a cubic bézier with two handles — so
  * it needs no explaining to anyone who has shaped an ease before.
  *

@@ -209,6 +209,19 @@ export interface EditorState {
   coalesce: string | null;
 }
 
+/**
+ * A slice of a settings section, as a panel's Reset and apply-to-all name it.
+ *
+ * `keys` narrows a section to part of itself, for the sections more than one
+ * panel is a view onto: `background` holds both the paint and the frame round
+ * the picture, and a button under one heading must not carry the other's half.
+ * Omitted, the whole section is meant.
+ */
+export interface SettingsPart {
+  section: SettingsSection;
+  keys?: readonly string[];
+}
+
 export type EditorAction =
   | { type: "load"; project: Project; duration: MediaTime; seams: readonly MediaTime[] }
   | { type: "select"; sliceId: string | null }
@@ -304,26 +317,16 @@ export type EditorAction =
    */
   | { type: "applyPreset"; preset: ScenePreset }
   /**
-   * Gives every clip the selected one's settings for a section.
+   * Gives every clip the selected one's settings for the parts named.
    *
-   * `keys` narrows it the way `resetSection`'s does, and for the same reason:
-   * `background` is shown across two panels, and a button in one of them must
-   * not carry the other's half.
+   * A list rather than one section, because a panel is not a section: Recording
+   * dresses the picture with `background` keys and leans it with `layout` ones,
+   * and its one button has to carry both. One action rather than one dispatch
+   * per section because this one is undoable — see `undoStep` — and two would
+   * take two presses of undo to put back one press of the button.
    */
-  | { type: "applyToAll"; section: SettingsSection; keys?: string[] }
-  | {
-      type: "resetSection";
-      section: SettingsSection;
-      /**
-       * Only these keys, for a section shown across more than one panel.
-       *
-       * `background` holds both the paint and the frame around the picture, and
-       * they sit under separate headers with a Reset each. Without this, the
-       * Frame header's Reset would put back the background image too, which
-       * reads as the button having done something else entirely.
-       */
-      keys?: string[];
-    }
+  | { type: "applyToAll"; parts: readonly SettingsPart[] }
+  | { type: "resetSection"; parts: readonly SettingsPart[] }
   /**
    * Lays a zoom on the timeline. `to` is where a drag that drew it out ended.
    *
@@ -1011,19 +1014,23 @@ function apply(
       return applyPreset(state, action.preset);
 
     case "applyToAll":
-      return applyToAll(state, action.section, action.keys);
+      return applyToAll(state, action.parts);
 
     case "duplicateZoom":
       return duplicateZoom(state, action.zoomId);
 
     case "resetSection":
       return editSelected(state, (overrides) =>
-        action.keys
-          ? action.keys.reduce(
-              (next, key) => clearOverride(next, action.section, key as never),
-              overrides,
-            )
-          : clearSection(overrides, action.section),
+        action.parts.reduce(
+          (next, part) =>
+            part.keys
+              ? part.keys.reduce(
+                  (inner, key) => clearOverride(inner, part.section, key as never),
+                  next,
+                )
+              : clearSection(next, part.section),
+          overrides,
+        ),
       );
 
     case "addZoom":
@@ -2836,27 +2843,29 @@ function duplicateZoom(state: EditorState, zoomId: string): EditorState {
  * Does nothing with no clip selected. There is no "this one" to copy, and the
  * panel is editing the defaults every clip already follows.
  */
-function applyToAll(state: EditorState, section: SettingsSection, keys?: string[]): EditorState {
+function applyToAll(state: EditorState, parts: readonly SettingsPart[]): EditorState {
   if (!state.selectedSliceId) return state;
 
   const source = selectedSlice(state);
   if (!source) return state;
 
-  const settings = resolveSettings(state.project.defaults, source.overrides)[section];
-  const wanted = keys ?? Object.keys(settings);
+  const resolved = resolveSettings(state.project.defaults, source.overrides);
 
   return edit(state, (project) =>
     withSlices(
       project,
       slicesOf(project).map((slice) => {
         let overrides = slice.overrides;
-        for (const key of wanted) {
-          overrides = setOverride(
-            overrides,
-            section,
-            key as never,
-            (settings as unknown as Record<string, unknown>)[key] as never,
-          );
+        for (const part of parts) {
+          const settings = resolved[part.section];
+          for (const key of part.keys ?? Object.keys(settings)) {
+            overrides = setOverride(
+              overrides,
+              part.section,
+              key as never,
+              (settings as unknown as Record<string, unknown>)[key] as never,
+            );
+          }
         }
         return { ...slice, overrides };
       }),

@@ -73,7 +73,20 @@ export function useTextBitmaps(
     setDrawing(true);
 
     const timer = setTimeout(() => {
+      // Cleared whatever happens, for the reason `useCaptions` does it: the
+      // export waits on this flag before it builds its plan — see `settled` in
+      // `useExport.ts` — and a run that returned early, or threw, used to
+      // leave it raised with nothing left to lower it. The export then waited
+      // for ever and the app looked frozen with nothing in the log.
       void (async () => {
+        try {
+          await draw(dir);
+        } finally {
+          setDrawing(false);
+        }
+      })();
+
+      async function draw(into: string) {
         const { texts: pending, frame: size, fonts: faces } = latest.current;
         const drawn = new Map<string, RenderedText>();
         const written: string[] = [];
@@ -112,7 +125,7 @@ export function useTextBitmaps(
               }
 
               const { layout, bytes } = await rasteriseField(field, options);
-              const wrote = await window.prequel.editor.bitmaps.write("texts", dir, path, bytes);
+              const wrote = await window.prequel.editor.bitmaps.write("texts", into, path, bytes);
               // A field that will not write takes the whole text with it
               // rather than leaving a subtitle floating under a missing
               // title.
@@ -148,12 +161,11 @@ export function useTextBitmaps(
         if (cancelled) return;
 
         setRendered(drawn);
-        setDrawing(false);
 
         // After the new set is live, so a sweep can never delete a bitmap the
         // plan is about to name.
-        void window.prequel.editor.bitmaps.sweep("texts", dir, written);
-      })();
+        void window.prequel.editor.bitmaps.sweep("texts", into, written);
+      }
     }, SETTLE_MS);
 
     return () => {

@@ -414,6 +414,31 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
           });
           return { ok: true as const, value: file };
         },
+        /**
+         * One at a time behind the same endpoint. The batch exists to spend
+         * one IPC round trip instead of many, and there is no IPC here — so
+         * the gallery pays the cost the app was built to avoid, which costs a
+         * gallery nothing.
+         */
+        writeMany: async (_kind, _dir, files) => {
+          const name = encodeURIComponent(sessionName ?? "");
+          const written: (string | null)[] = [];
+          for (const one of files) {
+            await fetch(`/overlay/${name}/${encodeURIComponent(one.file)}`, {
+              method: "PUT",
+              body: one.bytes as BodyInit,
+            });
+            written.push(one.file);
+          }
+          return { ok: true as const, value: written };
+        },
+        /**
+         * Nothing, always. The overlay store has no listing, and answering
+         * "already drawn" wrongly would be a caption placed in the plan with
+         * no bitmap behind it — where answering "not yet" only draws it
+         * again.
+         */
+        have: () => ok([] as string[]),
         sweep: () => ok(undefined),
       },
 

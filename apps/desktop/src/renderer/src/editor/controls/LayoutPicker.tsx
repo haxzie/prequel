@@ -1,7 +1,14 @@
 import type { BackgroundSettings, LayoutSettings, LayoutPreset } from "../../../../shared/project";
 import { DEFAULT_LAYOUT } from "../../../../shared/project";
-import { fillsTheFrame, layoutBoxes, presetFitsFrame, type Size } from "../../../../shared/layout";
+import {
+  fillsTheFrame,
+  layoutBoxes,
+  presetFitsFrame,
+  screenYawFor,
+  type Size,
+} from "../../../../shared/layout";
 import { PersonIcon } from "../icons";
+import { plateTransform } from "./perspective";
 import { cn } from "../../lib/cn";
 
 /**
@@ -91,6 +98,18 @@ const GROUPS: {
         value: "over-cutout",
         label: "Full screen, camera cut out of its background at the bottom right",
       },
+      // Straight after the cutout they are a variation on, and as a pair in
+      // the order every other handed pair in this grid takes: right first,
+      // because the right-handed one is the arrangement and the left-handed
+      // one is it reflected.
+      {
+        value: "over-cutout-lean",
+        label: "Camera cut out at the bottom right, screen turned away from it",
+      },
+      {
+        value: "over-cutout-lean-left",
+        label: "Camera cut out at the bottom left, screen turned away from it",
+      },
     ],
   },
   {
@@ -139,6 +158,16 @@ const THUMB_SOURCES = { screen: { width: 16, height: 9 }, camera: { width: 16, h
  * changing what they were promising while the thing being chosen stood still.
  */
 const THUMB_PADDING = 0.1;
+
+/**
+ * And what the leaning pair is drawn at.
+ *
+ * Wider, because those two are: picking one raises the composition's padding
+ * to `LEAN_PADDING` where it is below it. The thumbnails are already drawn at
+ * a wider margin than the default for legibility — see above — so this keeps
+ * the same relationship rather than using the real number.
+ */
+const THUMB_LEAN_PADDING = 0.15;
 
 // Square, so the cell is the same size whatever shape the output frame is and
 // the grid does not reflow when someone switches to a vertical preset.
@@ -297,14 +326,33 @@ function Plate({
     // the padding: a cell shows what you get the moment you choose it, and a
     // tile called "full frame" drawn with a margin promises something the pick
     // immediately takes away.
-    { ...background, padding: fillsTheFrame(preset) ? 0 : THUMB_PADDING },
+    {
+      ...background,
+      // The leaning pair is drawn wider than the rest, because it is: picking
+      // one raises the padding to `LEAN_PADDING` if it is below it, and a cell
+      // showing the ordinary margin would promise a card tighter than the one
+      // the pick gives.
+      padding: fillsTheFrame(preset)
+        ? 0
+        : screenYawFor(preset) !== 0
+          ? THUMB_LEAN_PADDING
+          : THUMB_PADDING,
+    },
     THUMB_SOURCES,
   );
 
   // Drawn as a person with nothing behind them. The arrangement writes
   // `cameraCutout` when it is picked — see `cutoutFor` — so the cell has to
   // promise what the pick will do rather than what the current settings say.
-  const cutout = preset === "over-cutout";
+  const cutout =
+    preset === "over-cutout" || preset === "over-cutout-lean" || preset === "over-cutout-lean-left";
+
+  // And the lean, for the same reason: the pick writes a yaw onto the clip, so
+  // a cell drawn square on would be promising a picture the pick does not
+  // give. Through `plateTransform`, which is what the Angle dials' own
+  // thumbnails use, so the two cannot come to disagree about which way a
+  // positive yaw turns.
+  const yaw = screenYawFor(preset);
 
   const at = (box: { x: number; y: number; width: number; height: number }) => ({
     left: `${(box.x / frame.width) * 100}%`,
@@ -328,9 +376,19 @@ function Plate({
       {boxes.screen && (
         <span
           className="absolute overflow-hidden rounded-[2px] bg-layout-screen"
-          style={at(boxes.screen.area)}
+          // The plate owns the `perspective`, not the picture: splay is a
+          // property of the scene being drawn rather than of the thing in it,
+          // and a value on the transformed element itself would be ignored.
+          // Shallow, for the reason the Angle presets' thumbnails are — a cell
+          // is forty pixels across, and a near lens turns eight degrees into a
+          // wedge.
+          style={{ ...at(boxes.screen.area), perspective: yaw !== 0 ? 320 : undefined }}
         >
-          {/* A sketch of something being recorded, rather than a blank block:
+          <span
+            className="absolute inset-0"
+            style={yaw !== 0 ? { transform: plateTransform(0, yaw) } : undefined}
+          >
+            {/* A sketch of something being recorded, rather than a blank block:
               a window's three dots and three lines of content under them.
 
               Six shapes and no more. This is drawn a few dozen pixels across
@@ -350,8 +408,8 @@ function Plate({
               Proportions rather than pixels, so the sketch squashes with the
               block instead of overflowing it. `overflow-hidden` on the parent
               is what keeps it inside the rounded corner. */}
-          <span className="absolute top-[13%] left-[8%] flex items-center gap-[2px]">
-            {/* The traffic lights. Three pixels across, where the shape has
+            <span className="absolute top-[13%] left-[8%] flex items-center gap-[2px]">
+              {/* The traffic lights. Three pixels across, where the shape has
                 gone and only the colour is left — which is the point: nothing
                 else in this app is red, amber and green in a row, so the block
                 wearing them is a window before anything else about it is read.
@@ -363,13 +421,14 @@ function Plate({
                 dots drew as little ovals. Three pixels is a circle at 1x and
                 at 2x, in a block of any size, which is worth more here than
                 scaling with it: this is chrome, and chrome does not grow. */}
-            <span className="size-[3px] shrink-0 rounded-full bg-layout-light-close" />
-            <span className="size-[3px] shrink-0 rounded-full bg-layout-light-min" />
-            <span className="size-[3px] shrink-0 rounded-full bg-layout-light-max" />
+              <span className="size-[3px] shrink-0 rounded-full bg-layout-light-close" />
+              <span className="size-[3px] shrink-0 rounded-full bg-layout-light-min" />
+              <span className="size-[3px] shrink-0 rounded-full bg-layout-light-max" />
+            </span>
+            <span className="absolute top-[34%] left-[8%] h-[9%] w-[62%] rounded-full bg-layout-ui" />
+            <span className="absolute top-[51%] left-[8%] h-[9%] w-[44%] rounded-full bg-layout-ui/70" />
+            <span className="absolute top-[68%] left-[8%] h-[9%] w-[54%] rounded-full bg-layout-ui/70" />
           </span>
-          <span className="absolute top-[34%] left-[8%] h-[9%] w-[62%] rounded-full bg-layout-ui" />
-          <span className="absolute top-[51%] left-[8%] h-[9%] w-[44%] rounded-full bg-layout-ui/70" />
-          <span className="absolute top-[68%] left-[8%] h-[9%] w-[54%] rounded-full bg-layout-ui/70" />
         </span>
       )}
       {boxes.camera && (

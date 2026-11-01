@@ -16,7 +16,14 @@ import {
   type FilterParam,
   type FilterSpec,
 } from "../../../shared/filters";
-import { cameraFloats, fillsTheFrame, shapeAspect, type Size } from "../../../shared/layout";
+import {
+  cameraFloats,
+  fillsTheFrame,
+  LEAN_PADDING,
+  screenYawFor,
+  shapeAspect,
+  type Size,
+} from "../../../shared/layout";
 import type { TrackKind } from "../../../shared/manifest";
 import {
   CLICK_SOUNDS,
@@ -65,7 +72,7 @@ import { FontPicker } from "./controls/FontPicker";
 import { Field, Section } from "./controls/Field";
 import { MusicPanel, type MusicState } from "./MusicPanel";
 import { LayoutPicker } from "./controls/LayoutPicker";
-import { PerspectivePad } from "./controls/PerspectivePad";
+import { Dial } from "./controls/Dial";
 import { PerspectivePlate } from "./controls/PerspectivePlate";
 import {
   AberrationIcon,
@@ -183,6 +190,7 @@ import {
   slicesOf,
   type EditorAction,
   type EditorState,
+  type SettingsPart,
 } from "./state";
 import {
   TEXT_TABS,
@@ -503,13 +511,20 @@ function InspectorPanels(props: InspectorProps) {
   });
 
   // `keys` narrows both halves of the button to part of a section: whether it
-  // is offered at all, and what it puts back. Background and Frame are two
+  // is offered at all, and what it puts back. Background and Recording are two
   // panels over the one `background` section, and either header resetting the
   // whole of it would undo edits the person cannot see from where they are.
-  const sectionReset = (section: SettingsSection, keys?: string[]) => {
-    const overridden = Object.keys(slice?.overrides[section] ?? {});
-    const touched = keys ? overridden.some((key) => keys.includes(key)) : overridden.length > 0;
-    return scoped && touched ? () => dispatch({ type: "resetSection", section, keys }) : undefined;
+  //
+  // A list because a panel is not a section. Recording dresses the picture out
+  // of `background` and leans it out of `layout`, and one button over the two
+  // of them has to put back everything under it or it is a Reset that half
+  // worked.
+  const sectionReset = (parts: readonly SettingsPart[]) => {
+    const touched = parts.some((part) => {
+      const overridden = Object.keys(slice?.overrides[part.section] ?? {});
+      return part.keys ? overridden.some((key) => part.keys!.includes(key)) : overridden.length > 0;
+    });
+    return scoped && touched ? () => dispatch({ type: "resetSection", parts }) : undefined;
   };
 
   // A selected zoom takes over the panel: it is not a clip, and none of the
@@ -911,23 +926,20 @@ function InspectorPanels(props: InspectorProps) {
     // already the output's own dimensions two lines above `FrameBar`, and one
     // word meaning two things in one editor is one too many.
     { id: "recording", label: props.still ? "Screenshot" : "Recording", Icon: ScreenIcon },
-    // A screenshot's two, straight after the panel that dresses the picture,
-    // because they are about the same picture: what it is pointing at, and
-    // which way it leans.
+    // Straight after the panel that dresses the picture, because it is about the
+    // same picture: what it is pointing at.
     //
-    // Only on a screenshot, and this is the one place in the editor where that
-    // is not simply "a still has less". A recording answers both of these on
-    // the timeline — a zoom moment lays a lens on something and carries its own
-    // lean — and a static pair beside it would be a second answer to the same
-    // question, which is what `NO_ZOOM` in `shared/layout.ts` is a note about.
-    // A still has no timeline to put a moment on, so the only place left is
-    // here.
-    ...(props.still
-      ? [
-          { id: "focus" as const, label: "Focus", Icon: FocusIcon },
-          { id: "perspective" as const, label: "Angle", Icon: PerspectiveIcon },
-        ]
-      : []),
+    // A screenshot's alone, and this is the one place in the editor where that
+    // is not simply "a still has less". A recording says "look here" on the
+    // timeline, where *when* it is said is half the statement, and a static
+    // lens beside it would be a second answer to the same question — which is
+    // what `NO_ZOOM` in `shared/layout.ts` is a note about.
+    //
+    // There is no Angle beside it. A lean is not a moment the way a lens is —
+    // it is the pose the clip is drawn in, next to its padding and its
+    // corner — so it sits in the panel that dresses the picture rather than in
+    // one of its own.
+    ...(props.still ? [{ id: "focus" as const, label: "Focus", Icon: FocusIcon }] : []),
     ...(props.present.has("camera")
       ? [{ id: "camera" as const, label: "Camera", Icon: CameraIcon }]
       : []),
@@ -979,22 +991,28 @@ function InspectorPanels(props: InspectorProps) {
   //
   // Null for Presets, which owns no section — it applies them wholesale, and
   // undo is what takes one off.
-  const OWNS: Record<CategoryId, { section: SettingsSection; keys?: string[] } | null> = {
+  const OWNS: Record<CategoryId, readonly SettingsPart[] | null> = {
     presets: null,
-    layout: { section: "layout" },
-    background: { section: "background", keys: PAINT_KEYS },
-    recording: { section: "background", keys: FRAME_KEYS },
-    // Three views onto `layout` now, and each resets only its own keys: Zoom
-    // and Angle sit over the same section as Camera and Cursor do, and a Reset
-    // that put the whole of it back would take the arrangement with it.
-    focus: { section: "layout", keys: FOCUS_KEYS },
-    perspective: { section: "layout", keys: TILT_KEYS },
-    filters: { section: "effects" },
-    watermark: { section: "watermark" },
-    camera: { section: "layout" },
-    audio: { section: "audio" },
-    cursor: { section: "layout" },
-    captions: { section: "captions" },
+    layout: [{ section: "layout" }],
+    background: [{ section: "background", keys: PAINT_KEYS }],
+    // Two sections, and the only panel with two. Everything in it is how the
+    // picture is presented — the padding and the border out of `background`,
+    // the lean out of `layout` — and the split between the sections is about
+    // where a value is stored rather than about anything on screen.
+    recording: [
+      { section: "background", keys: FRAME_KEYS },
+      { section: "layout", keys: TILT_KEYS },
+    ],
+    // Views onto `layout` that reset only their own keys: Focus sits over the
+    // same section as Camera and Cursor do, and a Reset that put the whole of
+    // it back would take the arrangement with it.
+    focus: [{ section: "layout", keys: FOCUS_KEYS }],
+    filters: [{ section: "effects" }],
+    watermark: [{ section: "watermark" }],
+    camera: [{ section: "layout" }],
+    audio: [{ section: "audio" }],
+    cursor: [{ section: "layout" }],
+    captions: [{ section: "captions" }],
     // Owns no `SliceSettings` section, like `presets`: covers are a list on the
     // project rather than settings on a clip, so Reset and apply-to-all have
     // nothing here to act on.
@@ -1139,22 +1157,13 @@ function InspectorPanels(props: InspectorProps) {
                     </button>
                   ) : undefined
                 }
-                onReset={
-                  OWNS[showing.id]
-                    ? sectionReset(OWNS[showing.id]!.section, OWNS[showing.id]!.keys)
-                    : undefined
-                }
+                onReset={OWNS[showing.id] ? sectionReset(OWNS[showing.id]!) : undefined}
                 // Only from a selected clip, and only onto others: with nothing
                 // selected the panel is already editing what every clip follows,
                 // and with one clip there is nowhere for it to go.
                 onApplyToAll={
                   scoped && OWNS[showing.id] && slicesOf(state.project).length > 1
-                    ? () =>
-                        dispatch({
-                          type: "applyToAll",
-                          section: OWNS[showing.id]!.section,
-                          keys: OWNS[showing.id]!.keys,
-                        })
+                    ? () => dispatch({ type: "applyToAll", parts: OWNS[showing.id]! })
                     : undefined
                 }
                 clips={slicesOf(state.project).length}
@@ -1273,10 +1282,6 @@ function InspectorPanels(props: InspectorProps) {
                     field={field}
                     set={set}
                   />
-                )}
-
-                {active === "perspective" && (
-                  <ScreenAnglePanel settings={settings} field={field} set={set} />
                 )}
 
                 {active === "filters" && (
@@ -1596,7 +1601,6 @@ export type CategoryId =
   | "background"
   | "recording"
   | "focus"
-  | "perspective"
   | "camera"
   | "audio"
   | "cursor"
@@ -1817,6 +1821,35 @@ function LayoutPanel({
             // not mark the angle as overridden on a clip that never set one.
             if (layout.cameraRotation !== 0) set("layout", "cameraRotation", 0);
 
+            // And the recording's own lean, which two arrangements are about
+            // and the rest are not. Written both ways like the cutout above:
+            // every other cell in the grid draws the screen square on, so a
+            // yaw carried over from the leaning pair would be the grid
+            // promising something the pick does not give.
+            //
+            // The yaw and nothing else. The depth is the strength of the lean
+            // rather than the lean itself, and somebody who has dialled one in
+            // means it for the clip — so an arrangement that reset it would be
+            // taking back a setting it was never asked about.
+            //
+            // Both written only when they move, so picking an arrangement does
+            // not mark either as overridden on a clip that never set one.
+            const yaw = screenYawFor(preset);
+            if (layout.screenRotateY !== yaw) set("layout", "screenRotateY", yaw);
+
+            // Room for the lean to be a lean of. A floor, not a value: picking
+            // one of these out of a full-bleed arrangement has to give you the
+            // padded card the cell shows, while a margin already wider than
+            // this — or the one you get swapping to the other hand — is left
+            // exactly as it is.
+            if (yaw !== 0 && settings.background.padding < LEAN_PADDING) {
+              set("background", "padding", LEAN_PADDING);
+            }
+            // Square on vertically. The pair lean side to side and the cells
+            // draw them that way; a pitch left over from the Angle panel would
+            // tip the picture in a direction no cell promised.
+            if (yaw !== 0 && layout.screenRotateX !== 0) set("layout", "screenRotateX", 0);
+
             // A full-frame arrangement starts flush to the edges, and square.
             //
             // `layoutBoxes` honours the padding under these two, so without this
@@ -2003,7 +2036,9 @@ function cameraShapeFor(preset: LayoutPreset): CameraShape | null {
  * the camera", and both are consulted in the same breath.
  */
 function cutoutFor(preset: LayoutPreset): boolean {
-  return preset === "over-cutout";
+  return (
+    preset === "over-cutout" || preset === "over-cutout-lean" || preset === "over-cutout-lean-left"
+  );
 }
 
 /** Arrangements with no camera in them. */
@@ -2034,6 +2069,21 @@ const SLOTTED = new Set<LayoutPreset>([
   "over-column",
   "over-column-left",
 ]);
+
+/**
+ * Arrangements that decide where the camera goes.
+ *
+ * Every arrangement that sizes the camera also places it, which is why this
+ * was one set for a long time. The leaning pair is what split them: it stands
+ * the person flush to the bottom of the frame in a fixed corner — the whole
+ * look — while leaving how *big* they are to the camera's own slider. One set
+ * would have meant either a Size slider that did nothing or a Position map
+ * that did, and a control that answers a drag with nothing is the thing both
+ * of these exist to prevent.
+ *
+ * Dragging the person in the preview still lets them loose, into `custom`.
+ */
+const PLACED = new Set<LayoutPreset>([...SLOTTED, "over-cutout-lean", "over-cutout-lean-left"]);
 
 /** The webcam bubble. Only reachable when the recording has one. */
 function CameraPanel({
@@ -2082,6 +2132,7 @@ function CameraPanel({
   // `custom` is either a card or a bubble, depending on what it was dragged out
   // of, which is exactly what `cameraCard` records.
   const slotted = SLOTTED.has(layout.preset) || (layout.preset === "custom" && layout.cameraCard);
+  const placed = PLACED.has(layout.preset) || (layout.preset === "custom" && layout.cameraCard);
   // Not `!slotted`, which is a different question: `camera-*` is neither a card
   // beside the screen nor a bubble over it — it *is* the picture, and a picture
   // that shrank away from a zoom would leave the frame empty.
@@ -2348,7 +2399,7 @@ function CameraPanel({
             aspect={aspect}
             x={layout.cameraX}
             y={layout.cameraY}
-            disabled={off || slotted}
+            disabled={off || placed}
             onChange={(x, y) => {
               set("layout", "cameraX", x);
               set("layout", "cameraY", y);
@@ -4059,7 +4110,13 @@ const FOCUS_KEYS: (keyof LayoutSettings)[] = [
   "focusVignette",
 ];
 
-/** And what Angle owns of it. */
+/**
+ * And what Recording's Angle group owns of it.
+ *
+ * `layout` keys under a panel that is otherwise `background`, which is why
+ * `OWNS` holds a list: the header's Reset has to put back both halves of what
+ * is on screen under it.
+ */
 const TILT_KEYS: (keyof LayoutSettings)[] = ["screenRotateX", "screenRotateY", "screenPerspective"];
 
 /**
@@ -4202,132 +4259,6 @@ function ScreenFocusPanel({
   );
 }
 
-/**
- * Which way a screenshot leans.
- *
- * The same three numbers a zoom's Angle tab sets, and deliberately the same
- * controls — the pad, the row of angles, the depth. A tilt is a tilt whether it
- * arrives with a shot or is simply the pose a picture is in, and
- * `rotatedQuad` is the one piece of arithmetic behind both.
- *
- * Static here, which is the whole difference: a zoom eases into its lean across
- * a span, and a screenshot has no span. See the note beside `keyFor`'s caller
- * in `buildRenderPlan` for what the plan carries instead.
- */
-function ScreenAnglePanel({
-  settings,
-  field,
-  set,
-}: {
-  settings: SliceSettings;
-  field: FieldProps;
-  set: Setter;
-}) {
-  const { layout } = settings;
-
-  return (
-    <Section>
-      {/* Drag the picture, not the numbers — the same argument the zoom's own
-          pad makes, and the same control. */}
-      <Field icon={<PerspectiveIcon />} label="Perspective">
-        <PerspectivePad
-          rotateX={layout.screenRotateX}
-          rotateY={layout.screenRotateY}
-          perspective={layout.screenPerspective}
-          limit={TILT_LIMIT}
-          onChange={(next) => {
-            set("layout", "screenRotateX", next.rotateX);
-            set("layout", "screenRotateY", next.rotateY);
-          }}
-        />
-      </Field>
-
-      <Field icon={<AngleIcon />} label="Angles">
-        <div className="grid grid-cols-3 gap-1">
-          {TILTS.map((preset) => {
-            const here =
-              Math.abs(layout.screenRotateX - preset.rotateX) < 0.5 &&
-              Math.abs(layout.screenRotateY - preset.rotateY) < 0.5;
-
-            return (
-              <button
-                key={preset.label}
-                type="button"
-                aria-pressed={here}
-                className={cn(
-                  "flex flex-col items-center gap-1 rounded-md px-1 py-1.5",
-                  "text-[10px] transition-colors",
-                  here
-                    ? "bg-selected text-white"
-                    : "bg-white/5 text-editor-muted hover:bg-white/10",
-                )}
-                onClick={() => {
-                  set("layout", "screenRotateX", preset.rotateX);
-                  set("layout", "screenRotateY", preset.rotateY);
-                }}
-              >
-                <span
-                  className="grid h-6 w-full place-items-center"
-                  style={{ perspective: THUMB_PERSPECTIVE }}
-                  aria-hidden="true"
-                >
-                  <PerspectivePlate
-                    rotateX={preset.rotateX}
-                    rotateY={preset.rotateY}
-                    className={cn(
-                      "h-4 w-7 rounded-[2px] border",
-                      here ? "border-white/70 bg-white/25" : "border-white/25 bg-white/10",
-                    )}
-                  />
-                </span>
-                {preset.label}
-              </button>
-            );
-          })}
-        </div>
-      </Field>
-
-      <Slider
-        icon={<DepthIcon />}
-        label="Depth"
-        {...field("layout", "screenPerspective")}
-        value={layout.screenPerspective}
-        min={0}
-        max={1}
-        step={0.01}
-        format={(value) => (value < 0.02 ? "Flat" : percent(value))}
-        onChange={(value) => set("layout", "screenPerspective", value)}
-      />
-
-      <Slider
-        icon={<TiltIcon />}
-        label="Tilt"
-        {...field("layout", "screenRotateX")}
-        value={layout.screenRotateX}
-        min={-TILT_LIMIT}
-        max={TILT_LIMIT}
-        step={1}
-        // Degrees, and signed: the sign is the whole difference between leaning
-        // towards the viewer and away from them.
-        format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-        onChange={(value) => set("layout", "screenRotateX", value)}
-      />
-
-      <Slider
-        icon={<YawIcon />}
-        label="Yaw"
-        {...field("layout", "screenRotateY")}
-        value={layout.screenRotateY}
-        min={-TILT_LIMIT}
-        max={TILT_LIMIT}
-        step={1}
-        format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-        onChange={(value) => set("layout", "screenRotateY", value)}
-      />
-    </Section>
-  );
-}
-
 /** Quick-select stops under the speed slider. */
 const SPEED_PRESETS = [0.25, 0.5, 1, 2, 4] as const;
 
@@ -4353,13 +4284,14 @@ function RecordingPanel({
   speed: number | undefined;
   onChangeSpeed: (speed: number) => void;
 }) {
-  const { background } = settings;
+  const { background, layout } = settings;
 
   return (
-    // Four groups rather than one column of eight. The panel is the frame
-    // around the picture, and half of what is in here belongs to the border or
-    // the shadow rather than to the frame itself — read as a flat list, "Blur"
-    // sitting under "Border opacity" is anyone's guess as to what it blurs.
+    // Five groups rather than one long column. The panel is how the recording
+    // is presented, and most of what is in here belongs to the border, the
+    // shadow or the lean rather than to the frame itself — read as a flat list,
+    // "Blur" sitting under "Border opacity" is anyone's guess as to what it
+    // blurs.
     //
     // Headings earn their place here for the reason they do not on the panels
     // with one group: these name something the panel header does not.
@@ -4429,6 +4361,92 @@ function RecordingPanel({
           format={percent}
           onChange={(value) => set("background", "cornerRadius", value)}
         />
+      </Section>
+
+      {/* Here rather than on a rail of its own. A lean is not a moment the way
+          a zoom or a lens is — it is the pose the clip is drawn in, beside its
+          padding and its corner — and a panel holding three dials was a
+          destination in the rail that nobody had a reason to visit twice.
+
+          The one group in here reaching outside `background`: these three are
+          `layout` keys. See `OWNS`, which is what keeps the header's Reset
+          honest across the two. */}
+      <Section title="Angle">
+        {/* Three dials rather than three bars. The panel is a column of
+            horizontal fills, and any of these drawn as one more read as another
+            length — a padding, an opacity — rather than as a turn. Side by side
+            they also say what they are: one pose, measured three ways.
+
+            The row of named angles that used to be here is gone. Six buttons
+            spent the room this row needs to say the same six things and a great
+            many more, and double-clicking a dial is the one of them anybody
+            reached for — back to flat. */}
+        <Field icon={<PerspectiveIcon />}>
+          <div className="grid grid-cols-3 gap-2">
+            {/* Dragged up and down, because a pitch is read by pulling the near
+                edge of the picture towards you. */}
+            <Dial
+              label="Tilt"
+              icon={<TiltIcon />}
+              axis="vertical"
+              {...field("layout", "screenRotateX")}
+              value={layout.screenRotateX}
+              min={-TILT_LIMIT}
+              max={TILT_LIMIT}
+              // Degrees, and signed: the sign is the whole difference between
+              // leaning towards the viewer and away from them.
+              format={(value: number) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+              onChange={(value: number) => set("layout", "screenRotateX", value)}
+            />
+            {/* And side to side, because a yaw swings the far edge across. The
+                two gestures are the two turns, which is what keeps a row of
+                identical circles from needing to be read before being used. */}
+            <Dial
+              label="Yaw"
+              icon={<YawIcon />}
+              axis="horizontal"
+              {...field("layout", "screenRotateY")}
+              value={layout.screenRotateY}
+              min={-TILT_LIMIT}
+              max={TILT_LIMIT}
+              format={(value: number) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+              onChange={(value: number) => set("layout", "screenRotateY", value)}
+            />
+            {/* Unsigned, so this one only ever fills clockwise — there is no
+                less than flat. Vertical like the tilt, because it is an amount
+                and more is up.
+
+                Live even while the picture is flat, which it was not: a depth
+                is the strength of a perspective and there is no perspective at
+                no angle, so this used to grey itself out. That is true and it
+                was the wrong thing to do — a control that answers a drag with
+                nothing reads as broken, and the panel never said why. It takes
+                the setting now and the line below says what it is waiting
+                for. */}
+            <Dial
+              label="Depth"
+              icon={<DepthIcon />}
+              axis="vertical"
+              {...field("layout", "screenPerspective")}
+              value={layout.screenPerspective}
+              min={0}
+              max={1}
+              step={0.01}
+              format={(value: number) => (value < 0.02 ? "Flat" : percent(value))}
+              onChange={(value: number) => set("layout", "screenPerspective", value)}
+            />
+          </div>
+        </Field>
+
+        {/* Only while there is nothing for the depth to be the strength of.
+            Under the row rather than in a tooltip, because the question it
+            answers — "why is nothing happening?" — is asked by somebody who is
+            already dragging and is not going to hover and wait. */}
+        {layout.screenRotateX === 0 && layout.screenRotateY === 0 && (
+          <p className="-mt-1 text-[11px] text-editor-muted">
+            Depth needs an angle. Set a tilt or a yaw and it takes effect.
+          </p>
+        )}
       </Section>
 
       <Section title="Border">
@@ -5015,25 +5033,37 @@ function PanelHeader({
   );
 }
 
-/** What `sanitiseZooms` clamps an angle to, so the pad cannot set one it drops. */
+/** What `sanitiseZooms` clamps an angle to, so a dial cannot set one it drops. */
 const TILT_LIMIT = 45;
 
 /**
  * How much the preset thumbnails splay.
  *
- * Fixed, and shallow: a 28px plate at the pad's near perspective turns into a
- * wedge with one edge a couple of pixels tall, which reads as a rendering
- * mistake rather than as an angle.
+ * Fixed, and shallow: a 28px plate at the near end of the depth range turns
+ * into a wedge with one edge a couple of pixels tall, which reads as a
+ * rendering mistake rather than as an angle.
  */
 const THUMB_PERSPECTIVE = 220;
 
+/**
+ * The named looks under a zoom's dials, and only under a zoom's.
+ *
+ * All three numbers each, because a look is the angle *and* how hard it is
+ * sold: `Hero` is a hard lean through a near lens, and the same two angles at
+ * the flat end of the depth range are a different picture. See the row itself
+ * in `ZoomPerspectivePanel` for why the clip's own Angle group has none.
+ *
+ * `Flat` carries the default depth rather than zero: it is there to undo an
+ * angle, and dropping the lens to its flattest on the way out would be a second
+ * thing nobody asked for.
+ */
 const TILTS = [
-  { label: "Flat", rotateX: 0, rotateY: 0 },
-  { label: "Lean back", rotateX: 8, rotateY: 0 },
-  { label: "Lean in", rotateX: -8, rotateY: 0 },
-  { label: "Left", rotateX: 4, rotateY: -10 },
-  { label: "Right", rotateX: 4, rotateY: 10 },
-  { label: "Hero", rotateX: 12, rotateY: -14 },
+  { label: "Flat", rotateX: 0, rotateY: 0, perspective: 0.5 },
+  { label: "Lean back", rotateX: 8, rotateY: 0, perspective: 0.45 },
+  { label: "Lean in", rotateX: -8, rotateY: 0, perspective: 0.45 },
+  { label: "Left", rotateX: 4, rotateY: -10, perspective: 0.5 },
+  { label: "Right", rotateX: 4, rotateY: 10, perspective: 0.5 },
+  { label: "Hero", rotateX: 12, rotateY: -14, perspective: 0.72 },
 ] as const;
 
 /**
@@ -5291,42 +5321,99 @@ function ZoomMotionPanel({
  */
 function ZoomPerspectivePanel({
   zoom,
-  frame,
-  hasCursor,
   onChange,
 }: {
   zoom: ZoomSlice;
-  frame: Size;
-  /** Whether this recording has a pointer track to follow. */
-  hasCursor: boolean;
   onChange: (patch: Partial<ZoomSlice>) => void;
 }) {
   return (
     <Section>
-      {/* Drag the picture, not the numbers. The sliders below stay for
-          precision and for saying what the angle currently is — the pad is how
-          anyone arrives at one. */}
-      <Field icon={<PerspectiveIcon />} label="Perspective">
-        <PerspectivePad
-          rotateX={zoom.rotateX}
-          rotateY={zoom.rotateY}
-          perspective={zoom.perspective}
-          limit={TILT_LIMIT}
-          onChange={onChange}
-        />
+      {/* The same three the Recording panel's Angle group carries, and
+          deliberately the same control: a tilt is a tilt whether it arrives
+          with a shot or is the pose the clip is already in, and somebody who
+          has learned one of the two has learned both.
+
+          The pad and the six named angles that were here are gone. The pad
+          could only be dragged, so it had two sliders under it to say what it
+          had set; a dial is both at once, and the presets were spending three
+          rows on six of the points this row reaches. */}
+      <Field icon={<PerspectiveIcon />}>
+        <div className="grid grid-cols-3 gap-2">
+          <Dial
+            label="Tilt"
+            icon={<TiltIcon />}
+            axis="vertical"
+            value={zoom.rotateX}
+            min={-TILT_LIMIT}
+            max={TILT_LIMIT}
+            format={(value: number) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+            onChange={(rotateX: number) => onChange({ rotateX })}
+          />
+          <Dial
+            label="Yaw"
+            icon={<YawIcon />}
+            axis="horizontal"
+            value={zoom.rotateY}
+            min={-TILT_LIMIT}
+            max={TILT_LIMIT}
+            format={(value: number) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
+            onChange={(rotateY: number) => onChange({ rotateY })}
+          />
+          {/* The control the panel was missing. The angle says which way the
+              picture is turned; this says how much being turned costs it, and
+              the same 12° is a product shot at one end and a caricature at the
+              other. Every 3D tool separates the two — it is Rotato's
+              "Perspective" and a camera's field of view. */}
+          <Dial
+            label="Depth"
+            icon={<DepthIcon />}
+            axis="vertical"
+            value={zoom.perspective}
+            min={0}
+            max={1}
+            step={0.01}
+            format={(value: number) => (value < 0.02 ? "Flat" : percent(value))}
+            onChange={(perspective: number) => onChange({ perspective })}
+          />
+        </div>
       </Field>
 
-      {/* Each preset shows the angle it sets rather than only naming it. "Hero"
-          and "Lean back" are labels you have to have learned; the plate above
-          them is the same picture the pad draws, so the row can be read instead
-          of memorised. The name stays underneath — it is what the two of you
-          call the setting once it is chosen. */}
+      {/* Every zoom the first cut lays down is square on — see `DEFAULT_ZOOM` —
+          so this is the state a zoom is in when somebody opens this tab for the
+          first time, and the depth greying itself out there was the control
+          looking broken on first contact. */}
+      {zoom.rotateX === 0 && zoom.rotateY === 0 && (
+        <p className="-mt-1 text-[11px] text-editor-muted">
+          Depth needs an angle. Set a tilt or a yaw, or pick one below.
+        </p>
+      )}
+
+      {/* Named looks, and only here.
+          A zoom is a moment somebody is composing — they are reaching for "the
+          hero shot", not for −14° of yaw — so a row that names six of them is
+          worth the space it costs. The clip's own Angle group has no such row
+          on purpose: a clip's lean is the pose it sits in for its whole length,
+          set once and left, and a wall of named poses in front of three dials
+          would be the panel shouting about the setting somebody is least likely
+          to be hunting for.
+
+          Each shows the angle it sets rather than only naming it. "Hero" and
+          "Lean back" are labels you have to have learned; the plate above them
+          is the same rotation the renderer will apply, so the row can be read
+          instead of memorised.
+
+          They carry the depth as well as the two angles, which is what makes
+          them looks rather than shortcuts: `Hero` is a hard lean seen through a
+          near lens, and the same angles at the flat end of the depth range are
+          a different picture entirely. It is also why pressing one is a single
+          change to all three — see `onChange`, which takes a patch. */}
       <Field icon={<AngleIcon />} label="Angles">
         <div className="grid grid-cols-3 gap-1">
           {TILTS.map((preset) => {
             const here =
               Math.abs(zoom.rotateX - preset.rotateX) < 0.5 &&
-              Math.abs(zoom.rotateY - preset.rotateY) < 0.5;
+              Math.abs(zoom.rotateY - preset.rotateY) < 0.5 &&
+              Math.abs(zoom.perspective - preset.perspective) < 0.02;
 
             return (
               <button
@@ -5340,13 +5427,18 @@ function ZoomPerspectivePanel({
                     ? "bg-selected text-white"
                     : "bg-white/5 text-editor-muted hover:bg-white/10",
                 )}
-                onClick={() => onChange({ rotateX: preset.rotateX, rotateY: preset.rotateY })}
+                onClick={() =>
+                  onChange({
+                    rotateX: preset.rotateX,
+                    rotateY: preset.rotateY,
+                    perspective: preset.perspective,
+                  })
+                }
               >
-                {/* Fixed and shallower than the pad's. The pad splays with the
-                    zoom's perspective because it is showing this shot; a thumbnail is
-                    showing the angle alone, and letting it move with an
-                    unrelated slider would make six buttons twitch whenever
-                    perspective was dragged. */}
+                {/* Fixed and shallower than the dials imply. A thumbnail is
+                    showing the angle alone, and letting it splay with the
+                    zoom's own depth would make six buttons twitch whenever that
+                    dial was turned. */}
                 <span
                   className="grid h-6 w-full place-items-center"
                   style={{ perspective: THUMB_PERSPECTIVE }}
@@ -5367,46 +5459,6 @@ function ZoomPerspectivePanel({
           })}
         </div>
       </Field>
-
-      {/* The control the panel was missing. The angle says which way the
-          picture is turned; this says how much being turned costs it, and the
-          same 12° is a product shot at one end and a caricature at the other.
-          Every 3D tool separates the two — it is Rotato's "Perspective" and a
-          camera's field of view. */}
-      <Slider
-        icon={<DepthIcon />}
-        label="Depth"
-        value={zoom.perspective}
-        min={0}
-        max={1}
-        step={0.01}
-        format={(value) => (value < 0.02 ? "Flat" : percent(value))}
-        onChange={(perspective) => onChange({ perspective })}
-      />
-
-      <Slider
-        icon={<TiltIcon />}
-        label="Tilt"
-        value={zoom.rotateX}
-        min={-TILT_LIMIT}
-        max={TILT_LIMIT}
-        step={1}
-        // Degrees, and signed: the sign is the whole difference between
-        // leaning towards the viewer and away from them.
-        format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-        onChange={(rotateX) => onChange({ rotateX })}
-      />
-
-      <Slider
-        icon={<YawIcon />}
-        label="Yaw"
-        value={zoom.rotateY}
-        min={-TILT_LIMIT}
-        max={TILT_LIMIT}
-        step={1}
-        format={(value) => `${value > 0 ? "+" : ""}${value.toFixed(0)}°`}
-        onChange={(rotateY) => onChange({ rotateY })}
-      />
     </Section>
   );
 }

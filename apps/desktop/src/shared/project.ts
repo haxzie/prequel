@@ -95,6 +95,13 @@ export type LayoutPreset =
   | "over-full"
   | "over-padded"
   | "over-cutout"
+  // The cutout with the recording turned a few degrees away from whichever
+  // corner the person is standing in, so the two stop reading as a flat
+  // picture with a sticker on it. A `-left` suffix says which side the camera
+  // takes, as it does everywhere else; the lean follows it rather than being a
+  // second thing to set, and `screenYawFor` is what writes it.
+  | "over-cutout-lean"
+  | "over-cutout-lean-left"
   | "over-column"
   | "over-column-left"
   | "beside"
@@ -239,14 +246,15 @@ export interface LayoutSettings {
    * How far the screen picture leans, in degrees, about each axis.
    *
    * The same pair a zoom carries and in the same units — a perspective tilt
-   * rather than a rotation, so the far edge is genuinely further away. Static
-   * here: a still has no span for a tilt to ease across, so these are the pose
-   * the picture is drawn in rather than one it moves into.
+   * rather than a rotation, so the far edge is genuinely further away. Static:
+   * these are the pose the picture is drawn in for the length of the clip
+   * rather than one it moves into.
    *
-   * On a recording they are zero and no control reaches them. A recording tilts
-   * through its zooms, where the lean arrives with the shot, and a static pair
-   * beside them would be a second answer to one question — the same reason a
-   * recording has no static zoom. See `NO_ZOOM` in `shared/layout.ts`.
+   * On a recording and on a screenshot both. A lean is not a moment the way a
+   * lens is — it is how the clip is presented, beside the padding and the
+   * corner — so it is a clip's setting and not a zoom's. A zoom that states an
+   * angle of its own still replaces it while the shot is in; one that states
+   * none keeps it. See `shotTrack` in `shared/layout.ts`.
    */
   screenRotateX: number;
   screenRotateY: number;

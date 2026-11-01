@@ -910,6 +910,8 @@ export const IPC_CHANNELS = {
   scenePresetsApplyImage: "scenePresets:applyImage",
   scenePresetsApplyWatermark: "scenePresets:applyWatermark",
   editorWriteBitmap: "editor:writeBitmap",
+  editorWriteBitmaps: "editor:writeBitmaps",
+  editorHaveBitmaps: "editor:haveBitmaps",
   editorSweepBitmaps: "editor:sweepBitmaps",
   /**
    * The local library.
@@ -1829,24 +1831,35 @@ export const CURSOR_STYLES = [
     },
   },
 
-  // ── The pointer stick ─────────────────────────────────────────────────────
+  // ── The pointer sticks ────────────────────────────────────────────────────
   //
-  // A teacher's pointer: a small hand on the end of a black rod that runs off
-  // the bottom of the picture, so the handle never has an end anybody can see.
-  // One image, for the emoji's reason — a prop has no I-beam.
+  // A teacher's pointer: a hand on the end of a rod that runs off the bottom of
+  // the picture, so the handle never has an end anybody can see. One image
+  // each, for the emoji's reason below — a prop has no I-beam.
   //
-  // Leaned onto the default pointer's own angle, which `make-cursor.mjs`
-  // measures off that glyph rather than picking: hand and handle share one
-  // axis, pointing up and to the left exactly as the arrow does. It is the
-  // same pointer with a handle on it, and at any other angle it would be a
-  // second pointer that happens to be in the same list. The lean is also why
-  // this style switches the pointer's own lean off — see `cursorItems`.
+  // Photographs of toys rather than drawn shapes, so they come through
+  // `scripts/make-stick-cursors.mjs` instead of `make-cursor.mjs`. The white
+  // one used to be drawn there, in three flat tones, and the reason it is not
+  // any more is the reason the other three exist: a glove, a varnished dowel
+  // and a satin bow are materials, and a material is shading, which a distance
+  // field cannot express at any number of tones.
   //
-  // The only style that carries `reach`, and it is why it is a style at all:
-  // the rod has to leave the frame from anywhere in the frame, which is a
-  // length nothing about the Size control can promise. `reach` is that length,
-  // as a multiple of the frame's shorter edge, and `cursorItems` sizes the
-  // whole sprite from it.
+  // In pairs, which is what fixes the order: the white glove and its black twin
+  // first, because between them they suit any recording; then the wooden one
+  // for a lesson; then the pink and the fuzzy blue, which are frankly toys and
+  // are where somebody goes looking for one.
+  //
+  // Leaned onto the default pointer's own angle, which that script takes from
+  // `STICK_TILT` rather than picking: hand and handle share one axis, pointing
+  // up and to the left exactly as the arrow does. It is the same pointer with a
+  // handle on it, and at any other angle it would be a second pointer that
+  // happens to be in the same list. The lean is also why these switch the
+  // pointer's own lean off — see `cursorItems`.
+  //
+  // `reach` is why they are styles at all: the rod has to leave the frame from
+  // anywhere in the frame, which is a length nothing about the Size control can
+  // promise. It is that length, as a multiple of the frame's shorter edge, and
+  // `cursorItems` sizes the whole sprite from it.
   //
   // 2.2 is the worst case with room to spare. The rod spans more than the
   // sprite's own side, and the furthest a line at this lean travels inside a
@@ -1857,31 +1870,85 @@ export const CURSOR_STYLES = [
   // Big, therefore: the sprite is twice the frame's shorter edge, which is a
   // quad of some millions of fragments a frame on top of the picture's own.
   // Noticeable in an export and nowhere else, and only for somebody who picked
-  // it.
+  // one.
+  //
+  // Every one carries a `swatch`. The sprite is a fifteenth hand and the rest
+  // handle, so a tile cut from it is a hairline across an empty square — and
+  // the picker's tiles are the only caption a pointer has.
+  //
+  // And each arrives with a mark and a sound. A stick is a prop rather than a
+  // pointer, and the two things a prop does — leave something where it taps,
+  // and make the noise of doing it — are a click mark and a click sound this
+  // app already has somewhere else. Choosing the pointer and then hunting down
+  // two more settings to make it a pointer is a choice nobody would thank us
+  // for.
+  //
+  // The mark is `chalk` on every one of them, and that is the point of it: it
+  // is what a stick *does* to the thing it touches, and a pointer that knocked
+  // a puff of dust loose in one material and drew a heart in another would be
+  // five props rather than one in five finishes. White, because chalk is — the picker
+  // writes the mark's own colour along with it, so the tone comes free.
+  //
+  // The sound is still each one's own, because that is the other half: these
+  // are a dense rubber glove, a wooden dowel, a satin bow and a handful of fur,
+  // and they do not land alike.
+  //
+  // Written on choosing it, like the colour a click mark arrives in: the three
+  // are the user's from then on, and picking the stick again puts them back.
+  // See `cursorArrivesWith`, and the panel's `CursorPicker`.
   {
+    // The id the drawn stick had, kept: a project that chose the stick before
+    // this goes on to be a different picture rather than a missing one.
     id: "stick",
-    label: "Pointer stick",
+    label: "White pointer",
     reach: 2.2,
-    // The sprite is twenty parts handle to one part hand, so a tile cut from
-    // it is a hairline across an empty square. This is the same stick drawn at
-    // the proportions a forty-point tile can show — both come out of
-    // `make-cursor.mjs`, so they cannot drift into two different pointers.
     swatch: "cursor-stick-swatch.png",
-    // The mark and the sound it arrives with. A stick is a prop rather than a
-    // pointer, and the two things a prop does — knock a puff of chalk off the
-    // board, and make the noise of doing it — are a click mark and a click
-    // sound this app already has somewhere else. Choosing the pointer and then
-    // hunting down two more settings to make it a pointer is a choice nobody
-    // would thank us for.
-    //
-    // Written on choosing it, like the colour a click mark arrives in: the
-    // three are the user's from then on, and picking the stick again puts them
-    // back. See `cursorArrivesWith`, and the panel's `CursorPicker`.
     arrives: { mark: "chalk", sound: "blackboard" },
     shapes: {
-      // The fingertip, placed rather than measured — `make-cursor.mjs` puts it
-      // here and prints it back.
+      // The fingertip, placed rather than measured — `make-stick-cursors.mjs`
+      // puts it here and prints it back. Shared by all four, because one pair
+      // of shapes in that script draws every one of them.
       arrow: { file: "cursor-stick.png", hotspot: { x: 0.045, y: 0.025 } },
+    },
+  },
+  {
+    id: "stick-black",
+    label: "Black pointer",
+    reach: 2.2,
+    swatch: "cursor-stick-black-swatch.png",
+    arrives: { mark: "chalk", sound: "tok" },
+    shapes: {
+      arrow: { file: "cursor-stick-black.png", hotspot: { x: 0.045, y: 0.025 } },
+    },
+  },
+  {
+    id: "stick-wood",
+    label: "Wooden pointer",
+    reach: 2.2,
+    swatch: "cursor-stick-wood-swatch.png",
+    arrives: { mark: "chalk", sound: "walnut" },
+    shapes: {
+      arrow: { file: "cursor-stick-wood.png", hotspot: { x: 0.045, y: 0.025 } },
+    },
+  },
+  {
+    id: "stick-pink",
+    label: "Pink pointer",
+    reach: 2.2,
+    swatch: "cursor-stick-pink-swatch.png",
+    arrives: { mark: "chalk", sound: "pop" },
+    shapes: {
+      arrow: { file: "cursor-stick-pink.png", hotspot: { x: 0.045, y: 0.025 } },
+    },
+  },
+  {
+    id: "stick-blue",
+    label: "Fuzzy pointer",
+    reach: 2.2,
+    swatch: "cursor-stick-blue-swatch.png",
+    arrives: { mark: "chalk", sound: "soft" },
+    shapes: {
+      arrow: { file: "cursor-stick-blue.png", hotspot: { x: 0.045, y: 0.025 } },
     },
   },
 
@@ -2048,7 +2115,7 @@ export function cursorSwatch(id: string): string {
 
 /**
  * The mark and the sound a style arrives with, or null for one that arrives
- * with nothing — which is all of them but the stick.
+ * with nothing — which is every style but the sticks.
  *
  * Ids rather than a mark and a voice: the catalogues they name live in
  * `click-effects.ts` and `project.ts`, and this file knowing either of them
@@ -2063,7 +2130,7 @@ export function cursorArrivesWith(id: string): { mark: string; sound: string } |
 
 /**
  * How far a style's pointer has to reach past the frame, or null for one that
- * does not have to reach anywhere — which is all of them but the stick.
+ * does not have to reach anywhere — which is all of them but the sticks.
  *
  * The one question two places ask: `cursorItems`, to size the sprite, and the
  * panel, to stop the Size slider below the length the sprite cannot go under.

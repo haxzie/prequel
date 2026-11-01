@@ -27,7 +27,9 @@ import type { EditorSession } from "../../../shared/contract";
 import type { CueLayer, RenderedCue, Size } from "../../../shared/layout";
 import { captionLook, resolveSettings, type Project } from "../../../shared/project";
 import type { Transcript } from "../../../shared/transcript";
-import { cueKey, cuePath, rasteriseCue } from "./captionBitmap";
+import { cueKey, cuePath, measureCue } from "./captionBitmap";
+import CaptionWorker from "./captionWorker?worker";
+import type { DrawReply, DrawRequest, DrawnCue } from "./captionWorker";
 import { captionFont } from "./controls/fonts";
 import { survivingWords } from "./captionText";
 import { placedSlices, slicesOf } from "./state";
@@ -42,6 +44,60 @@ import { placedSlices, slicesOf } from "./state";
  * register.
  */
 const SETTLE_MS = 120;
+
+/**
+ * How many cues are drawn before the preview is told about them.
+ *
+ * The whole reason a redraw is not one job any more. A twenty-minute
+ * recording is hundreds of cues in most looks and thousands in the one that
+ * shows a word at a time, and publishing only at the end meant a font change
+ * showed the *old* font until every one of them had been drawn.
+ *
+ * Twenty-four is about a second of speech either side of the playhead. Small
+ * enough that the first chunk lands immediately, large enough that the IPC
+ * write it batches is worth batching.
+ */
+const CHUNK = 24;
+
+/**
+ * How often the preview is told about new cues, at most.
+ *
+ * Publishing every chunk was the obvious thing and the wrong one: a long
+ * recording is over a hundred chunks, and each one is a `setState` that
+ * re-renders the editor. A hundred renders in a burst is the jank this was
+ * supposed to remove, arriving from the other direction.
+ *
+ * So the first chunk goes out immediately — that is the whole point, the cues
+ * under the playhead appearing at once — and the rest are collected until this
+ * much time has passed. The last one always goes out whatever the clock says.
+ */
+const PUBLISH_MS = 200;
+
+/** Request ids, so a reply can be matched to the chunk that asked for it. */
+let request = 0;
+function nextRequest(): number {
+  request += 1;
+  return request;
+}
+
+/**
+ * Asks the worker for one chunk and waits for that chunk's reply.
+ *
+ * Matched by id rather than by taking the next message: chunks are awaited one
+ * at a time today, but a reply arriving for an abandoned redraw would
+ * otherwise be read as this one's.
+ */
+function ask(thread: Worker, message: DrawRequest): Promise<(DrawnCue | null)[]> {
+  return new Promise((resolve) => {
+    const listen = (event: MessageEvent<DrawReply>) => {
+      if (event.data.id !== message.id) return;
+      thread.removeEventListener("message", listen);
+      resolve(event.data.drawn);
+    };
+    thread.addEventListener("message", listen);
+    thread.postMessage(message);
+  });
+}
 
 export interface Captions {
   /**
@@ -73,6 +129,16 @@ export function useCaptions(
   transcript: Transcript | null,
   project: Project,
   frame: Size,
+  /**
+   * Where the playhead is, in source time, or null before the media is ready.
+   *
+   * Only ever read to decide what to draw *first*. A redraw of a long
+   * recording is thousands of cues and the one that matters is the one on
+   * screen, so the order is by distance from here — see `draw`. Read through a
+   * ref, never depended on: this changes sixty times a second during playback
+   * and nothing about the pixels depends on it.
+   */
+  playhead: () => number | null = () => null,
 ): Captions {
   const [byLook, setByLook] = useState<ReadonlyMap<string, readonly RenderedCue[]>>(NONE);
   const [drawing, setDrawing] = useState(false);
@@ -145,8 +211,25 @@ export function useCaptions(
     cuts,
   ].join("|");
 
-  const latest = useRef({ looks, spoken, frame });
-  latest.current = { looks, spoken, frame };
+  const latest = useRef({ looks, spoken, frame, playhead });
+  latest.current = { looks, spoken, frame, playhead };
+
+  /**
+   * The thread the pixels are painted on.
+   *
+   * One for the hook's whole life rather than one per redraw: starting a
+   * worker costs a module load, and a redraw happens on every settled
+   * keystroke of a slider.
+   */
+  const worker = useRef<Worker | null>(null);
+  useEffect(() => {
+    const thread = new CaptionWorker();
+    worker.current = thread;
+    return () => {
+      thread.terminate();
+      worker.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const dir = session?.dir;
@@ -161,13 +244,53 @@ export function useCaptions(
 
     const timer = setTimeout(() => {
       void (async () => {
-        const { looks: pending, spoken: words, frame: size } = latest.current;
+        // `drawing` is what the export waits on before it builds its plan —
+        // see `settled` in `useExport.ts` — so every way out of this has to put
+        // it back. It used to be cleared on the one path where the whole draw
+        // finished, which meant an abandoned run, or anything thrown out here
+        // rather than inside the per-cue `try`, left the flag raised with
+        // nothing left to lower it. The export then waited on it for ever:
+        // the save dialog closed, "preparing" stayed on screen, and nothing
+        // was ever sent to main — a freeze with not one line in the log.
+        try {
+          await draw(dir);
+        } finally {
+          setDrawing(false);
+        }
+      })();
+
+      async function draw(into: string) {
+        const { looks: pending, spoken: words, frame: size, playhead: at } = latest.current;
         if (!words) return;
+
+        const thread = worker.current;
+        if (!thread) return;
 
         const drawn = new Map<string, RenderedCue[]>();
         const written: string[] = [];
 
-        for (const [look, current] of pending) {
+        // Published as it goes, so the preview does not wait for the whole
+        // recording. `byLook` is replaced with a fresh map each time rather
+        // than mutated, because React compares by identity and a mutated map
+        // is a redraw nobody sees.
+        let published = 0;
+        const publish = (force: boolean) => {
+          const now = performance.now();
+          if (!force && published !== 0 && now - published < PUBLISH_MS) return;
+          published = now;
+
+          const snapshot = new Map<string, readonly RenderedCue[]>();
+          for (const [look, set] of drawn) snapshot.set(look, [...set]);
+          setByLook(snapshot);
+        };
+
+        // The look on screen before the others. Every one of them is drawn in
+        // the end, but a recording usually has one look across every clip and
+        // the preview can only ever show one — so whichever that is goes
+        // first, and the rest fill in behind it.
+        const order = [...pending];
+
+        for (const [look, current] of order) {
           const style = captionStyle(current.captionStyle);
           const options = {
             frame: size,
@@ -183,68 +306,157 @@ export function useCaptions(
             // the swollen one lands on its neighbours.
             perWord: style.perWord,
           });
-          const set: RenderedCue[] = [];
 
-          for (const cue of cues) {
-            // Checked between cues rather than only at the end: a long recording
-            // is hundreds of bitmaps, and a settings change part way through
-            // should abandon the rest rather than finish drawing the old look.
+          const set: RenderedCue[] = [];
+          drawn.set(look, set);
+
+          // What each cue is called and where its words sit, worked out
+          // without painting anything. `measureCue` is the cheap half of the
+          // rasteriser — no canvas, no PNG — and it is all that is needed to
+          // *place* a cue whose bitmaps are already on disk.
+          const named = cues.map((cue) => {
+            const key = cueKey(cue, style, options);
+            const measured = measureCue(cue, style, options);
+            return {
+              cue,
+              key,
+              measured,
+              paths: measured.layers.map((layer) => cuePath(key, layer.name)),
+            };
+          });
+
+          // Which bitmaps are already on disk. One round trip for the lot:
+          // `writeBitmap` has always skipped a file that is there, but only
+          // after this side had painted it, encoded a PNG and shipped it — so
+          // a second redraw of the same look cost everything the first did and
+          // changed nothing. Asking first is what makes re-opening a project,
+          // or turning a setting back, free.
+          const have = await window.prequel.editor.bitmaps.have(
+            "captions",
+            into,
+            named.flatMap((one) => one.paths),
+          );
+          if (cancelled) return;
+          const onDisk = new Set(have.ok ? have.value : []);
+
+          /** Everything needed to put a cue in the plan, drawn or skipped. */
+          const place = (one: (typeof named)[number]): RenderedCue => ({
+            at: one.cue.at,
+            end: one.cue.end,
+            layers: one.measured.layers.map((layer, which) => ({
+              path: one.paths[which]!,
+              words: layer.words,
+            })),
+            bitmap: one.measured.layout.bitmap,
+            size: one.measured.layout.size,
+            // What the bitmaps were measured at, so a set drawn for one size
+            // can stand in — scaled — for one still being drawn at another.
+            // See `RenderedCue.drawnSize`.
+            drawnSize: current.captionSize,
+          });
+
+          // Nearest the playhead first. A redraw is thousands of cues and the
+          // only one anybody is looking at is the one under the playhead, so
+          // the order is by distance from it — and with each chunk published
+          // as it lands, a font change shows on screen in a chunk's time
+          // rather than the whole recording's.
+          const here = at() ?? 0;
+          const queue = [...named].sort(
+            (a, b) => Math.abs(a.cue.at - here) - Math.abs(b.cue.at - here),
+          );
+
+          for (let from = 0; from < queue.length; from += CHUNK) {
+            // Checked between chunks rather than only at the end: a settings
+            // change part way through should abandon the rest rather than
+            // finish drawing the old look.
             if (cancelled) return;
 
-            try {
-              const key = cueKey(cue, style, options);
-              const { layout, layers } = await rasteriseCue(cue, style, options);
+            const chunk = queue.slice(from, from + CHUNK);
 
-              const drawn: CueLayer[] = [];
-              for (const layer of layers) {
-                const path = cuePath(key, layer.name);
-                const wrote = await window.prequel.editor.bitmaps.write(
-                  "captions",
-                  dir,
-                  path,
-                  layer.bytes,
-                );
-                // The layer underneath is the line itself, and every layer
-                // above it is a word cropped out of a picture that has to be
-                // there. So one that will not write takes the whole cue with
-                // it rather than leaving a word or two floating on the
-                // footage.
-                if (!wrote.ok || wrote.value === null) break;
-                written.push(path);
-                drawn.push({ path, words: layer.words });
+            // The ones already written are placed and nothing else. They still
+            // have to be *kept*, though — a path left out of `written` is one
+            // the sweep below deletes, which would throw away the very bitmaps
+            // this skipped drawing.
+            const missing: typeof chunk = [];
+            for (const one of chunk) {
+              if (one.paths.every((path) => onDisk.has(path))) {
+                written.push(...one.paths);
+                set.push(place(one));
+              } else {
+                missing.push(one);
               }
-              if (drawn.length !== layers.length) continue;
-
-              set.push({
-                at: cue.at,
-                end: cue.end,
-                layers: drawn,
-                bitmap: layout.bitmap,
-                size: layout.size,
-                // What the bitmaps were measured at, so a set drawn for one
-                // size can stand in — scaled — for one still being drawn at
-                // another. See `RenderedCue.drawnSize`.
-                drawnSize: current.captionSize,
-              });
-            } catch (cause) {
-              // One cue that would not draw is one missing caption. The rest of
-              // the recording is still worth captioning.
-              console.warn("[captions] could not draw a cue:", cause);
             }
-          }
 
-          drawn.set(look, set);
+            if (missing.length > 0) {
+              const replies = await ask(thread, {
+                id: nextRequest(),
+                cues: missing.map((one) => one.cue),
+                style,
+                options,
+                // Empty for captions: every face in `CAPTION_FONTS` is one
+                // macOS ships, so the worker's own font set already has it.
+                // The worker takes them because a hosted face would not be
+                // there, and nothing about this is caption-specific.
+                faces: [],
+              });
+              if (cancelled) return;
+
+              // One round trip for the chunk rather than one per layer. The
+              // IPC — serialise, switch, write, reply — was costing more than
+              // the drawing it carried: a long recording is thousands of
+              // layers, each its own `invoke`, strictly one after another.
+              const batch: { file: string; bytes: Uint8Array }[] = [];
+              const owners: { one: (typeof missing)[number]; count: number }[] = [];
+
+              replies.forEach((result, index) => {
+                const one = missing[index];
+                if (!one || !result) return;
+                result.layers.forEach((layer, which) =>
+                  batch.push({ file: one.paths[which]!, bytes: layer.bytes }),
+                );
+                owners.push({ one, count: result.layers.length });
+              });
+
+              if (batch.length > 0) {
+                const wrote = await window.prequel.editor.bitmaps.writeMany(
+                  "captions",
+                  into,
+                  batch,
+                );
+                if (cancelled) return;
+                const landed = wrote.ok ? wrote.value : [];
+
+                let taken = 0;
+                for (const owner of owners) {
+                  const mine = landed.slice(taken, taken + owner.count);
+                  taken += owner.count;
+                  // The layer underneath is the line itself, and every layer
+                  // above it is a word cropped out of a picture that has to be
+                  // there. So one that will not write takes the whole cue with
+                  // it rather than leaving a word or two floating on the
+                  // footage.
+                  if (mine.length !== owner.count || mine.some((file) => file === null)) continue;
+                  written.push(...owner.one.paths);
+                  set.push(place(owner.one));
+                }
+              }
+            }
+
+            // In source order before it goes out: `rectAt` and the image
+            // window both walk these expecting time to run forwards, and the
+            // queue above deliberately does not.
+            set.sort((a, b) => a.at - b.at);
+            publish(false);
+          }
         }
 
         if (cancelled) return;
-
-        setByLook(drawn);
-        setDrawing(false);
+        publish(true);
 
         // After the new sets are live, so a sweep can never delete a bitmap the
         // plan is about to name.
-        void window.prequel.editor.bitmaps.sweep("captions", dir, written);
-      })();
+        void window.prequel.editor.bitmaps.sweep("captions", into, written);
+      }
     }, SETTLE_MS);
 
     return () => {

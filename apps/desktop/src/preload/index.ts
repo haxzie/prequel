@@ -628,6 +628,28 @@ const api = {
       ): Promise<IpcResult<string | null>> =>
         ipcRenderer.invoke(IPC_CHANNELS.editorWriteBitmap, kind, dir, file, bytes),
 
+      /**
+       * The same, for a batch. One round trip for a chunk of cues rather than
+       * one per layer — see `writeBitmaps`, where the round trip is the cost.
+       */
+      writeMany: (
+        kind: "captions" | "texts" | "cursor",
+        dir: string,
+        files: { file: string; bytes: Uint8Array }[],
+      ): Promise<IpcResult<(string | null)[]>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.editorWriteBitmaps, kind, dir, files),
+
+      /**
+       * Which of these are already written, so the renderer can skip drawing
+       * them. Answers with the subset that is there.
+       */
+      have: (
+        kind: "captions" | "texts" | "cursor",
+        dir: string,
+        files: string[],
+      ): Promise<IpcResult<string[]>> =>
+        ipcRenderer.invoke(IPC_CHANNELS.editorHaveBitmaps, kind, dir, files),
+
       sweep: (
         kind: "captions" | "texts" | "cursor",
         dir: string,

@@ -21,6 +21,7 @@ import {
   CURSOR_STYLES,
   cursorArrivesWith,
   cursorImages,
+  cursorReach,
   cursorStyle,
   cursorSwatch,
 } from "./contract";
@@ -199,6 +200,29 @@ describe("the pointers", () => {
     expect(arrow).toBeLessThan(1);
     expect(stick).toBeLessThan(1);
     expect(stick).toBeGreaterThan(arrow);
+  });
+
+  it("points every stick at the same place", () => {
+    // The four materials are one prop drawn four times, and the thing that
+    // makes them one prop is not the artwork — it is the fingertip and the
+    // reach. `make-cursor.mjs` draws all of them from one pair of shapes, so a
+    // material that disagreed here would mean somebody had copied a style
+    // entry and edited a number: the pointer would land off the thing it is
+    // pointing at, by a few per cent of a very large sprite.
+    const sticks = CURSOR_STYLES.filter((style) => "reach" in style);
+    expect(sticks.length).toBeGreaterThan(1);
+
+    const first = sticks[0]!;
+    for (const style of sticks) {
+      expect(style.shapes.arrow.hotspot, `${style.id}'s fingertip`).toEqual(
+        first.shapes.arrow.hotspot,
+      );
+      expect(cursorReach(style.id), `${style.id}'s reach`).toBe(cursorReach(first.id));
+      // And each has a swatch of its own, because the sprite is twenty parts
+      // handle to one part hand — a tile cut from it is a hairline across an
+      // empty square.
+      expect(cursorSwatch(style.id), `${style.id}'s swatch`).not.toBe(style.shapes.arrow.file);
+    }
   });
 
   it("names a mark and a sound that exist, for a style that arrives with them", () => {

@@ -230,7 +230,17 @@ export function useExport(
     // bitmaps that are not on disk yet, and the exporter skips what it cannot
     // decode. Waited for after the save dialog, so the wait is never the first
     // thing that happens when Export is pressed.
-    await settled(drawing);
+    //
+    // `console.error` rather than a thrown failure: the export is worth having
+    // without some of its captions, and this is mirrored into the log — which
+    // is the whole point of saying it. The last time this went wrong there was
+    // nothing in the log at all.
+    if (!(await settled(drawing))) {
+      console.error(
+        "[export] the caption and title bitmaps are still being drawn after" +
+          " two minutes — exporting without whatever is unfinished",
+      );
+    }
 
     const size = outputFrame(project.frame, output.shortEdge);
 
@@ -314,15 +324,48 @@ export function useExport(
 }
 
 /**
- * Waits for the caption bitmaps to stop being written.
+ * How long the export will wait for the bitmaps before going without them.
+ *
+ * There is a real draw behind this and it is not quick: a twenty-minute take
+ * is thousands of cues, each rasterised and written over IPC, and a ceiling
+ * short enough to be comfortable would export a captionless video out of pure
+ * impatience. So it is generous.
+ *
+ * It exists at all because the wait used to have no end. The flag is owned by
+ * another hook, and every way out of that hook's draw but the successful one
+ * left it raised — so one abandoned run was an export that waited for ever,
+ * with the save dialog closed, "preparing" on screen, and nothing sent to
+ * main. Reported as the app freezing on export, and there was not a line in
+ * the log to say otherwise, because nothing had gone wrong anywhere that
+ * logs.
+ *
+ * Both halves are fixed: that hook clears the flag in a `finally` now, so this
+ * should never fire. It stays because "should never" is how the first one was
+ * written too, and a missing caption is a smaller failure than a frozen app.
+ */
+const BITMAP_WAIT_MS = 120_000;
+
+/**
+ * Waits for the caption bitmaps to stop being written. True if they settled,
+ * false if the wait ran out.
  *
  * Polled rather than awaited on a promise because the drawing is driven by a
  * debounce in another hook, which has no completion to hand out — and a slider
  * still under a finger can restart it, so the answer has to be re-asked rather
  * than remembered.
+ *
+ * Exported for the test: this is three lines that can hang the whole app, and
+ * it is not reachable any other way.
  */
-async function settled(drawing: { current: boolean }): Promise<void> {
+export async function settled(
+  drawing: { current: boolean },
+  limit = BITMAP_WAIT_MS,
+  now: () => number = Date.now,
+): Promise<boolean> {
+  const until = now() + limit;
   while (drawing.current) {
+    if (now() >= until) return false;
     await new Promise((resume) => setTimeout(resume, 50));
   }
+  return true;
 }

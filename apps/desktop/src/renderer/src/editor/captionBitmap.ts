@@ -121,19 +121,28 @@ export interface CueOptions {
 }
 
 /**
- * Draws one cue as the stack of layers its look asks for.
+ * What a cue's layers are, and where every word in them sits — without
+ * painting any of them.
  *
- * Every layer comes out of one measurement, so no two of them can disagree
- * about where a word sits — which is the whole reason the word being lit lands
- * on the word it is lighting.
+ * Split out of `rasteriseCue` because the expensive half and the useful half
+ * are separable, and on a redraw most cues only need the useful one. A bitmap
+ * already on disk — which is most of them, most of the time, since the name is
+ * a hash of everything the pixels depend on — still has to be *placed*: the
+ * plan wants its size and the boxes each word is cropped from. This answers
+ * that for nothing, where drawing it again cost a paint and a PNG encode to
+ * arrive at bytes that were then thrown away.
+ *
+ * Which layers a look has is decided here and only here, so the names this
+ * hands back are the names `rasteriseCue` writes. Two lists would be a cue
+ * placed under paths nothing had drawn.
  */
-export async function rasteriseCue(
+export function measureCue(
   cue: Cue,
   style: CaptionStyle,
   options: CueOptions,
-): Promise<{ layout: CaptionLayout; layers: CueLayer[] }> {
+): { layout: CaptionLayout; layers: PlacedLayer[] } {
   const measured = measure(cue, style, options);
-  const layers: CueLayer[] = [];
+  const layers: PlacedLayer[] = [];
 
   // The layer the others stand on: the plate, and the whole line — held back
   // where the look fills it in as it is spoken, whole where it does not.
@@ -145,14 +154,12 @@ export async function rasteriseCue(
   // which.
   layers.push({
     name: "",
-    bytes: await paint(measured, style, {
-      // In the accent where one word to a cue *is* the light. There is no line
-      // of unspoken words for it to sit in, and drawing a white copy under it
-      // was what made that look like two texts: a glyph does not cover another
-      // glyph through its own counters.
-      colour: style.perWord && style.lit ? options.accent : style.fill,
-      base: true,
-    }),
+    // In the accent where one word to a cue *is* the light. There is no line
+    // of unspoken words for it to sit in, and drawing a white copy under it
+    // was what made that look like two texts: a glyph does not cover another
+    // glyph through its own counters.
+    colour: style.perWord && style.lit ? options.accent : style.fill,
+    base: true,
     words: style.perWord
       ? tight(measured, style)
       : style.blurIn !== null
@@ -173,7 +180,8 @@ export async function rasteriseCue(
   if (style.dim !== null) {
     layers.push({
       name: "said",
-      bytes: await paint(measured, style, { colour: style.fill, base: false }),
+      colour: style.fill,
+      base: false,
       words: tiles(measured, (word) => ({ at: style.lit ? word.end : word.at, end: cue.end }), 0),
     });
   }
@@ -184,12 +192,50 @@ export async function rasteriseCue(
   if (style.lit && !style.perWord) {
     layers.push({
       name: "now",
-      bytes: await paint(measured, style, { colour: options.accent, base: false }),
+      colour: options.accent,
+      base: false,
       words: tiles(measured, (word) => ({ at: word.at, end: word.end }), 0),
     });
   }
 
   return { layout: measured.layout, layers };
+}
+
+/** A layer decided but not yet painted: its name, its boxes, and its ink. */
+export interface PlacedLayer {
+  name: string;
+  words: CaptionWord[];
+  /** What `paint` is told to draw it in. */
+  colour: string;
+  /** Whether it carries the plate underneath. */
+  base: boolean;
+}
+
+/**
+ * Draws one cue as the stack of layers its look asks for.
+ *
+ * Every layer comes out of one measurement, so no two of them can disagree
+ * about where a word sits — which is the whole reason the word being lit lands
+ * on the word it is lighting.
+ */
+export async function rasteriseCue(
+  cue: Cue,
+  style: CaptionStyle,
+  options: CueOptions,
+): Promise<{ layout: CaptionLayout; layers: CueLayer[] }> {
+  const measured = measure(cue, style, options);
+  const { layout, layers } = measureCue(cue, style, options);
+
+  return {
+    layout,
+    layers: await Promise.all(
+      layers.map(async (layer) => ({
+        name: layer.name,
+        words: layer.words,
+        bytes: await paint(measured, style, { colour: layer.colour, base: layer.base }),
+      })),
+    ),
+  };
 }
 
 interface Measured {

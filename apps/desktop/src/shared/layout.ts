@@ -1368,6 +1368,20 @@ export function buildRenderPlan(
     const blur = background.shadowBlur * unit;
     const spread = (blur / 2) * SHADOW_SPREAD;
 
+    /**
+     * The lean the arrangement leaves the picture in, before any zoom.
+     *
+     * One object because the three travel together everywhere below: the pose
+     * is what the picture rests at, so a zoom's samples have to know it even
+     * where the zoom sets no angle of its own — otherwise a tilted recording
+     * stood back up for the length of every shot and lay back down afterwards.
+     */
+    const pose: Pose = {
+      rotateX: layout.screenRotateX,
+      rotateY: layout.screenRotateY,
+      perspective: layout.screenPerspective,
+    };
+
     // Three tracks off the one shot: the picture, the ring one border width
     // outside it, and the shadow cast by the two of them together. Separate
     // because each is a different rectangle put through the same tilt, and a
@@ -1381,6 +1395,7 @@ export function buildRenderPlan(
       shape.radius,
       spread,
       border,
+      pose,
       cursor,
     );
 
@@ -1411,21 +1426,20 @@ export function buildRenderPlan(
           }
         : null;
 
-    // A screenshot's static lean, as one key apiece.
+    // The clip's static lean, as one key apiece.
     //
-    // Through the same `keyFor` a zoom's samples go through, so a tilted still
+    // Through the same `keyFor` a zoom's samples go through, so a tilted clip
     // and a tilted shot are the same four corners worked out by the same
     // projection — and both rasterisers read the quad off a key already,
     // knowing nothing about why it is there. One key rather than a pair:
     // `rectAt` answers with it at every moment, which is what a pose that does
     // not move is.
     //
-    // Only where there are no zoom keys, and that is the whole interaction
-    // between the two: a zoom's track already carries its own lean and a plan
-    // item holds one `motion`. Nothing can reach both — the tilt is a
-    // screenshot's control and a screenshot has no timeline to put a zoom on —
-    // so the zoom wins rather than the two being blended into a third answer.
-    const leaning = layout.screenRotateX !== 0 || layout.screenRotateY !== 0;
+    // Only where there are no zoom keys, because a plan item holds one
+    // `motion`. Where there are, the pose went into the track instead — see
+    // `shotTrack` — so the picture leans the same amount either way and the two
+    // can never be a third answer.
+    const leaning = pose.rotateX !== 0 || pose.rotateY !== 0;
     // A lens is depth of field and a vignette, which are two fields of the same
     // key the lean writes — so one key carries both and a still that has only
     // one of them pays for nothing extra.
@@ -1435,14 +1449,12 @@ export function buildRenderPlan(
         ? keyFor(
             {
               rect: dstRect,
-              // A still's pose does not move the window. It is one key for a
-              // picture standing where the arrangement put it, which is the
-              // crop the item already carries.
+              // A pose does not move the window. It is one key for a picture
+              // standing where the arrangement put it, which is the crop the
+              // item already carries.
               window: null,
               radius: shape.radius,
-              rotateX: layout.screenRotateX,
-              rotateY: layout.screenRotateY,
-              perspective: layout.screenPerspective,
+              ...pose,
               vignette: lensed ? clamp(layout.focusVignette, 0, 1) : 0,
               focus: lensed
                 ? {
@@ -2794,6 +2806,8 @@ function zoomKeys(
   spread: number,
   /** How far the border's own track is grown past the picture's. */
   border: number,
+  /** The lean the arrangement left the picture in, which every shot rests at. */
+  pose: Pose,
   cursor?: CursorTrack | null,
 ): { keys: RectKey[]; border: RectKey[]; shadow: RectKey[] } {
   if (zooms.length === 0) return { keys: [], border: [], shadow: [] };
@@ -2843,7 +2857,7 @@ function zoomKeys(
   });
 
   const shots = zooms.map((zoom, index) =>
-    shotTrack(zoom, times, reachOf[index]!, frame, base, srcRect, source, radius, cursor),
+    shotTrack(zoom, times, reachOf[index]!, frame, base, srcRect, source, radius, pose, cursor),
   );
 
   const keys: RectKey[] = [];
@@ -3917,6 +3931,20 @@ interface Shot {
 }
 
 /**
+ * The lean a clip is drawn at before any zoom has a say — `screenRotateX`,
+ * `screenRotateY` and `screenPerspective`, resolved once.
+ *
+ * The three fields `Shot` carries and nothing else, so a pose drops straight
+ * into one. Flat at its default, which is every project that has never opened
+ * the Angle panel.
+ */
+interface Pose {
+  rotateX: number;
+  rotateY: number;
+  perspective: number;
+}
+
+/**
  * One zoom's shots, sampled across every moment it has anything to say about.
  *
  * Both the fully-in shot and the resting one, because a move needs the pair:
@@ -3942,10 +3970,28 @@ function shotTrack(
   srcRect: Rect,
   source: Size,
   radius: number,
+  pose: Pose,
   cursor?: CursorTrack | null,
 ): ShotTrack {
   const at = times.slice(covers.first, covers.last + 1);
   const level = Math.max(1, zoom.level);
+
+  /**
+   * Whether this zoom states an angle of its own.
+   *
+   * The whole interaction between a clip's pose and a shot's lean, and it is a
+   * replacement rather than a sum. A zoom with an angle says which way the
+   * picture leans while it is in, so the shot eases out of the pose and back
+   * into it; a zoom with none keeps the pose, which is what stops a tilted
+   * recording from standing up for the length of every push-in. Adding the two
+   * instead would make the Angle tab's numbers mean something different on a
+   * tilted clip from a flat one, with the same figures on screen.
+   */
+  const leans = zoom.rotateX !== 0 || zoom.rotateY !== 0;
+  // The pose's depth wherever the shot is keeping the pose. Read only where one
+  // of the two angles is non-zero — see `rotatedQuad` — so this is inert on
+  // every flat clip with a flat zoom on it.
+  const eye = leans ? zoom.perspective : pose.perspective;
 
   // Nominal rather than measured. The samples are evenly spaced inside a stage
   // and only step slightly at the joins between stages, and the filters below
@@ -4119,9 +4165,9 @@ function shotTrack(
       // The card's own radius while the card is still: nothing is growing, so
       // scaling the corners would round a rectangle whose size has not changed.
       radius: cropping ? radius : radius * level,
-      rotateX: zoom.rotateX,
-      rotateY: zoom.rotateY,
-      perspective: zoom.perspective,
+      rotateX: leans ? zoom.rotateX : pose.rotateX,
+      rotateY: leans ? zoom.rotateY : pose.rotateY,
+      perspective: eye,
       vignette: zoom.vignette,
       focus: zoom.blur
         ? {
@@ -4142,13 +4188,18 @@ function shotTrack(
       // zoom in the project at all.
       window: cropping ? srcRect : null,
       radius,
-      rotateX: 0,
-      rotateY: 0,
-      // The zoom's own, not a neutral value. Moving to and from rest must not
-      // change the eye distance — the angle is what eases, and easing the
-      // distance as well would zoom the lens while the shot travels, which reads
-      // as a dolly and is not what anyone asked for by setting an angle.
-      perspective: zoom.perspective,
+      // The clip's pose, which is what "at rest" means: the picture lying the
+      // way the Angle panel put it, with nothing of the zoom in it. Zero on
+      // every flat clip, which is what this was before the panel reached a
+      // recording.
+      rotateX: pose.rotateX,
+      rotateY: pose.rotateY,
+      // One distance for both ends, not a neutral value. Moving to and from
+      // rest must not change the eye distance — the angle is what eases, and
+      // easing the distance as well would zoom the lens while the shot travels,
+      // which reads as a dolly and is not what anyone asked for by setting an
+      // angle.
+      perspective: eye,
       vignette: 0,
       // `plane`, not `base`: at rest the recording is lying at its own scale,
       // and under a crop that rectangle is the one the whole of it would fill.
@@ -4885,13 +4936,26 @@ const EYE_DISTANCE = 2.6;
  * which is a look people want and could not previously reach at any angle.
  *
  * Their midpoint is `EYE_DISTANCE`, so `depth: 0.5` is exactly what every
- * existing project was drawn at — pinned by a test, because the arithmetic is
- * easy to get wrong in a way that still produces a picture. A symmetric
- * expression around `EYE_DISTANCE` is how this was first written, and at a
- * plausible `FAR_EYE` it put the eye *behind* the picture.
+ * existing project was drawn at — which is why widening this range moved both
+ * ends and not one. A symmetric expression around `EYE_DISTANCE` is how this
+ * was first written, and at a plausible `FAR_EYE` it put the eye *behind* the
+ * picture.
+ *
+ * The range was 1.2 to 4 and the control did almost nothing: at a 12° tilt the
+ * whole travel of the slider moved the near edge from 1.030 to 1.102 times the
+ * far one — seven per cent of splay, for a control whose entire job is splay.
+ * 0.8 roughly doubles what the near end reaches, and is as close as the eye may
+ * come: `rotatedQuad` clamps a corner at a fifth of the eye distance, and at
+ * 45° of pitch *and* yaw in a portrait frame the nearest corner is already
+ * six tenths of the way there.
+ *
+ * Most of the change still lives in the upper half of the slider, because
+ * distance is what the projection divides by and 2.6 is near the flat end of
+ * this range. Evening that out means moving the midpoint, which restyles every
+ * project that has ever set an angle.
  */
-const FAR_EYE = 4;
-const NEAR_EYE = 1.2;
+const FAR_EYE = 4.4;
+const NEAR_EYE = 0.8;
 
 /**
  * The picture's corners after a tilt, in output pixels with their divisors.
@@ -7355,6 +7419,8 @@ export function cameraFloats(layout: LayoutSettings): boolean {
     // `Slot.card` for that, so this has to agree with it or the inspector
     // greys a control the export then honours.
     case "over-cutout":
+    case "over-cutout-lean":
+    case "over-cutout-lean-left":
       return true;
     case "custom":
       return !layout.cameraCard;
@@ -7381,15 +7447,90 @@ export function fillsTheFrame(preset: LayoutPreset): boolean {
 }
 
 /**
- * Where `over-cutout` stands somebody, as fractions of the frame and of its
- * shorter edge.
+ * The least padding the leaning pair is worth looking at with.
  *
- * Low and to the right, and not in the corner: a cut-out person is drawn
- * uncropped, so their shoulders spill past this box on both sides and the
- * frame's edge cuts them off wherever they reach it. Parked flush to the
- * corner, the spill left them half off the frame.
+ * They are the one arrangement whose point is that the recording is an
+ * *object*: a rounded card, turned a few degrees, with somebody standing in
+ * front of it. Run to the edges there is nothing for the lean to be a lean of
+ * — the near corner leaves the frame and what is left reads as a picture that
+ * has gone slightly wrong.
+ *
+ * A floor rather than a value, and only applied on the way in. Picking one of
+ * these out of a full-bleed arrangement has to give you the cell you pressed;
+ * picking one when the padding is already generous, or swapping between the
+ * handed pair, must not throw away a margin somebody chose.
  */
-const CUTOUT_CORNER = { x: 0.78, y: 0.72, size: 0.42 };
+export const LEAN_PADDING = 0.09;
+
+/**
+ * How far an arrangement turns the recording, in degrees of yaw, and nothing
+ * for the arrangements that leave it square on — which is all but two.
+ *
+ * Here rather than in `layoutBoxes` because a lean is not a box: it is a
+ * setting of the clip's, written when the arrangement is picked and a control
+ * afterwards, exactly as the cutout and the camera's shape are. See the pick
+ * handler in `Inspector.tsx`.
+ *
+ * **Away from the camera.** The person stands in one bottom corner and the
+ * recording turns its near edge towards the other, so the two read as two
+ * objects at an angle to each other rather than as a picture with a sticker on
+ * it. Positive yaw pushes the *right* edge away — see `rotatedQuad` — so the
+ * right-handed arrangement, with the person at the right, takes the positive
+ * one.
+ *
+ * Eight degrees. Enough to separate the two pictures and far too little to
+ * read as a trick: past about a dozen the recording starts losing its near
+ * corner to the frame at any useful zoom level, and what is being shown is
+ * usually text.
+ */
+export function screenYawFor(preset: LayoutPreset): number {
+  if (preset === "over-cutout-lean") return CUTOUT_LEAN;
+  if (preset === "over-cutout-lean-left") return -CUTOUT_LEAN;
+  return 0;
+}
+
+/** See `screenYawFor`. */
+const CUTOUT_LEAN = 8;
+
+/**
+ * Which side a cut-out person stands on, and how big `over-cutout` draws them.
+ *
+ * To the right, and not *flush* right: a cut-out person is drawn uncropped, so
+ * their shoulders spill past their box on both sides and the frame's edge cuts
+ * them off wherever they reach it. Parked in the corner, the spill left them
+ * half off the frame.
+ *
+ * There is no `y` any more. They used to float a little above the bottom for
+ * the same reason they are held off the side, and it was the wrong call: a
+ * person cut out of their background is standing in the shot, and standing
+ * means their feet are on the edge of it rather than a hand's width above.
+ * Being cut off below the waist is what that looks like, and is what it looks
+ * like in every piece of footage anyone has ever shot of a person from the
+ * front. See `cutoutBox`.
+ */
+const CUTOUT_CORNER = { x: 0.78, size: 0.42 };
+
+/**
+ * Where a cut-out person goes: on the bottom edge of the frame, in one corner.
+ *
+ * One function for all three cutout arrangements, because they differ in what
+ * is *behind* the person — a full-bleed recording, or a padded card turned
+ * away from them — and in nothing about where the person stands. Two copies of
+ * this came apart the first time one of them was adjusted.
+ */
+function cutoutBox(frame: Size, middle: number, wide: number, high: number): Rect {
+  return {
+    // Held inside the frame sideways. The spill past this box is what reaches
+    // the edge, so the box itself has no business leaving as well.
+    x: clamp(middle - wide / 2, 0, Math.max(0, frame.width - wide)),
+    // Flush. Not `boxAt`, which centres on a point: the gap under somebody
+    // would then change with their size, so the look would hold at one setting
+    // of the Size slider and nowhere else.
+    y: frame.height - high,
+    width: wide,
+    height: high,
+  };
+}
 
 export function layoutBoxes(
   frame: Size,
@@ -7479,23 +7620,61 @@ export function layoutBoxes(
     // it is picked and leaves it a control afterwards, exactly as it does with
     // the shape — see `cameraCutoutFor`.
     case "over-cutout":
+      // The only arrangement that decides the person's size as well as their
+      // corner — see `SLOTTED`, which is what greys the Size slider under it.
+      // Left that way deliberately: every recording already saved in this
+      // arrangement is drawn at `CUTOUT_CORNER.size`, and taking the size off
+      // the camera's own controls would resize all of them the next time they
+      // were opened.
       return {
         screen: { area: filled, fit: "cover", card: true },
         camera: withCamera
           ? {
-              area: boxAt(
+              area: cutoutBox(
                 frame,
-                CUTOUT_CORNER.x,
-                CUTOUT_CORNER.y,
+                CUTOUT_CORNER.x * frame.width,
                 CUTOUT_CORNER.size * unit,
                 CUTOUT_CORNER.size * unit,
-                cameraSlack(layout),
               ),
               fit: "cover",
               card: false,
             }
           : null,
       };
+
+    // The same person, in front of a recording that is a card rather than the
+    // whole frame: padded, rounded, and turned a few degrees away from them.
+    //
+    // Two things differ from the plain cutout above and they are one idea. The
+    // recording is `padded` and wears a `card`, so it has corners and an edge
+    // for the lean to show. And the person is sized by the camera's own
+    // controls rather than by the arrangement, because at this scale they are
+    // a figure in a composition and not a stamp in a corner.
+    //
+    // Where they stand is the same question for all three — see `cutoutBox`.
+    //
+    // The lean itself is not here. It is a yaw on the recording, which is a
+    // setting rather than a box — see `screenYawFor`.
+    case "over-cutout-lean":
+    case "over-cutout-lean-left": {
+      if (!withCamera) {
+        return { screen: { area: padded, fit: "contain", card: true }, camera: null };
+      }
+
+      const wide = Math.max(1, layout.cameraWidth * unit);
+      const high = Math.max(1, layout.cameraHeight * unit);
+      // Reflected rather than written out twice, for the reason every other
+      // `-left` is: two sets of numbers meant to be mirror images come to
+      // differ by a few pixels nobody can explain.
+      const mid =
+        (layout.preset === "over-cutout-lean-left" ? 1 - CUTOUT_CORNER.x : CUTOUT_CORNER.x) *
+        frame.width;
+
+      return {
+        screen: { area: padded, fit: "contain", card: true },
+        camera: { area: cutoutBox(frame, mid, wide, high), fit: "cover", card: false },
+      };
+    }
 
     // The padded screen pushed left, with the camera standing over its right
     // end.

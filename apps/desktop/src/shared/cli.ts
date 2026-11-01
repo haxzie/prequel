@@ -656,6 +656,8 @@ export const LAYOUT_SUMMARY: Record<LayoutPreset, string> = {
   "over-full": "The camera over a full-bleed screen",
   "over-padded": "The camera over a padded screen, on the background",
   "over-cutout": "The camera cut out of its background, standing in the bottom right",
+  "over-cutout-lean": "The same cutout, with the screen turned a few degrees away from the person",
+  "over-cutout-lean-left": "The same lean, person and all, on the left",
   "over-column": "The camera in a portrait column over the right of the screen",
   "over-column-left": "The same column, on the left",
   beside: "Screen and camera side by side, camera right",

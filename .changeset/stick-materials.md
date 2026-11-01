@@ -1,0 +1,5 @@
+---
+"@prequel/desktop": minor
+---
+
+Five pointer sticks in the Cursor panel — a white glove, a black one, wooden, pink on silver, and fuzzy blue.

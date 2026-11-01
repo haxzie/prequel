@@ -13,7 +13,7 @@ import type { EditorSession, TrackMedia } from "../../../shared/contract";
 import { MANIFEST_VERSION, type Manifest } from "../../../shared/manifest";
 import { newProject, type Project } from "../../../shared/project";
 import { buildMusic } from "./exportSlices";
-import { buildSlices } from "./useExport";
+import { buildSlices, settled } from "./useExport";
 
 const S = 1_000_000_000;
 
@@ -195,5 +195,34 @@ describe("buildMusic", () => {
 
   it("leaves out a bed whose file the project does not list", () => {
     expect(buildMusic(withMusic([bed()], []))).toEqual([]);
+  });
+});
+
+describe("waiting for the bitmaps", () => {
+  it("returns as soon as the draw finishes", async () => {
+    const drawing = { current: true };
+    setTimeout(() => (drawing.current = false), 10);
+    expect(await settled(drawing)).toBe(true);
+  });
+
+  it("does not wait at all when nothing is being drawn", async () => {
+    expect(await settled({ current: false })).toBe(true);
+  });
+
+  it("gives up rather than waiting for ever", async () => {
+    // The bug this pins, which was reported as the app freezing on export: the
+    // flag belongs to another hook and used to be left raised by any run that
+    // did not finish, so this loop had no end. The save dialog closed, the
+    // dialog said "preparing", and nothing was ever sent to main — a hang with
+    // not one line in any log.
+    //
+    // A fake clock, because the real ceiling is two minutes: the point is that
+    // the wait *ends*, not how long it is.
+    let clock = 0;
+    const drawing = { current: true };
+    expect(await settled(drawing, 1000, () => (clock += 400))).toBe(false);
+    // And it is still raised, so the caller is reporting a real failure rather
+    // than a race it lost.
+    expect(drawing.current).toBe(true);
   });
 });

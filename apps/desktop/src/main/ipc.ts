@@ -82,7 +82,7 @@ import {
   save as savePreset,
 } from "./scene-presets.js";
 import type { ScenePreset } from "../shared/scene-presets.js";
-import { sweepBitmaps, writeBitmap } from "./captions.js";
+import { haveBitmaps, sweepBitmaps, writeBitmap, writeBitmaps } from "./captions.js";
 import {
   captureWallpaper,
   copyPresetBackground,
@@ -419,6 +419,18 @@ export function registerIpc({
     IPC_CHANNELS.editorWriteBitmap,
     (_event, kind: string, dir: string, file: string, bytes: Uint8Array) =>
       attempt(() => writeBitmap(kind, dir, file, bytes)),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.editorWriteBitmaps,
+    (_event, kind: string, dir: string, files: { file: string; bytes: Uint8Array }[]) =>
+      attempt(() => writeBitmaps(kind, dir, files)),
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.editorHaveBitmaps,
+    (_event, kind: string, dir: string, files: string[]) =>
+      attempt(() => Promise.resolve(haveBitmaps(kind, dir, files))),
   );
 
   ipcMain.handle(

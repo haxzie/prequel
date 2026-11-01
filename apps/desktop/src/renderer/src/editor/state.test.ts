@@ -539,7 +539,7 @@ describe("writing settings", () => {
       start(),
       { type: "setSetting", section: "layout", key: "cameraHeight", value: 0.5 },
       { type: "setSetting", section: "audio", key: "micMuted", value: true },
-      { type: "resetSection", section: "layout" },
+      { type: "resetSection", parts: [{ section: "layout" }] },
     );
     const overrides = selectedSlice(state)!.overrides;
 
@@ -559,12 +559,41 @@ describe("writing settings", () => {
         key: "background",
         value: { kind: "solid", color: "#123456" },
       },
-      { type: "resetSection", section: "background", keys: ["cornerRadius", "padding"] },
+      {
+        type: "resetSection",
+        parts: [{ section: "background", keys: ["cornerRadius", "padding"] }],
+      },
     );
     const overrides = selectedSlice(state)!.overrides;
 
     expect(overrides.background?.cornerRadius).toBeUndefined();
     expect(overrides.background?.background).toEqual({ kind: "solid", color: "#123456" });
+  });
+
+  it("resets every part of a panel in one step", () => {
+    // Recording is two sections: it dresses the picture out of `background` and
+    // leans it out of `layout`. One press has to put both back, and one undo
+    // has to bring both edits back — not half the panel at a time.
+    const state = run(
+      start(),
+      { type: "setSetting", section: "background", key: "cornerRadius", value: 0.08 },
+      { type: "setSetting", section: "layout", key: "screenRotateX", value: 14 },
+      { type: "setSetting", section: "layout", key: "cameraHeight", value: 0.5 },
+      {
+        type: "resetSection",
+        parts: [
+          { section: "background", keys: ["cornerRadius", "padding"] },
+          { section: "layout", keys: ["screenRotateX", "screenRotateY", "screenPerspective"] },
+        ],
+      },
+    );
+    const overrides = selectedSlice(state)!.overrides;
+
+    expect(overrides.background?.cornerRadius).toBeUndefined();
+    expect(overrides.layout?.screenRotateX).toBeUndefined();
+    // And the arrangement, which sits in the same section under a different
+    // panel, is untouched.
+    expect(overrides.layout?.cameraHeight).toBe(0.5);
   });
 });
 
@@ -1147,7 +1176,7 @@ describe("giving every clip one clip's settings", () => {
       started,
       { type: "select", sliceId: second!.id },
       { type: "setSetting", section: "background", key: "padding", value: 0.3 },
-      { type: "applyToAll", section: "background", keys: ["padding"] },
+      { type: "applyToAll", parts: [{ section: "background", keys: ["padding"] }] },
     );
 
     expect(settingsOf(applied.project, first!.id).background.padding).toBeCloseTo(0.3);
@@ -1165,7 +1194,7 @@ describe("giving every clip one clip's settings", () => {
       { type: "select", sliceId: second!.id },
       { type: "setSetting", section: "background", key: "padding", value: 0.3 },
       { type: "setSetting", section: "background", key: "cornerRadius", value: 0.09 },
-      { type: "applyToAll", section: "background", keys: ["padding"] },
+      { type: "applyToAll", parts: [{ section: "background", keys: ["padding"] }] },
     );
 
     expect(overriddenKeys(slicesOf(applied.project)[0]!.overrides, "background")).toEqual(
@@ -1177,7 +1206,7 @@ describe("giving every clip one clip's settings", () => {
     // There is no "this one" to copy from, and the panel is already editing the
     // defaults every clip follows.
     const started = run(start(), { type: "split", at: 5 * S }, { type: "select", sliceId: null });
-    const applied = run(started, { type: "applyToAll", section: "background" });
+    const applied = run(started, { type: "applyToAll", parts: [{ section: "background" }] });
 
     expect(applied.project).toEqual(started.project);
   });
@@ -1542,8 +1571,7 @@ describe("applying a saved look", () => {
     // And clearing one really does clear only one.
     const reset = run(applied, {
       type: "resetSection",
-      section: "layout",
-      keys: ["cameraShape"],
+      parts: [{ section: "layout", keys: ["cameraShape"] }],
     });
     const after = slicesOf(reset.project)[0]!.overrides;
 
