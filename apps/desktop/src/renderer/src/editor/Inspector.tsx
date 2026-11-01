@@ -4293,6 +4293,12 @@ function RecordingPanel({
     // "Blur" sitting under "Border opacity" is anyone's guess as to what it
     // blurs.
     //
+    // In the order the picture is built up: its size and corners, then the
+    // edge drawn round it, then the angle the whole thing is turned to, then
+    // what it casts. The lean comes after the border because the border is
+    // part of the object being leaned — see `keyFor`, which projects the ring
+    // as its own rectangle through the same tilt.
+    //
     // Headings earn their place here for the reason they do not on the panels
     // with one group: these name something the panel header does not.
     <>
@@ -4360,6 +4366,52 @@ function RecordingPanel({
           max={0.1}
           format={percent}
           onChange={(value) => set("background", "cornerRadius", value)}
+        />
+      </Section>
+
+      <Section title="Border">
+        <Slider
+          icon={<BorderIcon />}
+          label="Width"
+          {...field("background", "borderWidth")}
+          value={background.borderWidth}
+          min={0}
+          max={0.02}
+          format={percent}
+          onChange={(value) => set("background", "borderWidth", value)}
+        />
+
+        {/* Greyed at zero width rather than taken away.
+        
+          Both say the same thing — there is nothing to dress — but only one of
+          them says it in place. Hidden, the section changes height as the width
+          slider crosses zero, which reads as the panel glitching; and with them
+          gone there is nothing left to tell anyone the edge has a colour at
+          all. It is also what every other dependent control in this inspector
+          does: the pointer's hide-after, the camera's shrink, a zoom's focus
+          are all greyed by their switch, not removed by it. */}
+        <ColorField
+          icon={<DropletIcon />}
+          label="Colour"
+          {...field("background", "borderColor")}
+          value={background.borderColor}
+          disabled={background.borderWidth === 0}
+          onChange={(value) => set("background", "borderColor", value)}
+        />
+
+        {/* Opacity rather than transparency, because that is the number the
+          slider holds: 100% is the solid edge, and a control that read
+          "0%" for an opaque border would be the wrong way round. */}
+        <Slider
+          icon={<OpacityIcon />}
+          label="Opacity"
+          {...field("background", "borderOpacity")}
+          value={background.borderOpacity}
+          min={0}
+          max={1}
+          format={percent}
+          disabled={background.borderWidth === 0}
+          onChange={(value) => set("background", "borderOpacity", value)}
         />
       </Section>
 
@@ -4447,52 +4499,6 @@ function RecordingPanel({
             Depth needs an angle. Set a tilt or a yaw and it takes effect.
           </p>
         )}
-      </Section>
-
-      <Section title="Border">
-        <Slider
-          icon={<BorderIcon />}
-          label="Width"
-          {...field("background", "borderWidth")}
-          value={background.borderWidth}
-          min={0}
-          max={0.02}
-          format={percent}
-          onChange={(value) => set("background", "borderWidth", value)}
-        />
-
-        {/* Greyed at zero width rather than taken away.
-        
-          Both say the same thing — there is nothing to dress — but only one of
-          them says it in place. Hidden, the section changes height as the width
-          slider crosses zero, which reads as the panel glitching; and with them
-          gone there is nothing left to tell anyone the edge has a colour at
-          all. It is also what every other dependent control in this inspector
-          does: the pointer's hide-after, the camera's shrink, a zoom's focus
-          are all greyed by their switch, not removed by it. */}
-        <ColorField
-          icon={<DropletIcon />}
-          label="Colour"
-          {...field("background", "borderColor")}
-          value={background.borderColor}
-          disabled={background.borderWidth === 0}
-          onChange={(value) => set("background", "borderColor", value)}
-        />
-
-        {/* Opacity rather than transparency, because that is the number the
-          slider holds: 100% is the solid edge, and a control that read
-          "0%" for an opaque border would be the wrong way round. */}
-        <Slider
-          icon={<OpacityIcon />}
-          label="Opacity"
-          {...field("background", "borderOpacity")}
-          value={background.borderOpacity}
-          min={0}
-          max={1}
-          format={percent}
-          disabled={background.borderWidth === 0}
-          onChange={(value) => set("background", "borderOpacity", value)}
-        />
       </Section>
 
       <Section title="Shadow">
