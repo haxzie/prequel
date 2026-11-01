@@ -1,5 +1,5 @@
 ---
-"@prequel/desktop": minor
+"@prequel/desktop": patch
 ---
 
 The Recording panel puts Border above Angle, in the order the picture is built up.
