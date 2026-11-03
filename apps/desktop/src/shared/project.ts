@@ -266,6 +266,28 @@ export interface LayoutSettings {
    * looms. Read only where one of the two angles is non-zero.
    */
   screenPerspective: number;
+  /**
+   * How far the picture is turned in the frame, in degrees clockwise.
+   *
+   * The roll to the two angles above: those lean the plane away from the eye,
+   * and this turns the finished picture about its own middle. Applied after
+   * them, which is the order they read in — a leaning card tipped on its side
+   * is the same card.
+   *
+   * The box stays upright. `screenX`/`screenY` and the two sizes describe it
+   * and the editor's handles are drawn around it, exactly as the camera's are
+   * — see `cameraRotation`, which this is the screen's twin of.
+   *
+   * It leaves the background showing in the corners of a picture that fills its
+   * box, which is why there was no control here for a long time. That is a
+   * composition rather than a mistake: size the recording past the frame and
+   * the corners stay covered.
+   *
+   * Zero is square on and is what every project saved before this existed reads
+   * back as, so no migration — `sanitiseProject` spreads the file over these
+   * defaults.
+   */
+  screenRotation: number;
   cameraVisible: boolean;
   cameraShape: CameraShape;
   /** The bubble's size, both edges as fractions of the frame's shorter edge. */
@@ -1796,6 +1818,7 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   screenRotateX: 0,
   screenRotateY: 0,
   screenPerspective: 0.5,
+  screenRotation: 0,
   cameraVisible: true,
   cameraShape: "squircle",
   cameraWidth: 0.35,
@@ -2375,9 +2398,6 @@ function windowCornerRadius(
     defaults.background,
     { screen: window, camera: null },
     "screen",
-    // The default arrangement, which places the picture itself — the slack a
-    // screenshot gets is only ever read under `custom`.
-    false,
   );
   if (!placed || placed.srcRect.width <= 0) return defaults.background.cornerRadius;
 

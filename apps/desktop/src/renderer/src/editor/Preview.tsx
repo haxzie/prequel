@@ -15,6 +15,7 @@ import { cursorImages, type CursorLayer } from "../../../shared/contract";
 import type { ClickSample } from "../../../shared/manifest";
 import { tagFor, type CursorTags } from "./useCursorTags";
 import {
+  arrivingAt,
   type BlobTrack,
   buildRenderPlan,
   captionAt,
@@ -65,6 +66,7 @@ import { cn } from "../lib/cn";
 import { ambientColours, ambientGradient } from "./ambience";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
+import { grabbed } from "./grab";
 import type { EditorPlayback } from "./useEditorPlayback";
 
 /**
@@ -737,7 +739,7 @@ export function Preview({
         ringedText ? textAt(rows, ringedText, at) : null,
         drawnTexts,
         drawnMarks?.find((candidate) => candidate.id === ringedMark) ?? null,
-        frozen !== null,
+        arrivingAt(arriving, at),
         turnOf(ringed),
       );
 
@@ -910,14 +912,11 @@ export function Preview({
     const sources = sourceSizes();
     const { layout, background } = settings;
     return {
-      // `shot !== null` is the same answer the plan is built with, and it has
-      // to be: this is what the ring and the hit testing are measured in, and a
-      // box clamped to the frame while the picture is allowed past it is a
-      // corner you can see and cannot grab.
-      screen: placement(frame, layout, background, sources, "screen", shot !== null),
-      camera: layout.cameraVisible
-        ? placement(frame, layout, background, sources, "camera", shot !== null)
-        : null,
+      // The same arithmetic the plan is built with, and it has to be: this is
+      // what the ring and the hit testing are measured in, and a box clamped
+      // differently from the picture is a corner you can see and cannot grab.
+      screen: placement(frame, layout, background, sources, "screen"),
+      camera: layout.cameraVisible ? placement(frame, layout, background, sources, "camera") : null,
       sources,
     };
   };
@@ -957,22 +956,32 @@ export function Preview({
   /**
    * How far a picture is turned, in degrees clockwise about its own middle.
    *
-   * Only ever the camera. The screen is the recording — turning it would leave
-   * wallpaper in the corners of the one picture that is meant to fill its box
-   * — and the logo is placed by four numbers of its own.
+   * Both pictures. The logo is not one of them — it is placed by four numbers
+   * of its own and has no angle.
+   *
+   * Turning the recording leaves the background showing in the corners of a
+   * picture that is meant to fill its box, which is why the screen had no angle
+   * at all for a long time. It is a composition rather than a mistake: the
+   * recording can be sized past the frame, and then the corners stay covered.
    *
    * Everything that hit-tests a box asks this and unspins the pointer by it,
    * rather than each gesture learning about angles: the box the settings store
-   * is still upright, so a drag on a turned bubble is the same arithmetic with
+   * is still upright, so a drag on a turned picture is the same arithmetic with
    * the pointer brought into the box's own frame first.
    *
    * Null rather than zero where the picture does not turn at all, which is not
-   * the same answer: zero is a bubble standing straight and still offering a
+   * the same answer: zero is a picture standing straight and still offering a
    * turn zone around its corners. One value for both facts, so what can be
    * turned and what is drawn cannot disagree.
    */
-  const turnOf = (target: Grabbable | null): number | null =>
-    target === "camera" && !followsSomebody() ? settings.layout.cameraRotation : null;
+  const turnOf = (target: Grabbable | null): number | null => {
+    if (target === "screen") return settings.layout.screenRotation;
+    return target === "camera" && !followsSomebody() ? settings.layout.cameraRotation : null;
+  };
+
+  /** Which leaf a turn of this picture writes. */
+  const turnKey = (target: Grabbable): "screenRotation" | "cameraRotation" =>
+    target === "screen" ? "screenRotation" : "cameraRotation";
 
   /** The same, as the patch a drag of the dot writes. */
   const radiusPatch = (
@@ -1185,7 +1194,8 @@ export function Preview({
       const resting = (target === "camera" ? camera : screen)?.dstRect ?? null;
       const plan = cached.current?.plan;
       if (!plan) return resting ? { box: resting, rest: resting, scale: 1, drag: true } : null;
-      return grabbed(plan, target, sampleAt(), resting);
+      const at = sampleAt();
+      return grabbed(plan, target, at, resting, arrivingAt(enter, at));
     };
 
     const boxes: Record<Grabbable, { box: Rect; rest: Rect; scale: number; drag: boolean } | null> =
@@ -1249,7 +1259,7 @@ export function Preview({
           target: selected,
           box,
           from: angleFrom(box, point),
-          was: settings.layout.cameraRotation,
+          was: turn,
         };
       }
     }
@@ -2046,13 +2056,15 @@ export function Preview({
 
             if (grab.current.kind === "rotate") {
               // The angle the pointer has travelled round the middle, added to
-              // where the bubble already was. Shift snaps the result rather
-              // than the travel, so the bubble lands on the step and not a
-              // step away from wherever it started.
+              // where the picture already was. Shift snaps the result rather
+              // than the travel, so it lands on the step and not a step away
+              // from wherever it started.
               const turned = normaliseAngle(
                 grab.current.was + (angleFrom(grab.current.box, point) - grab.current.from),
               );
-              onDrag("layout", { cameraRotation: snapAngle(turned, event.shiftKey) });
+              onDrag("layout", {
+                [turnKey(grab.current.target)]: snapAngle(turned, event.shiftKey),
+              });
               return;
             }
 
@@ -2181,8 +2193,8 @@ function ring(
    * half a stroke outside the shape would resize it from somewhere it is not.
    */
   mark: Annotation | null,
-  /** Whether this is a screenshot, which may be dragged past the frame's edge. */
-  still: boolean,
+  /** Whether this moment is inside the move the clip opens with — see `grabbed`. */
+  cutMove: boolean,
   /**
    * How far the selected picture is turned, in degrees clockwise — `turnOf`'s
    * answer, which is zero for everything but a bubble that has been taken by
@@ -2210,8 +2222,8 @@ function ring(
       : selected === "watermark"
         ? watermarkRect(frame, settings.watermark)
         : selected
-          ? (placement(frame, settings.layout, settings.background, sources, selected, still)
-              ?.dstRect ?? null)
+          ? (placement(frame, settings.layout, settings.background, sources, selected)?.dstRect ??
+            null)
           : null;
 
   /**
@@ -2229,7 +2241,7 @@ function ring(
    */
   const held =
     !text && !mark && selected !== null && selected !== "watermark"
-      ? grabbed(plan, selected, at, resting)
+      ? grabbed(plan, selected, at, resting, cutMove)
       : null;
   const box = held?.box ?? resting;
 
@@ -2289,52 +2301,6 @@ function ring(
     (turnable && turn !== 0 ? ` rotate(${String(turn)}deg)` : "");
   element.style.width = `${width * scale}px`;
   element.style.height = `${height * scale}px`;
-}
-
-/**
- * A picture as a gesture sees it: where it is drawn, what its settings say, and
- * which of the two a drag can actually write.
- *
- * The editor used to refuse a picture entirely while a zoom had it — no ring,
- * no handles, and a click that deselected. The refusal was aimed at one real
- * problem, that the box a drag writes is the resting box and not what is on
- * screen, and it caught two cases that are not that problem at all:
- *
- * - **The camera.** Shrink-on-zoom takes the bubble towards the corner it is
- *   parked in, and its position still comes straight from `cameraX`/`cameraY`:
- *   move the resting box a hundred pixels and the shrunken bubble moves a
- *   hundred pixels. Only its *size* is scaled, so only a resize has to be
- *   divided by anything — which is what `scale` is for.
- * - **A shot that moves the window.** Wherever the arrangement crops, the card
- *   holds still and the shot travels through the recording instead — see
- *   `shotTrack`. The rectangle on screen is exactly the resting box, so every
- *   gesture is the gesture it always was.
- *
- * What is left is a shot that moves the *card*, and there a drag genuinely has
- * nothing to write: the shot puts the point it is aimed at in the middle of the
- * frame, so where the picture lands does not depend on `screenX` at all, and a
- * move would be a gesture the next frame undoes. That one is `drag: false` —
- * still selectable, still ringed where it is, with no handles on it.
- */
-function grabbed(
-  plan: RenderPlan,
-  which: PlanSource,
-  at: number,
-  /** The box the settings put it in, when the plan has nothing to say. */
-  fallback: Rect | null,
-): { box: Rect; rest: Rect; scale: number; drag: boolean } | null {
-  const drawn = pictureDrawn(plan, which, at);
-  if (!drawn) return fallback ? { box: fallback, rest: fallback, scale: 1, drag: true } : null;
-
-  return {
-    box: drawn.rect,
-    rest: drawn.rest,
-    // Per picture rather than per axis: both are scaled together — the camera's
-    // shrink keeps the bubble's proportions and a shot scales the card by its
-    // level — and one number is one thing for a resize to divide by.
-    scale: drawn.rest.width > 0 ? drawn.rect.width / drawn.rest.width : 1,
-    drag: which === "camera" || !drawn.card,
-  };
 }
 
 /** Clockwise from the top left, which is the order the handles read in. */

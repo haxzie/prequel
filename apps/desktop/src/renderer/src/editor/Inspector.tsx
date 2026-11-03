@@ -1850,6 +1850,14 @@ function LayoutPanel({
             // tip the picture in a direction no cell promised.
             if (yaw !== 0 && layout.screenRotateX !== 0) set("layout", "screenRotateX", 0);
 
+            // And straightened, like the camera above and for the same reason:
+            // every cell in the grid draws the recording square in its box, so
+            // a roll carried over is the grid promising something the pick does
+            // not give. Only when it is actually turned, so picking an
+            // arrangement does not mark the angle as overridden on a clip that
+            // never set one.
+            if (layout.screenRotation !== 0) set("layout", "screenRotation", 0);
+
             // A full-frame arrangement starts flush to the edges, and square.
             //
             // `layoutBoxes` honours the padding under these two, so without this
@@ -4117,7 +4125,12 @@ const FOCUS_KEYS: (keyof LayoutSettings)[] = [
  * `OWNS` holds a list: the header's Reset has to put back both halves of what
  * is on screen under it.
  */
-const TILT_KEYS: (keyof LayoutSettings)[] = ["screenRotateX", "screenRotateY", "screenPerspective"];
+const TILT_KEYS: (keyof LayoutSettings)[] = [
+  "screenRotateX",
+  "screenRotateY",
+  "screenPerspective",
+  "screenRotation",
+];
 
 /**
  * What a screenshot is drawing attention to.
@@ -4499,6 +4512,31 @@ function RecordingPanel({
             Depth needs an angle. Set a tilt or a yaw and it takes effect.
           </p>
         )}
+
+        {/* The roll, and a bar rather than a fourth dial in the row above.
+            Four of those is wider than this panel, and the three up there share
+            a range of 45° either side of flat where this one goes all the way
+            round — the same sweep would mean two different things side by side.
+
+            It is the camera's Rotation slider, to the degree: the same leaf
+            shape, the same range, the same reading, and the same drag outside
+            the picture's corners writes it. Somebody who has turned the bubble
+            has learned this one.
+
+            Turning the recording shows the background in its corners. That is
+            the look, and the way out of it is the size handles — a recording
+            dragged past the frame covers them again. */}
+        <Slider
+          icon={<RotateIcon />}
+          label="Rotation"
+          {...field("layout", "screenRotation")}
+          value={layout.screenRotation}
+          min={-180}
+          max={180}
+          step={1}
+          format={(value) => `${value.toFixed(0)}°`}
+          onChange={(value) => set("layout", "screenRotation", value)}
+        />
       </Section>
 
       <Section title="Shadow">

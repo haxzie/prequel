@@ -83,14 +83,19 @@ export type PlanSource = "screen" | "camera";
  * What the slice before this one was drawn with.
  *
  * A cut between two arrangements is the one moment the composition changes
- * without anything moving, and a camera that teleports across the frame reads
- * as a glitch rather than as an edit. Given this, the camera travels into its
- * new place over the opening of the slice.
+ * without anything moving, and a picture that teleports across the frame reads
+ * as a glitch rather than as an edit. Given this, both pictures travel into
+ * their new places over the opening of the slice — where they sit, how large
+ * they are, how round, how far they lean and how far they are turned.
  *
- * Only the camera moves. The screen box is also driven by zooms, whose keys are
- * derived from a base rectangle that is fixed for the slice — making that base
- * move means threading it through the follow, the steadying and the reach, and
- * that is a change to the zoom maths rather than an addition beside it.
+ * Both on the one window, so a clip whose camera moves and whose recording
+ * turns does the two as a single movement rather than as two overlapping ones.
+ *
+ * The recording's keys are the zooms', derived from a base rectangle that is
+ * fixed for the slice — so the move is blended over the *finished* keys rather
+ * than by moving that base. See `entered`: a clip that opens mid-zoom arrives
+ * at wherever the zoom has got to, and nothing in the follow, the steadying or
+ * the reach has to know a cut happened.
  *
  * Absent on the first slice, which has nothing to arrive from.
  */
@@ -1232,10 +1237,8 @@ export function buildRenderPlan(
    * Present when this composition is a screenshot, carrying what only a
    * screenshot has.
    *
-   * One parameter rather than two, because it is one fact: a still is dragged
-   * under looser bounds than a recording — see `SCREEN_SLACK` — and a still is
-   * the only thing that may carry masks. Absent is a recording, which is every
-   * other caller.
+   * Absent is a recording, which is every other caller. What only a still has
+   * is the masks and the moment they are drawn at.
    *
    * The masks are passed in rather than read off the project, because the
    * project is not here.
@@ -1312,15 +1315,14 @@ export function buildRenderPlan(
 
   // Where each picture goes, worked out once for both of them. Everything below
   // only fits a source into the box it was given and decides how to dress it.
-  const boxes = layoutBoxes(frame, layout, background, sources, still !== undefined);
+  const boxes = layoutBoxes(frame, layout, background, sources);
 
   // Where the camera was a frame ago, on the far side of the cut. Resolved
   // through the same `placement` the drag handles use, so "where was it" and
   // "where is it" cannot be answered by two different pieces of arithmetic.
   const leaving =
     enter && sources.camera
-      ? // Never a screenshot: a still has one clip and nothing to arrive from.
-        placement(frame, enter.from.layout, enter.from.background, sources, "camera", false)
+      ? placement(frame, enter.from.layout, enter.from.background, sources, "camera")
       : null;
 
   /**
@@ -1475,12 +1477,108 @@ export function buildRenderPlan(
           )
         : null;
 
-    const motion = posed ? [posed.key] : zoomed.keys;
-    plane = { srcRect, dstRect, motion };
-    const borderMotion = posed ? [posed.border] : zoomed.border;
-    const shadowMotion = posed ? [posed.shadow] : zoomed.shadow;
-    const moving = motion.length > 0 ? { motion } : {};
+    /**
+     * Where the recording was sitting on the far side of the cut.
+     *
+     * Null on the first clip, and wherever the arrangement before this one had
+     * no recording in it — there is nowhere to travel from, so the picture is
+     * simply drawn where it belongs.
+     */
+    const cameFrom =
+      enter && sources.screen
+        ? placement(frame, enter.from.layout, enter.from.background, sources, "screen")
+        : null;
 
+    /**
+     * That picture as the three keys the tracks below travel out of.
+     *
+     * Through `keyFor`, like every other key in the plan: the old clip's lean,
+     * its corner, its border and the room its shadow needed are all different
+     * numbers from this clip's, and the ring and the shadow have to leave from
+     * where *they* were rather than from this arrangement's idea of them.
+     *
+     * Unrolled. The roll is applied below, easing from the old angle to this
+     * one, so a key that already carried it would be turned twice.
+     */
+    const leavingScreen = ((): { key: RectKey; border: RectKey; shadow: RectKey } | null => {
+      if (!enter || !cameFrom) return null;
+
+      const wasBlur = enter.from.background.shadowBlur * unit;
+      const wasBorder = enter.from.background.borderWidth * unit;
+      return keyFor(
+        {
+          rect: cameFrom.dstRect,
+          // The crop too, but only where the two clips show different slices of
+          // the recording: a change of padding or of pan would otherwise snap
+          // the picture while its box was still travelling. Both ends or
+          // neither — see `rectAt`, which drops a window one key is missing.
+          window: sameRect(cameFrom.srcRect, srcRect) ? null : cameFrom.srcRect,
+          radius: enter.from.background.cornerRadius * unit,
+          rotateX: enter.from.layout.screenRotateX,
+          rotateY: enter.from.layout.screenRotateY,
+          perspective: enter.from.layout.screenPerspective,
+          vignette: 0,
+          focus: null,
+        },
+        enter.source.start,
+        (wasBlur / 2) * SHADOW_SPREAD,
+        wasBorder,
+      );
+    })();
+
+    /** The window the move across the cut has, shared by all three tracks. */
+    const arriving =
+      enter && leavingScreen ? { start: enter.source.start, duration: moveWindow(enter) } : null;
+
+    /**
+     * The clip's roll, folded into whatever each track already holds.
+     *
+     * Last, after the lean, after any zoom and after the move across the cut:
+     * `turnedCorners` spins the corners a key arrives with, so a leaning
+     * picture that is also travelling and also turning is one quad rather than
+     * three things each rasteriser has to apply in the same order. All three
+     * tracks turn about the same middle — the shadow's rectangle is the
+     * picture's grown evenly, so they are concentric — and the pointer and the
+     * click marks come round with the picture because they are placed through
+     * `plane`, which is this track.
+     */
+    const turn: Turn = {
+      to: layout.screenRotation,
+      from: arriving ? { degrees: enter!.from.layout.screenRotation, ...arriving } : null,
+    };
+
+    const travelled = (
+      keys: RectKey[],
+      rest: Rect,
+      radius: number,
+      from: RectKey,
+      /** Only the picture has one — see `entered`. */
+      crop?: Rect,
+    ): RectKey[] => {
+      const moved = arriving ? entered(keys, rest, radius, from, arriving, crop) : keys;
+      return turned(moved, rest, radius, turn).motion ?? moved;
+    };
+
+    const motion = travelled(
+      posed ? [posed.key] : zoomed.keys,
+      dstRect,
+      shape.radius,
+      leavingScreen?.key ?? { at: 0, ...dstRect, radius: shape.radius },
+      leavingScreen?.key.src ? srcRect : undefined,
+    );
+    plane = { srcRect, dstRect, motion };
+    const borderMotion = travelled(
+      posed ? [posed.border] : zoomed.border,
+      outer,
+      outerShape.radius,
+      leavingScreen?.border ?? { at: 0, ...outer, radius: outerShape.radius },
+    );
+    const shadowMotion = travelled(
+      posed ? [posed.shadow] : zoomed.shadow,
+      grow(outer, spread),
+      outerShape.radius,
+      leavingScreen?.shadow ?? { at: 0, ...grow(outer, spread), radius: outerShape.radius },
+    );
     // Against the picture that was just placed, and after `motion` exists: a
     // lens is aimed at a point on the recording, so it needs the box that point
     // is drawn in and the track that box follows.
@@ -1882,7 +1980,34 @@ export function buildRenderPlan(
      * A cutout does turn: its matte is sampled in the picture's own uv, so it
      * comes round with the shoulders it is cutting out.
      */
-    const turn = outline ? 0 : layout.cameraRotation;
+    /**
+     * And where it was turned to on the far side of the cut.
+     *
+     * The same test as `outline`, against the settings it was drawn under: a
+     * bubble wearing somebody's shape was drawn upright whatever its angle leaf
+     * said, so easing out of that leaf would start the move from an angle
+     * nothing was ever drawn at.
+     */
+    const wasFollowing =
+      enter !== null &&
+      enter !== undefined &&
+      !enter.from.layout.cameraCutout &&
+      enter.from.layout.cameraShape === "blob" &&
+      (blobs?.samples.length ?? 0) > 0;
+
+    const turn: Turn = {
+      to: outline ? 0 : layout.cameraRotation,
+      // Turned into place over the same window the move across the cut takes,
+      // so a bubble that both travels and turns does the two as one movement.
+      from:
+        enter && !outline
+          ? {
+              degrees: wasFollowing ? 0 : enter.from.layout.cameraRotation,
+              start: enter.source.start,
+              duration: moveWindow(enter),
+            }
+          : null,
+    };
 
     const moving = turned(motion, shown, shape.radius, turn);
     // And the bubble goes soft under a fisheye with everything else outside the
@@ -2031,8 +2156,9 @@ export function buildRenderPlan(
 
       // At the angle it was being drawn at, like the look and the ring above:
       // this bubble belongs to the clip that is ending, and standing it
-      // upright on the cut would be the last thing it did.
-      const turn = enter.from.layout.cameraRotation;
+      // upright on the cut would be the last thing it did. Held rather than
+      // eased for the same reason — there is nothing here for it to turn into.
+      const turn: Turn = { to: enter.from.layout.cameraRotation, from: null };
 
       if (!wasCutout && enter.from.background.shadowOpacity > 0) {
         items.push({
@@ -2660,14 +2786,18 @@ const WATERMARK_SHADOW_DROP = 0.08;
 const CAMERA_SHADOW = 0.7;
 
 /**
- * How long the camera takes to reach its new place, in nanoseconds.
+ * How long a picture takes to reach its new place across a cut, in nanoseconds.
+ *
+ * One figure for the camera and the recording both: two clocks would be two
+ * things arriving at different moments, which reads as the composition
+ * settling in stages rather than as one edit.
  *
  * Long enough to read as a move rather than a jump, short enough that a two
  * second clip is not still arranging itself halfway through. Capped at half the
  * slice below, for the same reason a zoom's ease is: a move that is still
  * arriving when the clip ends never shows where it was going.
  */
-const CAMERA_MOVE_NS = 280_000_000;
+const CUT_MOVE_NS = 280_000_000;
 
 /**
  * How decisively a shrinking bubble commits to the edge it is nearest.
@@ -4544,7 +4674,7 @@ function easeOut(t: number): number {
 
 /** How long a move gets in a slice, which is never more than half of it. */
 function moveWindow(enter: EnterTransition): number {
-  return Math.min(CAMERA_MOVE_NS, Math.max(0, enter.source.end - enter.source.start) / 2);
+  return Math.min(CUT_MOVE_NS, Math.max(0, enter.source.end - enter.source.start) / 2);
 }
 
 /**
@@ -5043,15 +5173,26 @@ function rotatedQuad(
  *
  * Rotation is carried as a `quad` rather than as an angle of its own, and that
  * is the whole trick: both rasterisers already place a picture by four
- * projected corners — it is how a perspective zoom leans — so a turned camera
+ * projected corners — it is how a perspective zoom leans — so a turned picture
  * is a shape they can already draw. An angle on the item would be a third
  * thing for each of them to apply, in the right order against the tilt they
  * apply already, and two of those orders is a preview and an export that
  * disagree.
  *
- * `w` is 1 at every corner. A rotation is affine: nothing moves towards or away
- * from the eye, so there is no divisor to carry and the hardware's
- * perspective divide is a divide by one.
+ * Which is why this turns the corners the key *already has* rather than its
+ * rectangle: a leaning screen arrives here with the lean's projected quad on
+ * it, and spinning that gives one quad holding both. A camera has no lean, so
+ * `cornersOf` hands back its plain rectangle and nothing changes for it.
+ *
+ * Each corner keeps its own divisor. A turn about a point on screen is affine —
+ * nothing moves towards or away from the eye — so the depth a lean worked out
+ * is still that corner's depth, and `onPlane` maps a pointer through the turned
+ * quad exactly as it did through the straight one. Writing 1 here instead threw
+ * a lean's perspective away the moment the picture was also turned.
+ *
+ * The middle is the rectangle's, which is where the picture's own centre lands:
+ * `rotatedQuad` turns about that centre and projects it at a divisor of one, so
+ * the pivot is the same point before and after a lean.
  *
  * The order is `RectKey.quad`'s: top-left, top-right, bottom-left, bottom-right,
  * each as `x, y, w`.
@@ -5062,47 +5203,228 @@ function turnedCorners(key: RectKey, degrees: number): number[] {
   const sin = Math.sin(radians);
   const middleX = key.x + key.width / 2;
   const middleY = key.y + key.height / 2;
+  const corners = cornersOf(key);
+
+  const out: number[] = [];
 
   // Clockwise on screen, because y runs down — the direction `spin` in the
   // editor's `handles.ts` turns, and the direction the knob is dragged.
-  const corner = (x: number, y: number): number[] => {
-    const dx = x - middleX;
-    const dy = y - middleY;
-    return [middleX + dx * cos - dy * sin, middleY + dx * sin + dy * cos, 1];
-  };
+  for (let corner = 0; corner < 4; corner += 1) {
+    const dx = corners[corner * 3]! - middleX;
+    const dy = corners[corner * 3 + 1]! - middleY;
+    out.push(
+      middleX + dx * cos - dy * sin,
+      middleY + dx * sin + dy * cos,
+      corners[corner * 3 + 2]!,
+    );
+  }
 
-  const right = key.x + key.width;
-  const bottom = key.y + key.height;
-  return [
-    ...corner(key.x, key.y),
-    ...corner(right, key.y),
-    ...corner(key.x, bottom),
-    ...corner(right, bottom),
-  ];
+  return out;
 }
 
 /**
- * One of the camera's tracks with every key turned, as a motion field.
+ * How far a picture is turned through a clip, and what it is turning from.
+ *
+ * One shape for both pictures and for both halves of the question — the angle
+ * the clip is drawn at, and the angle it inherited from the clip before it.
+ * They travel together because a cut is the only moment they differ, and
+ * keeping them apart is how a picture comes to arrive at its new place already
+ * standing at its new angle.
+ */
+interface Turn {
+  /** Where it ends up, in degrees clockwise. */
+  to: number;
+  /**
+   * Where it is arriving from over a cut, and how long it has to get there.
+   *
+   * Null on the first clip, and wherever the two angles agree — there is no
+   * move to draw and the track stays the one key a steady angle needs.
+   */
+  from: { degrees: number; start: number; duration: number } | null;
+}
+
+/** The angle at a moment: eased out of the old clip's into this one's. */
+function angleAt(turn: Turn, at: number): number {
+  if (!turn.from) return turn.to;
+  return lerp(turn.from.degrees, turn.to, easeOut((at - turn.from.start) / turn.from.duration));
+}
+
+/** Whether this turn has a move in it, as against one angle held throughout. */
+function spinning(turn: Turn): boolean {
+  return turn.from !== null && turn.from.duration > 0 && turn.from.degrees !== turn.to;
+}
+
+/**
+ * One of a picture's tracks with every key turned, as a motion field.
+ *
+ * Both pictures: the camera's `cameraRotation` and the screen's `screenRotation`
+ * are the same turn applied the same way, and sharing this is what keeps them
+ * from becoming two answers to how far clockwise is.
  *
  * A track of one where there was none, because a bubble that is simply sitting
  * still at an angle has nothing else to move it — and a plan item can only
  * carry corners on a key. It rests at `at: 0`: `rectAt` holds the first key
  * backwards and the last one forwards, so a single key is the whole clip.
  *
+ * A turn that is itself moving gets a key per step of its window instead, like
+ * any other move — one key cannot hold an angle that is changing. Those steps
+ * are added to whatever times the track already has rather than replacing
+ * them, so a cut into a clip that is already zooming keeps both.
+ *
  * The rectangle stays exactly what it was at every key, which is what keeps
  * everything that reads a track honest — `pictureMoved` compares boxes, and a
  * turn does not move the box the editor's handles are drawn around.
  */
-function turned(
-  keys: RectKey[],
+function turned(keys: RectKey[], rest: Rect, radius: number, turn: Turn): { motion?: RectKey[] } {
+  const moving = spinning(turn);
+  if (turn.to === 0 && !moving) return keys.length > 0 ? { motion: keys } : {};
+
+  const track = moving
+    ? resampled(keys, rest, radius, stepsAcross(turn.from!.start, turn.from!.duration))
+    : keys.length > 0
+      ? keys
+      : [{ at: 0, ...rest, radius }];
+
+  return {
+    motion: track.map((key) => ({ ...key, quad: turnedCorners(key, angleAt(turn, key.at)) })),
+  };
+}
+
+/**
+ * The moments a move across a cut is written at.
+ *
+ * The cadence a zoom's own samples use, for the reason they use it: it is fine
+ * enough that the linear run between two keys is below a pixel, and anything
+ * finer is plan bytes nobody can see.
+ */
+function stepsAcross(start: number, duration: number): number[] {
+  const steps = Math.max(2, Math.ceil(duration / ZOOM_SAMPLE_NS));
+  const times: number[] = [];
+  for (let step = 0; step <= steps; step += 1) {
+    times.push(Math.round(start + (duration * step) / steps));
+  }
+  return times;
+}
+
+/** Whether two rectangles are the same one, to within a rounding step. */
+function sameRect(a: Rect, b: Rect): boolean {
+  return (
+    Math.abs(a.x - b.x) < 0.01 &&
+    Math.abs(a.y - b.y) < 0.01 &&
+    Math.abs(a.width - b.width) < 0.01 &&
+    Math.abs(a.height - b.height) < 0.01
+  );
+}
+
+/**
+ * Two keys blended, by the one piece of arithmetic that knows how.
+ *
+ * `rectAt` across a pair of keys a unit apart, rather than a second set of
+ * lerps written out here. How a quad, a window, a depth of field and a
+ * vignette cross from one key to the next is a page of rules with a bug in
+ * each of them — the window that must be on both ends or neither, the flat key
+ * that stands for its own corners — and two implementations of that page is a
+ * cut that looks different in the preview from the export.
+ */
+function between(from: RectKey, to: RectKey, t: number): RectKey {
+  const pair = [
+    { ...from, at: 0 },
+    { ...to, at: 1 },
+  ];
+  return { ...rectAt(pair, clamp(t, 0, 1), to, to.radius), at: to.at };
+}
+
+/**
+ * A track that travels in from wherever the clip before it left the picture.
+ *
+ * The cut is the one moment a composition changes with nothing moving, and a
+ * recording that teleports across the frame reads as a glitch rather than as
+ * an edit. So the opening of the clip is spent arriving: every key inside the
+ * window is drawn between where the old clip had the picture and where this
+ * one wants it, on the same ease the camera has always used.
+ *
+ * **Beside the zoom maths rather than inside it.** The keys this blends are
+ * already finished — the shots, the lean, the window each one shows — so a
+ * clip that opens mid-zoom arrives at wherever the zoom has got to rather than
+ * at its resting box, and nothing in the follow, the steadying or the reach
+ * has to know a cut happened. That is the whole reason this is a pass over the
+ * track instead of a moving base rectangle.
+ *
+ * Past the window the keys are exactly the keys they were, so the rest of the
+ * clip is the plan it would have been without a cut in front of it.
+ */
+function entered(
+  keys: readonly RectKey[],
   rest: Rect,
   radius: number,
-  degrees: number,
-): { motion?: RectKey[] } {
-  if (degrees === 0) return keys.length > 0 ? { motion: keys } : {};
+  from: RectKey,
+  window: { start: number; duration: number },
+  /**
+   * The crop this clip shows, where the clip before it showed another one.
+   *
+   * Stamped on every key that has none, because a window has to be on both
+   * ends of a span or `rectAt` drops it — and a key with no window of its own
+   * is a key showing this item's `srcRect`, which is exactly this. Absent
+   * wherever the two clips show the same slice of the recording, which is most
+   * cuts and every one that is only a move.
+   */
+  crop?: Rect,
+): RectKey[] {
+  const ends = window.start + window.duration;
+  const track = resampled(keys, rest, radius, stepsAcross(window.start, window.duration)).map(
+    (key) => (crop && !key.src ? { ...key, src: crop } : key),
+  );
 
-  const track = keys.length > 0 ? keys : [{ at: 0, ...rest, radius }];
-  return { motion: track.map((key) => ({ ...key, quad: turnedCorners(key, degrees) })) };
+  // Nothing to draw when the picture is already there: two clips that differ
+  // in their colour and nothing else would otherwise each carry a track of
+  // identical keys, and `pictureMoved` would take the editor's handles off a
+  // picture that never moves.
+  const landing = track[track.length - 1] ?? rectAt(keys, ends, rest, radius);
+  if (
+    sameRect(from, landing) &&
+    Math.abs(from.radius - landing.radius) < 0.01 &&
+    !from.src === !landing.src &&
+    (!from.src || !landing.src || sameRect(from.src, landing.src)) &&
+    sameCorners(from, landing)
+  ) {
+    return [...keys];
+  }
+
+  return track.map((key) =>
+    key.at >= ends ? key : between(from, key, easeOut((key.at - window.start) / window.duration)),
+  );
+}
+
+/** Whether two keys are drawn on the same four corners. */
+function sameCorners(a: RectKey, b: RectKey): boolean {
+  if (!a.quad && !b.quad) return true;
+  const left = cornersOf(a);
+  const right = cornersOf(b);
+  return left.every((value, index) => Math.abs(value - right[index]!) < 0.01);
+}
+
+/**
+ * A track read at its own times and some more, as keys.
+ *
+ * Through `rectAt`, so the added moments carry whatever the track was already
+ * saying there — a window, a depth of field, a lean — rather than a bare
+ * rectangle that would drop it.
+ *
+ * **The moment is stamped back on.** `rectAt` holds the first key backwards and
+ * the last one forwards by handing back *that key*, `at` and all — so sampling
+ * a one-key track at ten moments came back as the same moment ten times. A
+ * clip with a lean has exactly that track, one key at zero, and every sample
+ * of the arrival landed before the cut: the whole clip was then drawn at the
+ * box the clip before it had, with no handles on it, for its whole length.
+ */
+function resampled(
+  keys: readonly RectKey[],
+  rest: Rect,
+  radius: number,
+  extra: number[],
+): RectKey[] {
+  const times = [...new Set([...keys.map((key) => key.at), ...extra])].sort((a, b) => a - b);
+  return times.map((at) => ({ ...rectAt(keys, at, rest, radius), at }));
 }
 
 function cornersOf(key: RectKey): number[] {
@@ -6768,6 +7090,26 @@ export function pictureDrawn(
 }
 
 /**
+ * Whether this moment is inside the move the clip opens with.
+ *
+ * The editor's question, not the plan's: a picture travelling in from the clip
+ * before it is away from its resting box, exactly as one a zoom has taken is —
+ * and the two want opposite answers from the handles. A shot owns where the
+ * picture lands, so there is no box a drag could write; an arrival *ends* at
+ * the box the settings hold, so that box is precisely what a drag writes and
+ * the picture is merely on its way to it.
+ *
+ * Without this, cutting a clip and giving the second half a size of its own
+ * left it with no handles at all — the playhead sits at the start of the clip
+ * you just selected, which is the one stretch of it that is still arriving.
+ */
+export function arrivingAt(enter: EnterTransition | null | undefined, at: number): boolean {
+  if (!enter) return false;
+  const duration = moveWindow(enter);
+  return duration > 0 && at >= enter.source.start && at <= enter.source.start + duration;
+}
+
+/**
  * Whether a picture is away from the box its own settings put it in, now.
  *
  * What the preview's ring and its hit testing both ask before they put handles
@@ -7231,13 +7573,16 @@ const LOUPE_REFLECTION = 0.5;
 const LOUPE_LIGHT = 0.5;
 
 /**
- * How far a screenshot's picture may be pushed off the frame: half of it.
+ * How far the dragged picture may be pushed off the frame: half of it.
  *
- * A screenshot is a picture being composed rather than a demonstration being
- * watched, and running one edge of it off the frame — a window bleeding off the
- * right, a corner shown large — is a composition somebody asks for. A recording
- * keeps the old rule and stays wholly inside: there, a picture half off the edge
- * is nearly always a drag that overshot, and the export would ship it.
+ * A recording used to be held wholly inside, on the grounds that a picture half
+ * off the edge is a drag that overshot. It was the wrong rule, and in one case
+ * it was not a rule at all: a box bigger than the frame has nowhere inside it
+ * to go, so the clamp pinned it to the top left and the picture could not be
+ * dragged at all. Pushing into a recording and moving the part on show is the
+ * whole reason to size it past the frame, and a bleed off one edge — a window
+ * running off the right, a corner shown large — is a composition somebody asks
+ * for just as often on footage as on a still.
  *
  * Half, for the reason the cutout's slack is half: the centre never leaves the
  * frame, so whatever has been dragged off can always be dragged back. Any more
@@ -7537,14 +7882,6 @@ export function layoutBoxes(
   layout: LayoutSettings,
   background: BackgroundSettings,
   sources: SourceSizes,
-  /**
-   * Whether this composition is a screenshot.
-   *
-   * It decides one thing and only one: how far the dragged picture may leave
-   * the frame — see `SCREEN_SLACK`. Every arrangement but `custom` places the
-   * picture itself and is unaffected.
-   */
-  still = false,
 ): { screen: Slot | null; camera: Slot | null } {
   const unit = Math.min(frame.width, frame.height);
   const gap = background.padding * unit;
@@ -7832,7 +8169,7 @@ export function layoutBoxes(
             layout.screenY,
             Math.max(1, layout.screenWidth * unit),
             Math.max(1, layout.screenHeight * unit),
-            still ? SCREEN_SLACK : 0,
+            SCREEN_SLACK,
           ),
           fit: "cover",
           card: true,
@@ -7856,20 +8193,9 @@ export function placement(
   background: BackgroundSettings,
   sources: SourceSizes,
   which: PlanSource,
-  /**
-   * Whether this composition is a screenshot — see `layoutBoxes`.
-   *
-   * **Required, where `layoutBoxes` defaults it.** Every caller of this one is
-   * answering "where is the picture" for something that has to agree with what
-   * was drawn — the ring, the handles, the hit testing — and a default is a way
-   * to forget. It was forgotten exactly once: the ring stayed clamped inside
-   * the frame while the picture it belongs to was dragged past the edge, which
-   * is a box bound to the viewport rather than to the thing it rings.
-   */
-  still: boolean,
 ): (Slot & { dstRect: Rect; srcRect: Rect }) | null {
   const source = sources[which];
-  const slot = layoutBoxes(frame, layout, background, sources, still)[which];
+  const slot = layoutBoxes(frame, layout, background, sources)[which];
   if (!source || !slot) return null;
 
   const fitted =

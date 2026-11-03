@@ -30,6 +30,7 @@ import {
   presetFitsFrame,
   screenYawFor,
   LOUPE_REACH,
+  arrivingAt,
   rectAt,
   shapeAspect,
   SHADOW_SPREAD,
@@ -148,7 +149,6 @@ describe("the camera shaped by the person in it", () => {
       DEFAULT_SETTINGS.background,
       { screen: SCREEN, camera: CAMERA },
       "camera",
-      false,
     )!.dstRect;
 
   it("is the size of the bubble, not of the picture behind it", () => {
@@ -776,7 +776,6 @@ describe("the camera", () => {
         DEFAULT_SETTINGS.background,
         { screen: SCREEN, camera: CAMERA },
         "camera",
-        false,
       )!.dstRect;
       expect(bubble.x + bubble.width).toBeCloseTo(1920, 6);
       expect(bubble.y + bubble.height).toBeCloseTo(1080, 6);
@@ -794,7 +793,6 @@ describe("the camera", () => {
         DEFAULT_SETTINGS.background,
         { screen: SCREEN, camera: CAMERA },
         "camera",
-        false,
       )!.dstRect;
       // The centre sits on the corner: half the box is out of shot.
       expect(cut.x + cut.width / 2).toBeCloseTo(1920, 6);
@@ -2787,7 +2785,6 @@ describe("the arrangements", () => {
         DEFAULT_SETTINGS.background,
         { screen: SCREEN, camera: CAMERA },
         "screen",
-        false,
       )!.dstRect;
 
     expect(drawn("over-column").width).toBeCloseTo(drawn("over-padded").width);
@@ -3021,7 +3018,10 @@ describe("the arrangements", () => {
     }
   });
 
-  it("pulls a box dragged past the edge back inside", () => {
+  it("keeps the middle of a box dragged far past the edge on the frame", () => {
+    // A hand-edited file, or a drag that ran off the screen. The box may hang
+    // off — see `SCREEN_SLACK` — but never so far that its own handles are out
+    // of reach and it cannot be dragged back.
     const off = layoutBoxes(
       LANDSCAPE,
       {
@@ -3035,9 +3035,10 @@ describe("the arrangements", () => {
       DEFAULT_SETTINGS.background,
       { screen: SCREEN, camera: CAMERA },
     );
+    const area = off.screen!.area;
 
-    expect(off.screen!.area.x + off.screen!.area.width).toBeLessThanOrEqual(1920 + 1e-6);
-    expect(off.screen!.area.y).toBeGreaterThanOrEqual(-1e-6);
+    expect(area.x + area.width / 2).toBeLessThanOrEqual(1920 + 1e-6);
+    expect(area.y + area.height / 2).toBeGreaterThanOrEqual(-1e-6);
   });
 
   it("gives the camera its own shape in every arrangement", () => {
@@ -6027,11 +6028,198 @@ describe("arriving from the slice before", () => {
     expect(image(planFor("beside", null), "camera")!.motion).toBeUndefined();
   });
 
-  it("leaves the screen alone", () => {
-    // Only the camera moves. The screen's track is the zooms', derived from a
-    // base rectangle that is fixed for the slice — sharing it needs the zoom
-    // maths changed rather than added to, which is not what this does.
-    expect(image(planFor("beside", "over-full"), "screen")!.motion).toBeUndefined();
+  it("brings the screen in from where the clip before had it", () => {
+    // The recording moves across a cut like the camera does. It used to be
+    // left out, on the grounds that its track is the zooms' — so this blends
+    // the finished keys instead of moving the base rectangle the zoom maths
+    // derives them from.
+    const plan = planFor("beside", "over-full");
+    const screen = image(plan, "screen")!;
+    const keys = screen.motion!;
+    const wasWhole = image(planFor("over-full", null), "screen")!.dstRect;
+
+    expect(keys[0]!.at).toBe(SPAN.start);
+    expect(keys[0]!.x).toBeCloseTo(wasWhole.x, 6);
+    expect(keys[0]!.width).toBeCloseTo(wasWhole.width, 6);
+
+    // And it travels rather than jumping: the middle of the window is strictly
+    // between the two boxes. Endpoints alone pass happily on a track that sits
+    // at the old place and then snaps, which is the hard cut this replaces.
+    const middle = rectAt(keys, SPAN.start + 140_000_000, screen.dstRect, 0);
+    const low = Math.min(wasWhole.width, screen.dstRect.width);
+    const high = Math.max(wasWhole.width, screen.dstRect.width);
+    expect(middle.width).toBeGreaterThan(low + 1);
+    expect(middle.width).toBeLessThan(high - 1);
+
+    // And it has to *land*: a track ending anywhere but the resting box leaves
+    // every frame after the move wrong rather than only the opening ones.
+    const last = keys[keys.length - 1]!;
+    expect(last.x).toBeCloseTo(screen.dstRect.x, 6);
+    expect(last.y).toBeCloseTo(screen.dstRect.y, 6);
+    expect(last.width).toBeCloseTo(screen.dstRect.width, 6);
+    expect(last.height).toBeCloseTo(screen.dstRect.height, 6);
+    expect(last.at).toBeLessThanOrEqual(SPAN.end);
+  });
+
+  it("takes the recording's ring and shadow with it", () => {
+    // Either one left where this clip wants it, while the picture is still
+    // travelling, is a frame that detaches from the thing it frames.
+    const items = planFor("beside", "over-full").items;
+    const shadow = items.find((item) => item.kind === "shadow")!;
+    const stroke = items.find((item) => item.kind === "stroke")!;
+    const screen = image(planFor("beside", "over-full"), "screen")!;
+
+    for (const item of [shadow, stroke]) {
+      const keys = item.motion!;
+      expect(keys.length).toBeGreaterThan(1);
+      // Travelling with the picture: wider than it where they open, because
+      // the clip being left had the recording across the whole frame.
+      expect(keys[0]!.width).toBeGreaterThan(keys[keys.length - 1]!.width);
+      // And each stands off its own rectangle by the same amount at rest as
+      // the item it belongs to says — the ring is not the picture's track.
+      expect(keys[keys.length - 1]!.width).toBeCloseTo((item as { rect: Rect }).rect.width, 6);
+    }
+
+    expect(screen.motion!.length).toBeGreaterThan(1);
+  });
+
+  it("carries the recording's crop across with it", () => {
+    // A clip that shows a different slice of the recording — a change of
+    // padding under `cover`, or a pan — would otherwise snap to the new crop
+    // on the first frame while the box was still on its way.
+    const keys = image(planFor("split", "over-full"), "screen")!.motion!;
+
+    expect(keys[0]!.src).toBeDefined();
+    expect(keys[keys.length - 1]!.src).toBeDefined();
+    expect(keys[0]!.src!.width).not.toBeCloseTo(keys[keys.length - 1]!.src!.width, 3);
+  });
+
+  it("says nothing where the recording does not move", () => {
+    // Two clips that differ in something else entirely. A track of identical
+    // keys would be a plan nobody can read and, worse, `pictureMoved` reading
+    // it would take the editor's handles off a picture that never moves.
+    const plan = buildRenderPlan(
+      LANDSCAPE,
+      BOTH,
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full" } }),
+      null,
+      [],
+      {
+        from: settings({
+          layout: { ...DEFAULT_SETTINGS.layout, preset: "over-full", cursorSize: 0.08 },
+        }),
+        source: SPAN,
+      },
+    );
+
+    expect(image(plan, "screen")!.motion).toBeUndefined();
+  });
+
+  it("turns both pictures into place rather than cutting to the angle", () => {
+    // The angle is part of where a picture is. Arriving at the new place
+    // already standing at the new angle is the same hard cut, moved.
+    const turning = (overrides: Partial<LayoutSettings>, from: Partial<LayoutSettings>) =>
+      buildRenderPlan(
+        LANDSCAPE,
+        BOTH,
+        settings({ layout: { ...DEFAULT_SETTINGS.layout, ...overrides } }),
+        null,
+        [],
+        { from: settings({ layout: { ...DEFAULT_SETTINGS.layout, ...from } }), source: SPAN },
+      );
+
+    for (const [source, leaf] of [
+      ["screen", "screenRotation"],
+      ["camera", "cameraRotation"],
+    ] as const) {
+      const keys = image(turning({ [leaf]: 20 }, { [leaf]: 0 }), source)!.motion!;
+      expect(keys.length).toBeGreaterThan(2);
+
+      // Square where the clip opens, turned where it settles — read off the
+      // corners, because that is where the angle actually lives.
+      const level = (key: (typeof keys)[number]) => Math.abs(key.quad![4]! - key.quad![1]!);
+      expect(level(keys[0]!)).toBeLessThan(0.01);
+      expect(level(keys[keys.length - 1]!)).toBeGreaterThan(1);
+    }
+  });
+
+  it("settles at its own box on a leaning clip, not the one before it", () => {
+    // The shape that broke it in the wild: a clip with a lean carries exactly
+    // one key, at zero, and `rectAt` answers every later moment with *that
+    // key* — `at` and all. Sampling the arrival across it came back as the
+    // same moment over and over, every sample landed before the cut, and the
+    // whole clip was drawn at the previous clip's box with no handles on it.
+    const leaning = (width: number) => ({
+      ...DEFAULT_SETTINGS.layout,
+      preset: "custom" as const,
+      screenX: 0.5,
+      screenY: 0.5,
+      screenWidth: width,
+      screenHeight: width * 0.62,
+      screenRotateX: 13,
+      screenRotateY: 17,
+      screenPerspective: 0.58,
+    });
+
+    const plan = buildRenderPlan(LANDSCAPE, BOTH, settings({ layout: leaning(1.96) }), null, [], {
+      from: settings({ layout: leaning(2.31) }),
+      source: SPAN,
+    });
+    const screen = image(plan, "screen")!;
+    const keys = screen.motion!;
+
+    // Every sample is its own moment. Two keys sharing one is the bug.
+    expect(new Set(keys.map((key) => key.at)).size).toBe(keys.length);
+
+    // And well after the move the picture is at the box this clip asks for.
+    const settled = rectAt(keys, SPAN.start + 2_000_000_000, screen.dstRect, 0);
+    expect(settled.width).toBeCloseTo(screen.dstRect.width, 6);
+    expect(settled.x).toBeCloseTo(screen.dstRect.x, 6);
+    // Which is not where it came from: the clip before it was wider.
+    expect(settled.width).toBeLessThan(keys[0]!.width - 1);
+
+    // The lean survives the arrival, or the clip lands flat.
+    expect(settled.quad).toBeDefined();
+  });
+
+  it("counts the opening of the clip as an arrival, and nothing after it", () => {
+    // What the editor asks before it takes the handles off a picture. Cutting
+    // a clip and giving the second half a size of its own left it with none at
+    // all: selecting a clip puts the playhead at its start, which is the one
+    // stretch of it that is still arriving.
+    const enter = { from: settings(), source: SPAN };
+
+    expect(arrivingAt(enter, SPAN.start)).toBe(true);
+    expect(arrivingAt(enter, SPAN.start + 140_000_000)).toBe(true);
+    // Past the move, which is the rest of the clip.
+    expect(arrivingAt(enter, SPAN.start + 400_000_000)).toBe(false);
+    // And before it, which is the clip before this one.
+    expect(arrivingAt(enter, SPAN.start - 1)).toBe(false);
+    expect(arrivingAt(null, SPAN.start)).toBe(false);
+  });
+
+  it("has no arrival to speak of on a clip too short for one", () => {
+    // The window is capped at half the clip, and a clip of no length has no
+    // half — the editor must not take the handles off for a move that cannot
+    // be drawn.
+    expect(arrivingAt({ from: settings(), source: { start: 0, end: 0 } }, 0)).toBe(false);
+  });
+
+  it("cannot still be turning when the clip ends", () => {
+    const brief = buildRenderPlan(
+      LANDSCAPE,
+      BOTH,
+      settings({ layout: { ...DEFAULT_SETTINGS.layout, screenRotation: 20 } }),
+      null,
+      [],
+      {
+        from: settings({ layout: { ...DEFAULT_SETTINGS.layout, screenRotation: 0 } }),
+        source: { start: 0, end: S / 10 },
+      },
+    );
+
+    const keys = image(brief, "screen")!.motion!;
+    expect(keys[keys.length - 1]!.at).toBeLessThanOrEqual(S / 20);
   });
 
   it("cannot still be arriving when the clip ends", () => {
@@ -7046,9 +7234,9 @@ describe("a screenshot's masks", () => {
   });
 });
 
-describe("a screenshot dragged off the frame", () => {
+describe("a picture dragged off the frame", () => {
   /** The picture pushed hard to the right, as a drag would write it. */
-  const pushed = (still: boolean) =>
+  const pushed = (size = { width: 1, height: 0.56 }) =>
     layoutBoxes(
       LANDSCAPE,
       {
@@ -7056,31 +7244,48 @@ describe("a screenshot dragged off the frame", () => {
         preset: "custom",
         screenX: 1.4,
         screenY: 0.5,
-        screenWidth: 1,
-        screenHeight: 0.56,
+        screenWidth: size.width,
+        screenHeight: size.height,
       },
       DEFAULT_SETTINGS.background,
       { screen: SCREEN, camera: null },
-      still,
     ).screen!.area;
 
   it("may hang off the edge", () => {
-    const area = pushed(true);
+    const area = pushed();
     expect(area.x + area.width).toBeGreaterThan(LANDSCAPE.width);
   });
 
   it("never loses its own middle", () => {
     // What makes it recoverable: whatever has been dragged off can be dragged
     // back, because the centre is always on the frame.
-    const area = pushed(true);
+    const area = pushed();
     expect(area.x + area.width / 2).toBeLessThanOrEqual(LANDSCAPE.width);
   });
 
-  it("is still held inside the frame on a recording", () => {
-    // The old rule, kept: there a picture half off the edge is nearly always a
-    // drag that overshot, and the export would ship it.
-    const area = pushed(false);
-    expect(area.x + area.width).toBeLessThanOrEqual(LANDSCAPE.width + 0.001);
+  it("moves at all when it is larger than the frame", () => {
+    // The whole reason the slack is not zero. A box bigger than the frame has
+    // nowhere inside it to sit, so the old clamp pinned it to the top left and
+    // every drag on a pushed-into recording did nothing.
+    const big = pushed({ width: 2, height: 1.2 });
+    const back = layoutBoxes(
+      LANDSCAPE,
+      {
+        ...DEFAULT_SETTINGS.layout,
+        preset: "custom",
+        screenX: 0.2,
+        screenY: 0.5,
+        screenWidth: 2,
+        screenHeight: 1.2,
+      },
+      DEFAULT_SETTINGS.background,
+      { screen: SCREEN, camera: null },
+    ).screen!.area;
+
+    expect(big.x).toBeGreaterThan(back.x);
+    // And still recoverable: the centre is on the frame at both ends.
+    expect(big.x + big.width / 2).toBeLessThanOrEqual(LANDSCAPE.width + 1e-6);
+    expect(back.x + back.width / 2).toBeGreaterThanOrEqual(-1e-6);
   });
 
   it("puts the handles where the picture is", () => {
@@ -7101,7 +7306,6 @@ describe("a screenshot dragged off the frame", () => {
       DEFAULT_SETTINGS.background,
       { screen: SCREEN, camera: null },
       "screen",
-      true,
     )!;
     const plan = buildRenderPlan(
       LANDSCAPE,
@@ -7118,6 +7322,161 @@ describe("a screenshot dragged off the frame", () => {
     );
 
     expect(placed.dstRect).toEqual(image(plan, "screen")!.dstRect);
+  });
+});
+
+describe("the recording turned in its frame", () => {
+  const TURN = 20;
+
+  /** The pointer parked in the middle of the recording, so it can be followed. */
+  const TRACK = {
+    shapes: { arrow: { path: "cursor.png", hotspot: { x: 0, y: 0 } } },
+    size: 0.035,
+    hideAfter: null,
+    samples: [{ at: 0, x: 0.5, y: 0.5 }],
+  };
+
+  const plan = (overrides: Partial<LayoutSettings> = {}) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cursorSmoothing: 0,
+          cursorTilt: 0,
+          screenRotation: TURN,
+          ...overrides,
+        },
+        background: { ...DEFAULT_SETTINGS.background, borderWidth: 0.01 },
+      }),
+      TRACK,
+    );
+
+  /** The corners the quad should hold, worked out the long way round. */
+  const spun = (rect: Rect, degrees: number) => {
+    const radians = (degrees * Math.PI) / 180;
+    const middleX = rect.x + rect.width / 2;
+    const middleY = rect.y + rect.height / 2;
+    return [
+      [rect.x, rect.y],
+      [rect.x + rect.width, rect.y],
+      [rect.x, rect.y + rect.height],
+      [rect.x + rect.width, rect.y + rect.height],
+    ].map(([x, y]) => ({
+      x: middleX + (x! - middleX) * Math.cos(radians) - (y! - middleY) * Math.sin(radians),
+      y: middleY + (x! - middleX) * Math.sin(radians) + (y! - middleY) * Math.cos(radians),
+    }));
+  };
+
+  const quadOf = (item: { motion?: readonly { quad?: readonly number[] }[] }) => {
+    const quad = item.motion?.[0]?.quad;
+    if (!quad) throw new Error("no corners");
+    return [0, 1, 2, 3].map((corner) => ({
+      x: quad[corner * 3]!,
+      y: quad[corner * 3 + 1]!,
+      w: quad[corner * 3 + 2]!,
+    }));
+  };
+
+  it("draws the picture on four corners turned about its own middle", () => {
+    const screen = image(plan(), "screen")!;
+    const wanted = spun(screen.dstRect, TURN);
+
+    quadOf(screen).forEach((corner, index) => {
+      expect(corner.x).toBeCloseTo(wanted[index]!.x, 6);
+      expect(corner.y).toBeCloseTo(wanted[index]!.y, 6);
+      // Affine: nothing leans towards the eye, so the divisor is 1.
+      expect(corner.w).toBe(1);
+    });
+  });
+
+  it("leaves the rectangle exactly where it was", () => {
+    // The box is what the settings store and what the editor's handles are
+    // drawn around, which is why a turn is not a move — `pictureMoved` reads
+    // these and would take the handles off a picture that is only turned.
+    expect(image(plan(), "screen")!.dstRect).toEqual(
+      image(plan({ screenRotation: 0 }), "screen")!.dstRect,
+    );
+  });
+
+  it("turns the shadow and the ring with it", () => {
+    const items = plan().items;
+    const shadow = items.find((item) => item.kind === "shadow")!;
+    const stroke = items.find((item) => item.kind === "stroke")!;
+
+    for (const item of [shadow, stroke]) {
+      const rect = (item as { rect: Rect }).rect;
+      const wanted = spun(rect, TURN);
+      quadOf(item as { motion?: readonly { quad?: readonly number[] }[] }).forEach(
+        (corner, index) => {
+          expect(corner.x).toBeCloseTo(wanted[index]!.x, 6);
+          expect(corner.y).toBeCloseTo(wanted[index]!.y, 6);
+        },
+      );
+    }
+  });
+
+  it("brings the pointer round with the picture", () => {
+    // The pointer is placed through the picture's own track, so a turn it did
+    // not follow would leave the arrow pointing at a different thing from the
+    // one it was pointing at. The middle of the recording is the one point a
+    // turn leaves alone, so this is the arithmetic rather than the fixture.
+    const screen = image(plan(), "screen")!;
+    const pointer = plan().items.find((item) => item.kind === "cursor")!;
+    if (pointer.kind !== "cursor") throw new Error("no pointer");
+
+    expect(pointer.points[0]!.x).toBeCloseTo(screen.dstRect.x + screen.dstRect.width / 2, 6);
+    expect(pointer.points[0]!.y).toBeCloseTo(screen.dstRect.y + screen.dstRect.height / 2, 6);
+
+    // And off the middle it travels: a quarter of the way across, turned.
+    const off = buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: {
+          ...DEFAULT_SETTINGS.layout,
+          cursorSmoothing: 0,
+          cursorTilt: 0,
+          screenRotation: TURN,
+        },
+      }),
+      { ...TRACK, samples: [{ at: 0, x: 0.25, y: 0.5 }] },
+    );
+    const moved = off.items.find((item) => item.kind === "cursor")!;
+    if (moved.kind !== "cursor") throw new Error("no pointer");
+
+    const middleY = screen.dstRect.y + screen.dstRect.height / 2;
+    // Turned clockwise, so a point left of the middle has risen.
+    expect(moved.points[0]!.y).toBeLessThan(middleY);
+
+    // And the sprite itself comes round, not only where it sits: an upright
+    // arrow on a turned picture reads as a sticker on the glass rather than as
+    // a pointer lying on the recording. Its own corners, through the picture's
+    // quad — so the top edge of the box it is drawn in is no longer level.
+    const corners = pointer.points[0]!.quad;
+    expect(corners).toBeDefined();
+    expect(Math.abs(corners![4]! - corners![1]!)).toBeGreaterThan(1);
+  });
+
+  it("keeps a lean's perspective rather than flattening it", () => {
+    // The two compose: the lean projects the plane and this turns the result.
+    // Written as a quad apiece they would be two angles each rasteriser applies
+    // in its own order, which is a preview and an export that disagree.
+    const leaning = image(plan({ screenRotateY: 30, screenPerspective: 1 }), "screen")!;
+    const corners = quadOf(leaning);
+
+    // A lean's corners sit at different distances from the eye, and that is
+    // what the divisor carries. All four at 1 is a thrown-away perspective.
+    expect(new Set(corners.map((corner) => corner.w.toFixed(6))).size).toBeGreaterThan(1);
+
+    // And the lean is still turned: the quad's own top edge is no longer level.
+    expect(Math.abs(corners[1]!.y - corners[0]!.y)).toBeGreaterThan(1);
+  });
+
+  it("carries nothing at all while it is square", () => {
+    // Every plan that does not turn has to be the plan it always was.
+    expect(image(plan({ screenRotation: 0 }), "screen")!.motion).toBeUndefined();
   });
 });
 
