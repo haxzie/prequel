@@ -7,6 +7,7 @@ import { FolderIcon, TrashIcon } from "../editor/icons";
 import { RecordingsIcon, ScreenshotsIcon } from "../workspace/icons";
 import { useDock } from "../hooks/useDock";
 import { PaneHeader } from "../workspace/PaneHeader";
+import { RenameField } from "../components/RenameField";
 import { ViewToggle } from "../workspace/ViewToggle";
 import { PencilIcon } from "./icons";
 import { Checkbox, SelectionBar } from "./Selection";
@@ -486,7 +487,12 @@ function Card({
             nesting problem the tick has. */}
         {renaming && (
           <span className="absolute top-1/2 left-[94px] w-56 -translate-y-1/2">
-            <RenameField name={project.name} onDone={onRenamed} onCancel={onCancelRename} />
+            <RenameField
+              name={project.name}
+              onDone={onRenamed}
+              onCancel={onCancelRename}
+              className="w-full rounded border border-editor-accent/60 bg-editor-panel px-1.5 py-0.5 text-[13px] font-medium outline-none"
+            />
           </span>
         )}
 
@@ -556,7 +562,12 @@ function Card({
           Still shown while it is being renamed, or the pencil would open an
           editor with nowhere to type. */}
       {renaming ? (
-        <RenameField name={project.name} onDone={onRenamed} onCancel={onCancelRename} />
+        <RenameField
+          name={project.name}
+          onDone={onRenamed}
+          onCancel={onCancelRename}
+          className="w-full rounded border border-editor-accent/60 bg-editor-panel px-1.5 py-0.5 text-[13px] font-medium outline-none"
+        />
       ) : still ? null : (
         <button
           type="button"
@@ -642,54 +653,6 @@ function Action({
     >
       {children}
     </button>
-  );
-}
-
-/**
- * Renaming, in place on the card.
- *
- * Committed on Enter and on blur, abandoned on Escape — the three things a
- * label that turned into a field is expected to do. A dialog for one short
- * string would be more chrome than the edit.
- */
-function RenameField({
-  name,
-  onDone,
-  onCancel,
-}: {
-  name: string;
-  onDone: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(name);
-  /**
-   * Whether Escape has already taken this field away.
-   *
-   * Escape moves focus, which fires `blur` straight after — without this the
-   * abandoned edit is committed by the very keypress that abandoned it.
-   */
-  const [cancelled, setCancelled] = useState(false);
-
-  return (
-    <input
-      autoFocus
-      value={value}
-      onChange={(event) => setValue(event.target.value)}
-      onFocus={(event) => event.target.select()}
-      onBlur={() => (cancelled ? onCancel() : onDone(value))}
-      onKeyDown={(event) => {
-        // Stopped here as well as handled: Escape is what drops the selection,
-        // and a rename abandoned with it should not also empty the library's
-        // ticks behind the field.
-        event.stopPropagation();
-        if (event.key === "Enter") onDone(value);
-        if (event.key === "Escape") {
-          setCancelled(true);
-          onCancel();
-        }
-      }}
-      className="w-full rounded border border-editor-accent/60 bg-editor-panel px-1.5 py-0.5 text-[13px] font-medium outline-none"
-    />
   );
 }
 

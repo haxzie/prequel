@@ -402,6 +402,36 @@ describe("deleting a range", () => {
   });
 });
 
+describe("naming the recording", () => {
+  it("keeps what was typed into the title bar", () => {
+    const named = run(start(), { type: "rename", name: "  Launch demo  " });
+
+    // Trimmed, because the field hands back whatever was typed and a name with
+    // a space on the front sorts and reads as a different one.
+    expect(named.project.name).toBe("Launch demo");
+  });
+
+  it("declines a blank one", () => {
+    // A recording with no name is a card in the library with no label and
+    // nothing to click into to fix it. Declining leaves the folder's own name
+    // showing, which is what a project that was never renamed falls back to.
+    const named = run(start(), { type: "rename", name: "Launch demo" });
+    const blanked = run(named, { type: "rename", name: "   " });
+
+    expect(blanked.project.name).toBe("Launch demo");
+    expect(run(start(), { type: "rename", name: "" }).project.name).toBeUndefined();
+  });
+
+  it("is not something the undo button steps back through", () => {
+    // Undo is the timeline's — cuts, trims, zooms and the caption words. A
+    // label is not the shape of the edit, the field abandons on Escape, and
+    // typing the old name back is the whole of putting it right.
+    const named = run(start(), { type: "rename", name: "Launch demo" });
+
+    expect(canUndo(named)).toBe(false);
+  });
+});
+
 describe("the transcript", () => {
   const word = (text: string, at: number) => ({ at, end: at + S, text, confidence: 1 });
 

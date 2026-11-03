@@ -226,6 +226,20 @@ export type EditorAction =
   | { type: "load"; project: Project; duration: MediaTime; seams: readonly MediaTime[] }
   | { type: "select"; sliceId: string | null }
   | { type: "setFrame"; frame: Project["frame"] }
+  /**
+   * What the library calls this recording, typed into the editor's title bar.
+   *
+   * A project edit rather than a call to `projects.rename`: that one reads
+   * `project.json` off disk, sets the name and writes it back, which the
+   * editor's own next save would then overwrite with the name it still had in
+   * memory. One writer per file.
+   *
+   * Not undoable, like the library's own rename and for the reason the
+   * appearance settings are not — see `undoStep`. A label is not the shape of
+   * the edit, the field abandons on Escape, and typing the old name back is
+   * the whole of putting it right.
+   */
+  | { type: "rename"; name: string }
   | { type: "setOutput"; output: Project["output"] }
   | { type: "setMicDenoise"; level: Project["micDenoise"] }
   | { type: "split"; at: MediaTime }
@@ -965,6 +979,15 @@ function apply(
     // recording exported once as a GIF is nearly always exported as a GIF the
     // next time, and re-picking the format on every open is the sort of small
     // repeated cost nobody reports.
+    // Blank is declined rather than stored: a recording with no name is a card
+    // in the library with no label and nothing to click into to fix it. The
+    // same rule `renameProject` applies in main.
+    case "rename": {
+      const trimmed = action.name.trim();
+      if (trimmed === "") return state;
+      return edit(state, (project) => ({ ...project, name: trimmed }));
+    }
+
     case "setOutput":
       return edit(state, (project) => ({ ...project, output: action.output }));
 

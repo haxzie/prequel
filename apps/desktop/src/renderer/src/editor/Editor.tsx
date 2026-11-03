@@ -46,6 +46,7 @@ import {
 import { augmentZooms, autoZooms, momentsOf } from "../../../shared/autoedit";
 import { AUTO_PRESET_ID, evenSize } from "../../../shared/presets";
 import { cn } from "../lib/cn";
+import { RenameField } from "../components/RenameField";
 import { ANNOTATE_BAR, FRAME_BAR, TITLE_BAR } from "./surfaces";
 import { BugIcon, FolderIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
@@ -1760,9 +1761,13 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
 
   return (
     <Shell
-      name={session.name}
+      // The project's own name where it has been given one, and the folder's
+      // otherwise — the same fallback the library reads it by, so the two
+      // cannot show different names for one recording.
+      name={state.project.name ?? session.name}
       still={still}
       onBack={onBack}
+      onRename={(next) => dispatch({ type: "rename", name: next })}
       trailing={
         <button
           type="button"
@@ -2456,6 +2461,7 @@ function Shell({
   name,
   still,
   onBack,
+  onRename,
   trailing,
   actions,
   children,
@@ -2464,11 +2470,15 @@ function Shell({
   /** Which pane of the library this came out of, in the words the library uses. */
   still: boolean;
   onBack: () => void;
+  /** Renames the recording. The name is the one thing on this bar that is also an edit. */
+  onRename: (name: string) => void;
   /** Sits inside the breadcrumb group, at its end. */
   trailing?: React.ReactNode;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const [renaming, setRenaming] = useState(false);
+
   return (
     // `min-h-0 flex-1` rather than `h-full`: this is a flex child of `#root`,
     // and a flex item that cannot shrink below its content pushes the bottom of
@@ -2536,7 +2546,33 @@ function Shell({
           <span aria-hidden className="flex-none text-[13px] text-editor-fg/40">
             /
           </span>
-          <span className="min-w-0 truncate px-1 text-[13px] font-medium">{name}</span>
+          {/* The name, which is also where it is renamed — the library's pencil
+              has no counterpart up here, and a recording open in the editor is
+              exactly when somebody knows what to call it.
+
+              `no-drag` on both halves. Without it a click lands on the title
+              bar's drag region and moves the window instead of opening the
+              field, and the field itself cannot be clicked into at all. */}
+          {renaming ? (
+            <RenameField
+              name={name}
+              onDone={(next) => {
+                setRenaming(false);
+                onRename(next);
+              }}
+              onCancel={() => setRenaming(false)}
+              className="no-drag min-w-0 flex-1 rounded border border-editor-accent/60 bg-editor-panel px-1 py-0.5 text-[13px] font-medium outline-none"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setRenaming(true)}
+              title="Rename this recording"
+              className="no-drag min-w-0 truncate rounded-full px-1 text-[13px] font-medium hover:bg-white/10"
+            >
+              {name}
+            </button>
+          )}
           {trailing}
         </div>
 
