@@ -33,7 +33,7 @@ one generated from HTML by a tool reads like one.
   structure and every colour already right.
 - `assets/campaign.txt` — the plain-text twin, same shape.
 - `scripts/preview.sh` — renders a campaign to a PNG. `./scripts/preview.sh
-  mail.html 1800`.
+mail.html 1800`.
 
 Draft into `.context/`, never into the repo. A campaign is a thing that was
 sent once, not a thing the tree carries.
@@ -78,7 +78,7 @@ directive, addressed to one person. The sign-off is always:
 Keep the reply line above it. "Reply to this email — it reaches me" is true,
 and a reply is the strongest engagement signal Gmail reads.
 
-Numbers do the work superlatives would: *seventeen releases this month* needs no
+Numbers do the work superlatives would: _seventeen releases this month_ needs no
 adjective. Only use one you have counted — "thirty-seven backgrounds" was wrong
 because seven patterns come in eight colours each, and the honest version was
 "three new sets".
@@ -96,14 +96,14 @@ Everything in `[[site-copy]]`'s list of claims applies, and two bite here:
 Lifted from `apps/web/src/app/globals.css`, which is the canonical one. Change
 it there and these go stale.
 
-| | |
-|---|---|
-| Page | `#ffffff` |
-| Text | `#141518` |
-| Muted | `#6b6f76` |
-| Hairline | `#e3e3e3` |
+|                          |           |
+| ------------------------ | --------- |
+| Page                     | `#ffffff` |
+| Text                     | `#141518` |
+| Muted                    | `#6b6f76` |
+| Hairline                 | `#e3e3e3` |
 | Surface, for inline code | `#f5f5f5` |
-| Brand | `#e14b15` |
+| Brand                    | `#e14b15` |
 
 **The CTA is a black pill, not an orange one.** The site's primary button is
 `bg-fg text-bg` (`ButtonLink.tsx`); orange is the `danger` variant. An orange

@@ -2,4 +2,4 @@
 "@prequel/desktop": minor
 ---
 
-The recording and the camera now slide and turn into place across a cut instead of jumping to the new arrangement.
+The recording and the camera slide and turn into their new places at a cut.
