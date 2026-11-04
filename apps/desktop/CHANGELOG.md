@@ -1,5 +1,19 @@
 # @prequel/desktop
 
+## 0.10.0
+
+### Minor Changes
+
+- cbaea04: The recording and the camera slide and turn into their new places at a cut.
+- f89dbf3: Rename a recording from the editor's title bar: click the name and type a new one.
+- cbaea04: Turn the recording to any angle with the Rotation slider, or by dragging just outside its corners.
+
+  <!-- highlight: Turn the recording to any angle -->
+
+### Patch Changes
+
+- cbaea04: Move the recording anywhere in the frame, including off an edge or when it is larger than the frame.
+
 ## 0.9.1
 
 ### Patch Changes
