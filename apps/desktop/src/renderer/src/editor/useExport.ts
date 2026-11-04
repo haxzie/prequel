@@ -116,7 +116,15 @@ export function useExport(
   bitmaps.current = { cues: captions.byLook, texts: texts.rendered, tags };
 
   const start = useCallback(async () => {
-    if (!session) return;
+    // The dialog's own button, so a press that lands here with no session is a
+    // button that does nothing and says nothing. It should not be reachable —
+    // the dialog is opened from an editor that has one — and that is exactly
+    // why it is worth a line: an export that never starts is the one failure a
+    // user cannot investigate, and "nothing happened" is all they can report.
+    if (!session) {
+      console.error("[export] Export was pressed with no session loaded");
+      return;
+    }
 
     // A screenshot. Composited here rather than by the exporter — see
     // `stillPng.ts` — and the sheet comes *after* the draw rather than before

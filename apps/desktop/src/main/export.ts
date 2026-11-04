@@ -119,11 +119,29 @@ export async function chooseExportTarget(
     properties: ["createDirectory", "showOverwriteConfirmation"],
   };
 
+  // Both sides of the sheet, and this is the only part of an export the log
+  // used to say nothing at all about. Everything from the Export press to the
+  // first frame was silent: a sheet that opened behind the window, a sheet
+  // dismissed, and a press that never reached main all left an identical log —
+  // which is nothing. Two bug reports reading "my video is not exporting"
+  // arrived with a log that could not tell them apart.
+  //
+  // `log` rather than `console.warn` for the same reason the lifecycle
+  // breadcrumbs use it: in `pnpm dev` a save sheet is on screen in front of
+  // you, so this is only ever worth having after the fact.
+  log("info", "export: asking where to write", { format });
+
   const { canceled, filePath } = window
     ? await dialog.showSaveDialog(window, options)
     : await dialog.showSaveDialog(options);
 
-  if (canceled || !filePath) return null;
+  if (canceled || !filePath) {
+    // Not a failure, and deliberately not reported as one — but it is the one
+    // answer that explains an export that never started, and without it the
+    // next report is the last two over again.
+    log("info", "export: the save sheet was dismissed");
+    return null;
+  }
 
   const wanted = extname(name);
   const output = extname(filePath).toLowerCase() === wanted ? filePath : filePath + wanted;
