@@ -491,31 +491,6 @@ export class CaptureFlow {
     });
   }
 
-  /**
-   * Opens the panel on one source, set up to take a screenshot rather than a
-   * recording.
-   *
-   * The switch *and* the source, because from the tray they are one decision:
-   * somebody choosing "Screenshot a Window" has said both, so the card over
-   * the window offers the one thing that was asked for rather than asking
-   * again.
-   *
-   * Through the same picker a recording goes through rather than shooting on
-   * the spot. The overlay is what names the target, so the one path to a
-   * capture stays one path. See `capture`.
-   */
-  shootMode(mode: ScreenMode): void {
-    this.setCaptureMode("photo");
-    this.showDock();
-
-    // Through `chooseMode` rather than `openMode`, for the one argument:
-    // somebody who picked "Screenshot a Window" has already answered the
-    // question the card asks, so the card does not ask it again.
-    void this.chooseMode(mode, ["photo"]).catch((cause) => {
-      console.warn("[flow] could not open the picker:", cause);
-    });
-  }
-
   /** Opens a recording for editing, hiding the recorder's floating UI. */
   openEditor(dir: string): void {
     this.deps.quickView?.hide();
@@ -683,19 +658,15 @@ export class CaptureFlow {
   }
 
   /**
-   * Records what the next capture is, and what the last one was.
+   * Remembers what the last capture was.
    *
-   * No longer a switch anybody presses: the panel's two icons are gone and the
-   * card over the picked window asks instead. What is left is the *memory* of
-   * the answer, which the panel's right-hand half reads — a screenshot has no
-   * camera, no microphone and nothing to read a script to, so those three come
-   * off the strip. Written by the tray's screenshot rows before the picker
-   * opens, and by `confirmSelection` from the button that was pressed.
-   *
-   * It still reopens an overlay that is up, because the tray can reach this
-   * with one on screen and the card under it would otherwise go on offering
-   * what it was opened with. A reopen is also what pressing one of the three
-   * mode buttons does, so the two behave the same.
+   * No longer a switch anybody presses: the panel's two icons are gone, the
+   * tray's three screenshot rows are gone, and the card over the picked window
+   * asks instead. What is left is the *memory* of the answer, written by
+   * `confirmSelection` from the button that was pressed — the panel's
+   * right-hand half reads it, because a screenshot has no camera, no
+   * microphone and nothing to read a script to, so those three come off the
+   * strip until the next recording.
    *
    * Nothing is cleared. The camera, the microphone and the prompter keep their
    * settings and simply stop being offered — see `syncCamera` and the prompter's
@@ -708,12 +679,6 @@ export class CaptureFlow {
     this.emit();
     this.syncCamera();
     this.deps.teleprompter.sync(this.deps.dock.isVisible);
-
-    if (this.deps.selection.isOpen) {
-      void this.chooseMode(this.deps.preferences.get().mode).catch((cause) => {
-        console.warn("[flow] could not reopen the picker:", cause);
-      });
-    }
 
     return this.state();
   }
@@ -802,7 +767,7 @@ export class CaptureFlow {
    * of it is committed — and on a second monitor it is the only way to say
    * which screen, rather than silently taking whichever one the cursor was on.
    */
-  async chooseMode(mode: ScreenMode, offers?: readonly CaptureMode[]): Promise<DockState> {
+  async chooseMode(mode: ScreenMode): Promise<DockState> {
     log("info", "choosing a source", { mode });
     this.deps.preferences.update({ mode });
 
@@ -838,12 +803,11 @@ export class CaptureFlow {
       const targets = this.pickable(await (await getRecorder()).listTargets());
       const opened = this.deps.selection.open(
         mode,
-        // What the card may offer. Both unless the caller has already said
-        // which — the tray's "Screenshot a Window" has — and recording alone
-        // while a clip is being added: a screenshot is a session of its own and
-        // cannot be a clip of anything, so offering it there would be a button
-        // that abandons the addition. See `SelectionSetup.offers`.
-        offers ?? (this.extending ? ["video"] : ["photo", "video"]),
+        // What the card may offer. Both, except while a clip is being added: a
+        // screenshot is a session of its own and cannot be a clip of anything,
+        // so offering it there would be a button that abandons the addition.
+        // See `SelectionSetup.offers`.
+        this.extending ? ["video"] : ["photo", "video"],
         targets,
         mode === "window" ? await windowIcons(targets) : undefined,
       );

@@ -249,6 +249,13 @@ export class AppTray {
       // last take was an area meant opening the panel and changing the mode
       // there. These are the same three buttons the panel has, in the menu that
       // is always one click away.
+      //
+      // Three rows and not six. There were another three for a still, on the
+      // argument that "screenshot a window" is a different thing to ask for
+      // than "record one" — true, but it is no longer a different *route*: the
+      // card over the picked window offers both, so each of these rows already
+      // ends at the question those three were asking. Six rows to reach one
+      // picker was the menu stating the choice twice.
       ...(active
         ? []
         : ([
@@ -266,29 +273,6 @@ export class AppTray {
               label: "Record an Area",
               icon: symbol("crop"),
               click: () => this.flow.openMode("area"),
-            },
-            // And the same three for a still. Their own rows rather than a
-            // switch somewhere: the menu is read as a list of things the app
-            // can be asked to do, and "take a screenshot of a window" is a
-            // different thing to ask for than "record one" — not the same ask
-            // with a mode set beforehand. Each sets the panel to a screenshot
-            // and opens that source's picker, so the confirm button on the
-            // overlay shoots rather than records.
-            { type: "separator" },
-            {
-              label: "Screenshot Entire Screen",
-              icon: symbol("camera.viewfinder"),
-              click: () => this.flow.shootMode("screen"),
-            },
-            {
-              label: "Screenshot a Window",
-              icon: symbol("macwindow.badge.plus"),
-              click: () => this.flow.shootMode("window"),
-            },
-            {
-              label: "Screenshot an Area",
-              icon: symbol("camera.metering.partial"),
-              click: () => this.flow.shootMode("area"),
             },
           ] satisfies MenuItemConstructorOptions[])),
       // No prompter here. Its switch and its script are on the panel, beside

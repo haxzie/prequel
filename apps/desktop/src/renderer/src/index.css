@@ -65,8 +65,6 @@
   --color-dock-muted: var(--dock-muted);
   --color-dock-hover: var(--dock-hover);
   --color-dock-selected: var(--dock-selected);
-  --color-dock-mode: var(--dock-mode);
-  --color-dock-mode-fg: var(--dock-mode-fg);
   --color-dock-meter: var(--dock-meter);
   --color-dock-record: var(--dock-record);
   --color-dock-record-lit: var(--dock-record-lit);
@@ -1005,30 +1003,6 @@ body {
      tone so it stays lighter whatever is behind it. */
   --dock-hover: rgba(255, 255, 255, 0.12);
   --dock-selected: var(--selected);
-  /* The capture switch — video or screenshot — which wears a grey fill where
-     the three source buttons beside it are solid blue.
-
-     The value is doing the separating, not a second hue: five icon buttons in
-     a row read as one group of five whatever sits between them, and these
-     answer two different questions — what you are making, and what it is of.
-     A blue chip beside a grey one reads as two kinds of choice.
-
-     It was #e8eaed, all but white. That won the row outright: the panel's one
-     near-white surface sat beside the blue that marks the actual source, and
-     the switch you set once read as the loudest thing in the dock. A few steps
-     above the panel is enough to say "this one" in a tray of three.
-
-     Opaque rather than translucent white. `--dock-group` and `--dock-hover`
-     are both white over the panel, and a third at a higher alpha would be the
-     same material one step further on — the selection has to be a different
-     thing, not a brighter version of the tray it sits in. Far enough above
-     `--dock-hover`, which lands near (47, 47, 47) over this fill, that a
-     pointer resting on the unpicked button does not match the picked one. */
-  --dock-mode: #3d3d3f;
-  /* The glyph on that fill. The panel's own foreground and not the 80% the
-     unpicked buttons are held to: on a chip this close to the panel the mark
-     is most of what says the chip is lit. */
-  --dock-mode-fg: var(--dock-fg);
   --dock-meter: var(--selected);
   --dock-record: #e5484d;
   /* The crest of the wave crossing the recording light, where `--dock-record`

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, Ref } from "react";
 
+import { PANEL_HEIGHT } from "../../../shared/contract";
 import type {
   CaptureMode,
   PickerWindow,
@@ -931,30 +932,32 @@ const OFFERS: readonly CaptureMode[] = ["photo", "video"];
  * screenshot" beside "Start recording" is four words to read where the
  * difference is in two of them.
  *
- * A red dot is what a record button looks like everywhere. The camera is the
- * shutter's own glyph, and between them the pair is readable before either
- * word is.
+ * A red dot is what a record button looks like everywhere. The frame with its
+ * corners cropped is what a screenshot looks like being taken, and between them
+ * the pair is readable before either word is.
  */
 const CONFIRM: Record<CaptureMode, { label: string; Mark: () => ReactNode }> = {
   photo: { label: "Screenshot", Mark: ShutterMark },
   video: { label: "Record", Mark: RecordMark },
 };
 
-/** The shutter, for the screenshot half. Lucide's `camera` geometry. */
+/**
+ * The screenshot half's mark: Fluent UI System Icons `screenshot 16 regular`
+ * (MIT, Microsoft), verbatim.
+ *
+ * A frame with its corners cropped, not a camera. Half of what this pill asks
+ * is whether to film the thing under the pointer, and a camera is the glyph for
+ * filming it — two cameras side by side differ only in which end the lens is
+ * at. The corner brackets are what a screenshot looks like being taken.
+ *
+ * Drawn at its own 16, where the family's hairlines land on the pixel. The
+ * record dot beside it is 11px and reads larger than its box, which is what
+ * keeps the pair balanced without matching numbers.
+ */
 function ShutterMark() {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="size-[17px]"
-    >
-      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z" />
-      <circle cx="12" cy="13" r="3" />
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" className="size-4">
+      <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2h7A2.5 2.5 0 0 1 14 4.5v7a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 2 11.5zM4.5 3A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13h7a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 11.5 3zm.75 2a.25.25 0 0 0-.25.25V6.5a.5.5 0 0 1-1 0V5.25C4 4.56 4.56 4 5.25 4H6.5a.5.5 0 0 1 0 1zM5 10.75c0 .138.112.25.25.25H6.5a.5.5 0 0 1 0 1H5.25C4.56 12 4 11.44 4 10.75V9.5a.5.5 0 0 1 1 0zM10.75 5a.25.25 0 0 1 .25.25V6.5a.5.5 0 0 0 1 0V5.25C12 4.56 11.44 4 10.75 4H9.5a.5.5 0 0 0 0 1zm.25 5.75a.25.25 0 0 1-.25.25H9.5a.5.5 0 0 0 0 1h1.25c.69 0 1.25-.56 1.25-1.25V9.5a.5.5 0 0 0-1 0z" />
     </svg>
   );
 }
@@ -1006,24 +1009,29 @@ function SelectionCard({
       {/* One pill holding both answers, rather than two buttons side by side.
           They are one question — what to do with the thing under the pointer —
           and two separate pills read as two unrelated offers. A hairline
-          between them is what says they are alternatives.
+          between them is what says they are alternatives, and it is the dock's
+          own `--dock-line`, which is the rule between two trays over there.
 
-          The pill is the dock's own material rather than the red it used to be
-          when there was only ever one button on it. Red *is* the record button
-          everywhere, and painting the whole pill in it would say that about
-          the screenshot half too; the red is on the dot, where it belongs, and
-          the surface underneath stays neutral for both.
+          The dock's panel exactly: `dock-theme` for the palette, the same fill,
+          the same rim, the same shadow and the same 44 points tall. This is the
+          object the recording bar becomes the moment it is pressed — the panel
+          slides into place where this was — and until now it was a red pill
+          handing over to a dark one, which read as two apps rather than one
+          control changing what it says.
 
-          Still a pill: this and the recording bar that replaces it the moment
-          it is pressed are the same object as far as anybody using them is
-          concerned, and a rounded square handing over to a pill reads as two
-          apps. */}
+          Red *is* the record button everywhere, and painting the pill in it
+          would have said that about the screenshot half too. The red is on the
+          dot, where it belongs. */}
       <div
         className={
-          "pointer-events-auto mt-4 flex h-[44px] items-center rounded-full " +
-          "bg-[#1c1a21]/95 px-1 text-[15px] font-semibold whitespace-nowrap text-white " +
-          "shadow-[0_4px_18px_rgba(0,0,0,0.5)] [text-shadow:none] backdrop-blur-xl"
+          "dock-theme pointer-events-auto mt-4 flex items-center rounded-full " +
+          "border border-dock-rim bg-dock-bg px-[5px] text-[13px] font-medium " +
+          "whitespace-nowrap text-dock-fg shadow-[0_2px_8px_rgba(0,0,0,0.3)] [text-shadow:none]"
         }
+        // The panel's own height, from the one constant main sizes its window
+        // to. A pill that merely looked about right beside it would be a
+        // handover that visibly steps.
+        style={{ height: PANEL_HEIGHT }}
         // A press must not begin a new area drag underneath the card.
         onMouseDown={(event) => event.stopPropagation()}
       >
@@ -1032,11 +1040,20 @@ function SelectionCard({
           return (
             <Fragment key={mode}>
               {/* Between, never at an end, so a card offering one thing is a
-                  plain button and not a button with a rule beside it. */}
-              {index > 0 && <span aria-hidden className="h-5 w-px flex-none bg-white/20" />}
+                  plain button and not a button with a rule beside it. The
+                  dock's own divider, down to the seven tenths. */}
+              {index > 0 && (
+                <span
+                  aria-hidden
+                  className="mx-1 h-[70%] w-px flex-none self-center bg-dock-line"
+                />
+              )}
               <button
                 type="button"
-                className="flex h-[36px] items-center gap-2.5 rounded-full px-4 hover:bg-white/10"
+                // 34 inside 44, which is the tray height the three source
+                // buttons sit in over on the panel — see `SetupPanel`. The
+                // hover is the dock's too, so the two surfaces light up alike.
+                className="flex h-[34px] items-center gap-2 rounded-full px-3 hover:bg-dock-hover"
                 onClick={(event) => {
                   // The overlay treats a click anywhere as "choose this", so
                   // this must not count twice — and it means something stronger.

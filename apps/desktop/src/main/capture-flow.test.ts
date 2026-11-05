@@ -1340,15 +1340,6 @@ describe("recording or a screenshot", () => {
     expect(selection.offers).toEqual(["photo", "video"]);
   });
 
-  it("offers only a screenshot to a picker opened from the tray's own row", async () => {
-    // "Screenshot a Window" has already answered it. Asking again on the card
-    // would be the one row in that menu that does not do what it says.
-    const { flow, selection } = makeFlow();
-
-    flow.shootMode("window");
-    await vi.waitFor(() => expect(selection.offers).toEqual(["photo"]));
-  });
-
   it("shoots where the card asked for a shot, whatever the panel last did", async () => {
     // The press is the answer now. A preference left on video by the last take
     // used to decide this, which would record where a screenshot was asked for.
@@ -1424,26 +1415,15 @@ describe("recording or a screenshot", () => {
     expect(camera.shown).toBe(true);
   });
 
-  it("reopens a picker that is already up", async () => {
-    // The tray can reach this with an overlay on screen, so changing it has to
-    // re-describe the card underneath — which would otherwise go on offering
-    // what it was opened with.
+  it("leaves an overlay that is up alone", () => {
+    // Nothing reaches this with a picker on screen any more — the card is what
+    // asks, and it has closed by the time the answer is written. A reopen here
+    // would throw away the selection that was just confirmed.
     const { flow, selection } = makeFlow();
     selection.isOpen = true;
-    const before = selection.opened;
-
-    flow.setCaptureMode("photo");
-    await vi.waitFor(() => expect(selection.opened).toBe(before + 1));
-  });
-
-  it("does nothing when it is already there", () => {
-    const { flow, selection } = makeFlow({ captureMode: "photo" });
-    selection.isOpen = true;
 
     flow.setCaptureMode("photo");
 
-    // No reopen. `confirmSelection` writes this on every capture, and most of
-    // them are the same answer as the one before.
     expect(selection.opened).toBe(0);
   });
 });

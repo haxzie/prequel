@@ -16,17 +16,6 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   title: string;
   /** Drawn as the current choice: filled, in the panel's accent. */
   selected?: boolean;
-  /**
-   * Which fill `selected` uses.
-   *
-   * `accent` is the panel's blue and means "this is the one you picked".
-   * `mode` is the grey chip the capture switch wears, and means something
-   * else — see `--dock-mode`. A prop rather than a class the caller
-   * appends, because utilities all carry the same specificity: an override
-   * would be left to stylesheet order, which is exactly the note on the fills
-   * below.
-   */
-  tone?: "accent" | "mode";
   /** The device this controls is switched off — present, but not in use. */
   off?: boolean;
   /**
@@ -49,7 +38,6 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  */
 export function IconButton({
   selected,
-  tone = "accent",
   off,
   className,
   title,
@@ -120,12 +108,7 @@ export function IconButton({
         // hover and brightens instead, and appending a plain hover class here
         // would leave that outcome down to stylesheet order.
         selected
-          ? tone === "mode"
-            ? // Up, like the accent chip beside it. It went down while the
-              // fill was all but white and had nothing above it to reach; the
-              // chip is a dark grey now, so the pointer can simply lift it.
-              "bg-dock-mode text-dock-mode-fg hover:brightness-125"
-            : "bg-dock-selected text-white hover:brightness-110"
+          ? "bg-dock-selected text-white hover:brightness-110"
           : off
             ? "text-dock-muted not-disabled:hover:bg-dock-hover"
             : // Held back from full `--dock-fg`, so the one that is picked is
