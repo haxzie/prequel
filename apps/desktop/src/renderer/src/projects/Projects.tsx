@@ -244,7 +244,14 @@ export function Projects({
           {/* No padding in the list: the sticky head is the first thing in
               the scroller and has its own height, and padding above it would
               leave a band of empty pane that the head then scrolls up into. */}
-          <div className={cn("h-full overflow-y-auto", grid && "p-5")}>
+          {/* `min-w-0 flex-1`, not `h-full` alone. This is a flex child now that
+              the inspector sits beside it, and a flex item is sized to its
+              content until it is told otherwise — the grid stopped filling the
+              row and drew two enormous tiles with the rest of the pane empty
+              beside them. `min-w-0` is the other half: without it the floor is
+              the content's own width and the scroller refuses to shrink when
+              the pane opens. */}
+          <div className={cn("h-full min-w-0 flex-1 overflow-y-auto", grid && "p-5")}>
             {!grid && (
               <div
                 className={cn(
@@ -306,17 +313,30 @@ export function Projects({
             <SelectionBar count={selected.size} onClear={clear} onDelete={removeSelected} />
           )}
 
-          {/* Inside the row rather than beside the pane, so it stops at the
-              list and the sticky column heads above it stay the list's own
-              width. */}
-          <Inspector
-            project={projects.find((project) => project.dir === picked) ?? null}
-            onOpen={onOpen}
-            onDelete={() => {
-              setPicked(null);
-              void list();
-            }}
-          />
+          {/* Only with a selection. An empty column of its own width beside
+              the grid is a pane asking to be filled, and the grid wants the
+              room back — a library is read across, and 280 points of nothing
+              is a tile and a half of it.
+
+              Found in the page rather than held as the selection itself: a
+              recording deleted from another window, or paged away, leaves a
+              directory nothing matches, and a pane drawn from a stale copy
+              would go on showing a recording that is not there. */}
+          {picked !== null &&
+            (() => {
+              const shown = projects.find((project) => project.dir === picked);
+              return shown ? (
+                <Inspector
+                  project={shown}
+                  onOpen={onOpen}
+                  onClose={() => setPicked(null)}
+                  onDelete={() => {
+                    setPicked(null);
+                    void list();
+                  }}
+                />
+              ) : null;
+            })()}
         </div>
       )}
     </>

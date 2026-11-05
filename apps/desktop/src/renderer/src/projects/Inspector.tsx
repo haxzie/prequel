@@ -6,7 +6,7 @@ import type {
   ProjectDetails,
   ProjectSummary,
 } from "../../../shared/contract";
-import { CopyIcon, FolderIcon, TrashIcon } from "../editor/icons";
+import { CloseIcon, CopyIcon, FolderIcon, TrashIcon } from "../editor/icons";
 import { formatElapsed, formatFileSize, formatTimeAgo } from "../lib/format";
 import { cn } from "../lib/cn";
 import { Preview } from "./Preview";
@@ -26,15 +26,24 @@ import { Preview } from "./Preview";
 export function Inspector({
   project,
   onOpen,
+  onClose,
   onDelete,
 }: {
-  /** The selected recording, or null when nothing is. */
-  project: ProjectSummary | null;
+  /**
+   * The recording this pane is about.
+   *
+   * Never null. The pane is not drawn at all without a selection — an empty
+   * column of its own width beside the grid is a pane asking to be filled, and
+   * the grid wants the room back more than the empty state was worth saying.
+   */
+  project: ProjectSummary;
   onOpen: (dir: string) => void;
+  /** The ✕. Drops the selection, which is what takes this off the row. */
+  onClose: () => void;
   /** Already moved to the Trash. The library re-lists; this clears itself. */
   onDelete: (dir: string) => void;
 }) {
-  const dir = project?.dir ?? null;
+  const dir = project.dir;
   const [tab, setTab] = useState<"details" | "exports">("details");
   const [composition, setComposition] = useState<ProjectComposition | null>(null);
   const [details, setDetails] = useState<ProjectDetails | null>(null);
@@ -77,28 +86,39 @@ export function Inspector({
     if (result.ok && result.value) onDelete(dir);
   }, [dir, onDelete]);
 
-  if (!project || !dir) {
-    return (
-      <aside className={SHELL}>
-        <p className="m-auto max-w-[180px] text-center text-[13px] text-editor-muted">
-          Pick a recording to see it here.
-        </p>
-      </aside>
-    );
-  }
-
   return (
     <aside className={SHELL}>
+      {/* The name and the way out, in a row of their own above the scroller.
+          The name was under the preview and has moved up to meet the ✕: one
+          header is one thing to read, and a close button floating over the
+          picture would sit on the one control the picture already has.
+
+          Outside the scroller, so the way out of the pane does not scroll
+          away from somebody reading the bottom of it. */}
+      <header className="flex flex-none items-center gap-2 px-4 pt-4">
+        <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold" title={project.name}>
+          {project.name}
+        </h2>
+        <button
+          type="button"
+          title="Close"
+          aria-label="Close the preview"
+          className={cn(
+            "grid size-7 flex-none place-items-center rounded-md text-editor-muted",
+            "hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
+          )}
+          onClick={onClose}
+        >
+          <CloseIcon />
+        </button>
+      </header>
+
       {/* Scrolls as one column. The preview is part of what is being read
           rather than a header over it — on a short window the facts matter
           more than the picture, and pinning it would leave them in a slot two
           rows tall. */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         <Preview spec={composition} poster={project.poster} />
-
-        <h2 className="truncate text-[15px] font-semibold" title={project.name}>
-          {project.name}
-        </h2>
 
         <div className="flex items-center gap-2">
           {/* The one thing this pane leads to, and the only filled button in
