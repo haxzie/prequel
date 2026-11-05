@@ -949,6 +949,7 @@ export const IPC_CHANNELS = {
    * library claim to be editing every one of them.
    */
   projectsComposition: "projects:composition",
+  projectsDetails: "projects:details",
   /**
    * Every export this Mac has written, newest first.
    *
@@ -960,6 +961,8 @@ export const IPC_CHANNELS = {
   exportsList: "exports:list",
   /** Renderer → main: open a finished export in whatever plays it. */
   exportsOpen: "exports:open",
+  exportsReveal: "exports:reveal",
+  exportsCopy: "exports:copy",
   /** Renderer → main: cache a still the Exports pane just made. */
   exportsSaveThumbnail: "exports:saveThumbnail",
   /**
@@ -2490,8 +2493,15 @@ export interface ProjectComposition {
   frame: { width: number; height: number; auto: boolean };
   /** Resolved for the clip the still is taken from, defaults and all. */
   settings: SliceSettings;
-  /** The screen track, seeked to seconds into its own file. */
-  screen: { url: string; at: number } | null;
+  /**
+   * The screen track, seeked to seconds into its own file.
+   *
+   * `until` is where the clip that moment belongs to ends, in the same clock.
+   * The tile ignores it — one frame has no end — and the inspector's preview
+   * loops between the two, so a recording that was cut never plays footage the
+   * video no longer contains.
+   */
+  screen: { url: string; at: number; until: number } | null;
   /**
    * Whether the screen is a still picture rather than a video.
    *
@@ -2508,7 +2518,7 @@ export interface ProjectComposition {
    * session media is zero-based, so the track's late start is taken off here
    * and never probed from the file.
    */
-  camera: { url: string; matteUrl: string | null; at: number } | null;
+  camera: { url: string; matteUrl: string | null; at: number; until: number } | null;
   /**
    * The pictures the plan names by path — the background, the logo — with the
    * URL to fetch each one over. Keyed by path, because that is the name the
@@ -2528,6 +2538,19 @@ export interface ProjectComposition {
 export interface ExportSummary {
   /** Absolute path, which is what Finder, the pasteboard and the drag take. */
   path: string;
+  /**
+   * The recording this came out of, or null for one written before the ledger
+   * started keeping it.
+   *
+   * What lets a recording list its own exports. Kept on the entry rather than
+   * worked out from the file, because nothing about an export says where it
+   * came from — it is written wherever the save dialog pointed, and from then
+   * on it is an ordinary video in an ordinary folder. Null is shown as nothing
+   * rather than guessed at: an export whose source was never recorded belongs
+   * to no recording, and attaching it to one by its date would be a guess
+   * presented as a fact.
+   */
+  dir: string | null;
   /** The file's own name, which is what the row is labelled with. */
   name: string;
   /**
@@ -2578,6 +2601,41 @@ export interface ExportSummary {
    * exactly as the Projects grid does with its posters.
    */
   thumbnail: string | null;
+}
+
+/**
+ * One recording, as the library's inspector reads it out.
+ *
+ * Every field is read in main, for `ExportSummary`'s reason: a renderer cannot
+ * stat a path and cannot reach anything outside `prequel-media:`. The path
+ * travels only so it can be handed straight back for a reveal.
+ */
+export interface ProjectDetails {
+  /** Absolute path to the recording's directory. */
+  dir: string;
+  /** The folder it is in, written the way a Mac writes one — `~/Movies/…`. */
+  folder: string;
+  /** Epoch milliseconds. The manifest's mtime — when the take finished. */
+  createdAt: number;
+  /** When the edit was last saved, or null for one nobody has opened. */
+  editedAt: number | null;
+  /**
+   * Every byte the recording occupies, the whole directory over.
+   *
+   * The directory and not the screen track: a take is its tracks, its mattes,
+   * its pointer images, its cached still and its project file, and the number
+   * somebody is looking for when they open this is how much space deleting it
+   * would give back.
+   */
+  bytes: number;
+  /** How long the take runs, in milliseconds. Zero for a screenshot. */
+  durationMs: number;
+  /** The source's own dimensions, or null when the manifest records none. */
+  source: { width: number; height: number } | null;
+  /** Whether this is a screenshot rather than a take. */
+  still: boolean;
+  /** How many clips the edit has, which is one for a take nobody has cut. */
+  clips: number;
 }
 
 /**

@@ -69,8 +69,8 @@ describe("the ledger", () => {
   it("lists what was written, newest first", async () => {
     const { listExports, recordExport } = await fresh();
 
-    recordExport(wrote("First.mp4"), null, 1000);
-    recordExport(wrote("Second.mp4"), null, 2000);
+    recordExport(wrote("First.mp4"), null, null, 1000);
+    recordExport(wrote("Second.mp4"), null, null, 2000);
 
     expect(listExports().map((entry) => entry.name)).toEqual(["Second.mp4", "First.mp4"]);
   });
@@ -95,8 +95,8 @@ describe("the ledger", () => {
     const { listExports, recordExport } = await fresh();
 
     const path = wrote("Again.mp4");
-    recordExport(path, null, 1000);
-    recordExport(path, null, 2000);
+    recordExport(path, null, null, 1000);
+    recordExport(path, null, null, 2000);
 
     expect(listExports()).toHaveLength(1);
     expect(listExports()[0]?.createdAt).toBe(2000);
@@ -115,13 +115,29 @@ describe("the ledger", () => {
     expect(listExports()[0]?.folder).not.toContain("Somewhere.mp4");
   });
 
+  it("remembers which recording an export came out of", async () => {
+    // The whole of why the directory is on the entry: nothing about the
+    // finished file says where it came from, and this is what lets a recording
+    // list its own exports.
+    const { listExports, recordExport } = await fresh();
+
+    recordExport(wrote("Mine.mp4"), null, "/takes/one");
+    recordExport(wrote("Theirs.mp4"), null, "/takes/two");
+    // From outside a recording, which belongs to none of them.
+    recordExport(wrote("Loose.mp4"), null);
+
+    expect(listExports("/takes/one").map((entry) => entry.name)).toEqual(["Mine.mp4"]);
+    expect(listExports().map((entry) => entry.name)).toHaveLength(3);
+    expect(listExports().find((entry) => entry.name === "Loose.mp4")?.dir).toBeNull();
+  });
+
   it("keeps the length it was given, and answers null without one", async () => {
     const { listExports, recordExport } = await fresh();
 
     // Recorded oldest first: the ledger keeps write order, which is the order
     // exports actually happen in.
-    recordExport(wrote("Untimed.mp4"), null, 1000);
-    recordExport(wrote("Timed.mp4"), 154_000, 2000);
+    recordExport(wrote("Untimed.mp4"), null, null, 1000);
+    recordExport(wrote("Timed.mp4"), 154_000, null, 2000);
 
     const [timed, untimed] = listExports();
     expect(timed?.durationMs).toBe(154_000);

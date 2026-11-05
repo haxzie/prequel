@@ -153,6 +153,10 @@ export const EXPORTS: ExportSummary[] = [
   },
 ].map((entry, index) => ({
   path: `/Users/you/${entry.folder}/${entry.name}`,
+  // No recording of their own. The gallery's bridge hands the whole list back
+  // whatever directory is asked for — see `exports.list` there — so the
+  // inspector's Exports tab still has something in it.
+  dir: null,
   name: entry.name,
   folder: `~/${entry.folder}`,
   createdAt: Date.now() - entry.minutesAgo * 60_000,

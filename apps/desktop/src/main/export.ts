@@ -526,7 +526,10 @@ function finish(update: ExportProgress): void {
   // from then on it is an ordinary video in an ordinary folder.
   if (update.stage === "done" && update.outputPath) {
     update.url = publishExport(update.outputPath);
-    recordExport(update.outputPath, duration(update.framesTotal));
+    // `running` is the request's own directory — see `startExport`. It is the
+    // only thing here that knows where this file came from, and after this
+    // line nothing does.
+    recordExport(update.outputPath, duration(update.framesTotal), running);
   }
 
   // Nothing is revealed here. The export dialog offers Show in Finder beside

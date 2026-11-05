@@ -498,12 +498,43 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
       deleteMany: () => ok([]),
       savePoster: () => ok(undefined),
       composition: async (dir: string) => ok(await loadComposition(recordingName(dir))),
+      // Synthesised from the card's own fixture rather than stat-ed: the
+      // gallery has no recordings folder, and the two numbers a reader checks
+      // — when it was made, how big it is — are the ones already in it.
+      details: async (dir: string) => {
+        const all = (await json<ProjectSummary[]>("/fixture/recordings.json")) ?? [];
+        const project = all.find((one) => one.dir === dir);
+        if (!project) return ok(null);
+
+        return ok({
+          dir,
+          folder: "~/Movies/Prequel",
+          createdAt: project.createdAt,
+          editedAt: project.editedAt,
+          bytes: 148_000_000,
+          durationMs: project.still ? 0 : 61_110,
+          source: { width: 2560, height: 1440 },
+          still: project.still,
+          clips: 1,
+        });
+      },
     },
 
     exports: {
+      // The directory is ignored. The fixtures belong to no recording — see
+      // `EXPORTS` — and a shot of the inspector's Exports tab is worth more
+      // with rows in it than with the filter honoured.
       list: () => ok(state.exports),
       open: (path) => {
         console.warn("[bridge] exports.open", path);
+        return ok(undefined);
+      },
+      reveal: (path) => {
+        console.warn("[bridge] exports.reveal", path);
+        return ok(undefined);
+      },
+      copy: (path) => {
+        console.warn("[bridge] exports.copy", path);
         return ok(undefined);
       },
       saveThumbnail: () => ok(undefined),

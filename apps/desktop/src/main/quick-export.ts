@@ -70,7 +70,7 @@ export async function quickExport(dir: string, still: boolean): Promise<QuickExp
     const output = downloads(stillFileName());
     copyFileSync(join(dir, STILL_FILE_NAME), output);
     // No length, which the Exports pane shows as a dash rather than `0:00`.
-    recordExport(output, null);
+    recordExport(output, null, dir);
     log("info", "screenshot exported from the quick view", output);
     return { path: output, needsUpgrade: false };
   }

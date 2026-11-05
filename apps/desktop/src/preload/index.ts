@@ -24,6 +24,7 @@ import type {
   PermissionState,
   PermissionStatus,
   ProjectComposition,
+  ProjectDetails,
   ProjectPage,
   ProjectSummary,
   QuickExportOutcome,
@@ -84,6 +85,7 @@ export type {
   PermissionState,
   PermissionStatus,
   ProjectComposition,
+  ProjectDetails,
   ProjectSummary,
   RecordingPreferences,
   ScreenMode,
@@ -763,6 +765,16 @@ const api = {
      */
     composition: (dir: string): Promise<IpcResult<ProjectComposition | null>> =>
       ipcRenderer.invoke(IPC_CHANNELS.projectsComposition, dir),
+
+    /**
+     * What the inspector reads out: when it was made, how big it is, where it
+     * lives.
+     *
+     * Every one of those is a syscall, and a renderer can make none of them.
+     * Null for a directory holding no readable recording.
+     */
+    details: (dir: string): Promise<IpcResult<ProjectDetails | null>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.projectsDetails, dir),
   },
 
   /**
@@ -772,7 +784,9 @@ const api = {
    * `stat` where a recording costs four syscalls, and the ledger is capped.
    */
   exports: {
-    list: (): Promise<IpcResult<ExportSummary[]>> => ipcRenderer.invoke(IPC_CHANNELS.exportsList),
+    /** `dir` narrows it to one recording's own; absent is every one on the Mac. */
+    list: (dir?: string): Promise<IpcResult<ExportSummary[]>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.exportsList, dir),
 
     /**
      * Opens the file in whatever the Mac plays it with.
@@ -783,6 +797,19 @@ const api = {
      */
     open: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.exportsOpen, path),
+
+    /** Shows it in Finder, which is the other thing a row is clicked for. */
+    reveal: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.exportsReveal, path),
+
+    /**
+     * Puts the file itself on the pasteboard, not its path.
+     *
+     * A renderer cannot: `navigator.clipboard` carries text and blobs, and
+     * neither pastes into Finder as a file.
+     */
+    copy: (path: string): Promise<IpcResult<void>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.exportsCopy, path),
 
     /** Caches a still the pane made, so the next open does not have to. */
     saveThumbnail: (path: string, dataUrl: string): Promise<IpcResult<void>> =>

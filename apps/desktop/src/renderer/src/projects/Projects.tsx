@@ -10,6 +10,7 @@ import { PaneHeader } from "../workspace/PaneHeader";
 import { RenameField } from "../components/RenameField";
 import { ViewToggle } from "../workspace/ViewToggle";
 import { PencilIcon } from "./icons";
+import { Inspector } from "./Inspector";
 import { Checkbox, SelectionBar } from "./Selection";
 import { usePosters } from "./usePosters";
 
@@ -72,6 +73,15 @@ export function Projects({
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   /** Which card is being renamed. Only ever one. */
   const [renaming, setRenaming] = useState<string | null>(null);
+
+  /**
+   * Which recording the inspector beside the list is showing, by directory.
+   *
+   * By directory and not by index, for the reason the ticks are: the list is
+   * replaced wholesale by every re-list, and a selection held as a position in
+   * it would point at a different recording after a rename.
+   */
+  const [picked, setPicked] = useState<string | null>(null);
 
   /**
    * The recordings ticked, by directory.
@@ -226,10 +236,11 @@ export function Projects({
       ) : projects.length === 0 ? (
         <Empty still={still} />
       ) : (
+        // A row: the list, and the inspector for whatever is pointed at.
         // `relative`, so the selection bar's `absolute` resolves against the
         // pane rather than the window — it belongs over this list, not over
         // the sidebar beside it.
-        <div className="relative min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
           {/* No padding in the list: the sticky head is the first thing in
               the scroller and has its own height, and padding above it would
               leave a band of empty pane that the head then scrolls up into. */}
@@ -267,7 +278,9 @@ export function Projects({
                   poster={project.poster ?? posters.get(project.dir) ?? null}
                   renaming={renaming === project.dir}
                   checked={selected.has(project.dir)}
+                  picked={picked === project.dir}
                   selecting={selecting}
+                  onPick={() => (selecting ? toggle(project.dir) : setPicked(project.dir))}
                   onOpen={() => (selecting ? toggle(project.dir) : onOpen(project.dir))}
                   onToggle={() => toggle(project.dir)}
                   onRename={() => setRenaming(project.dir)}
@@ -292,6 +305,18 @@ export function Projects({
           {selecting && (
             <SelectionBar count={selected.size} onClear={clear} onDelete={removeSelected} />
           )}
+
+          {/* Inside the row rather than beside the pane, so it stops at the
+              list and the sticky column heads above it stay the list's own
+              width. */}
+          <Inspector
+            project={projects.find((project) => project.dir === picked) ?? null}
+            onOpen={onOpen}
+            onDelete={() => {
+              setPicked(null);
+              void list();
+            }}
+          />
         </div>
       )}
     </>
@@ -401,7 +426,9 @@ function Card({
   poster,
   renaming,
   checked,
+  picked,
   selecting,
+  onPick,
   onOpen,
   onToggle,
   onRename,
@@ -416,8 +443,19 @@ function Card({
   poster: string | null;
   renaming: boolean;
   checked: boolean;
-  /** Something is selected, so every tick is out and a click selects. */
+  /** This is the one the inspector beside the list is showing. */
+  picked: boolean;
+  /** Something is ticked, so every tick is out and a click ticks. */
   selecting: boolean;
+  /**
+   * A single click, which shows this recording in the inspector.
+   *
+   * Clicking used to open the editor, which is a long way to go to answer "is
+   * this the one" — and the way back was the window reloading the library. The
+   * press that opens it is the inspector's own button, and a double click here
+   * for anybody who already knows which they want.
+   */
+  onPick: () => void;
   onOpen: () => void;
   onToggle: () => void;
   onRename: () => void;
@@ -452,9 +490,17 @@ function Card({
             the browser resolves it by dropping one of the two. */}
         <button
           type="button"
-          onClick={onOpen}
-          title={selecting ? project.name : `Open ${project.name}`}
-          className={cn(COLUMNS, "h-11 w-full text-left transition-colors hover:bg-white/6")}
+          onClick={onPick}
+          onDoubleClick={onOpen}
+          title={selecting ? project.name : project.name}
+          className={cn(
+            COLUMNS,
+            "h-11 w-full text-left transition-colors hover:bg-white/6",
+            // The one the inspector is showing. Lighter than the tick's green
+            // tint beside it: this says "being read", not "chosen for
+            // something", and the two can be true at once.
+            picked && "bg-white/8",
+          )}
         >
           {/* The tick's column, held open by the grid. What is drawn in it is
               positioned over the top, so the row's own press still reaches the
@@ -513,8 +559,9 @@ function Card({
       <div className="relative">
         <button
           type="button"
-          onClick={onOpen}
-          title={selecting ? project.name : `Open ${project.name}`}
+          onClick={onPick}
+          onDoubleClick={onOpen}
+          title={project.name}
           className={cn(
             "block w-full overflow-hidden rounded-xl border bg-editor-panel",
             "aspect-video transition-[border-color,opacity]",

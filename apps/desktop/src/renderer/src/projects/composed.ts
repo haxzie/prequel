@@ -14,7 +14,12 @@
  * frame, camera, look — is.
  */
 import type { ProjectComposition } from "../../../shared/contract";
-import { buildRenderPlan, type Size, type SourceSizes } from "../../../shared/layout";
+import {
+  buildRenderPlan,
+  type RenderPlan,
+  type Size,
+  type SourceSizes,
+} from "../../../shared/layout";
 import { evenSize } from "../../../shared/presets";
 import { openPicture, openVideo, QUALITY, release, seek } from "../editor/poster";
 import { WebGlCompositor, type Images, type Sources } from "../editor/webgl";
@@ -51,9 +56,72 @@ let compositor: WebGlCompositor | null = null;
  * not draw.
  */
 export async function captureComposition(spec: ProjectComposition): Promise<string | null> {
+  const scene = await openScene(spec);
+  if (!scene) return null;
+
+  try {
+    const element = surface();
+    const backing = {
+      width: WIDTH,
+      height: Math.max(1, Math.round((WIDTH * scene.frame.height) / scene.frame.width)),
+    };
+    element.width = backing.width;
+    element.height = backing.height;
+
+    compositor ??= new WebGlCompositor();
+    compositor.draw(element, scene.plan, scene.sources, scene.images, backing);
+
+    // Straight after the draw, in the same task. The context is made without
+    // `preserveDrawingBuffer`, so the drawing buffer is cleared the moment the
+    // browser composites — an `await` between these two lines is a blank tile.
+    return element.toDataURL("image/jpeg", QUALITY);
+  } catch (cause) {
+    console.warn("[library] could not compose a tile:", cause);
+    return null;
+  } finally {
+    scene.release();
+  }
+}
+
+/**
+ * One composition, open and ready to draw — the plan, the textures behind it,
+ * and the elements they are read from.
+ *
+ * Split out of `captureComposition` because two things want it now: the tile,
+ * which draws it once and lets it go, and the inspector's preview, which keeps
+ * it and draws it sixty times a second. Written once, so a tile and the preview
+ * beside it cannot be two different pictures of one edit.
+ *
+ * The caller owns what comes back and **must** call `release`. Every element in
+ * here holds a decoder.
+ */
+export interface Scene {
+  plan: RenderPlan;
+  sources: Sources;
+  images: Images;
+  frame: Size;
+  /** The elements, for a caller that wants to play them rather than draw once. */
+  media: {
+    screen: HTMLVideoElement | null;
+    camera: HTMLVideoElement | null;
+    matte: HTMLVideoElement | null;
+  };
+  release: () => void;
+}
+
+/** Opens a composition, or null when there is nothing in it to draw. */
+export async function openScene(spec: ProjectComposition): Promise<Scene | null> {
   let screen: HTMLVideoElement | HTMLImageElement | null = null;
   let camera: HTMLVideoElement | null = null;
   let matte: HTMLVideoElement | null = null;
+
+  const shut = () => {
+    // Videos only. An `<img>` holds no decoder and no `src` to tear down — see
+    // `openPicture`.
+    release(screen instanceof HTMLVideoElement ? screen : null);
+    release(camera);
+    release(matte);
+  };
 
   try {
     if (spec.screen) {
@@ -91,10 +159,16 @@ export async function captureComposition(spec: ProjectComposition): Promise<stri
     }
 
     const sizes: SourceSizes = { screen: sizeOf(screen), camera: sizeOf(camera) };
-    if (!sizes.screen && !sizes.camera) return null;
+    if (!sizes.screen && !sizes.camera) {
+      shut();
+      return null;
+    }
 
     const frame = frameOf(spec, sizes);
-    if (frame.width <= 0 || frame.height <= 0) return null;
+    if (frame.width <= 0 || frame.height <= 0) {
+      shut();
+      return null;
+    }
 
     const images = await pictures(spec.images);
     // Every argument between is a thing a tile has none of — no pointer track,
@@ -125,30 +199,22 @@ export async function captureComposition(spec: ProjectComposition): Promise<stri
       cameraMatte: sizes.camera && matte?.videoWidth ? matte : null,
     };
 
-    const element = surface();
-    const backing = {
-      width: WIDTH,
-      height: Math.max(1, Math.round((WIDTH * frame.height) / frame.width)),
+    return {
+      plan,
+      sources,
+      images,
+      frame,
+      media: {
+        screen: screen instanceof HTMLVideoElement ? screen : null,
+        camera,
+        matte,
+      },
+      release: shut,
     };
-    element.width = backing.width;
-    element.height = backing.height;
-
-    compositor ??= new WebGlCompositor();
-    compositor.draw(element, plan, sources, images, backing);
-
-    // Straight after the draw, in the same task. The context is made without
-    // `preserveDrawingBuffer`, so the drawing buffer is cleared the moment the
-    // browser composites — an `await` between these two lines is a blank tile.
-    return element.toDataURL("image/jpeg", QUALITY);
   } catch (cause) {
-    console.warn("[library] could not compose a tile:", cause);
+    console.warn("[library] could not open a composition:", cause);
+    shut();
     return null;
-  } finally {
-    // Videos only. An `<img>` holds no decoder and no `src` to tear down — see
-    // `openPicture`.
-    release(screen instanceof HTMLVideoElement ? screen : null);
-    release(camera);
-    release(matte);
   }
 }
 

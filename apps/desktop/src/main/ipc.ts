@@ -62,11 +62,15 @@ import {
   dragExport as dragListedExport,
   listExports,
   openExport,
+  // Not `export.ts`'s `copyExport`, which copies the capture the quick view is
+  // showing. This one puts a listed file on the pasteboard.
+  copyExport as copyListedExport,
   revealExport,
   saveExportThumbnail,
 } from "./exports.js";
 import { listProjects, renameProject, savePoster } from "./projects.js";
 import { readComposition } from "./project-composition.js";
+import { readDetails } from "./project-details.js";
 import { RECORDINGS_DIR, recordingPath, revealRecordings } from "./session.js";
 import { catalogue, ensureBackground, ensureThumbnail } from "./backgrounds.js";
 import { catalogue as musicCatalogue, ensureMusic } from "./music.js";
@@ -588,15 +592,34 @@ export function registerIpc({
     attempt(() => readComposition(dir)),
   );
 
+  ipcMain.handle(IPC_CHANNELS.projectsDetails, (_event, dir: string) =>
+    attempt(() => readDetails(dir)),
+  );
+
   // ── finished exports ─────────────────────────────────────────────────────
   //
   // Tagged like the library's own listing, and for the same reason: the pane
   // reads `result.ok` before `result.value`, so a bare array here is an empty
   // pane over a ledger with a hundred entries in it.
-  ipcMain.handle(IPC_CHANNELS.exportsList, () => attempt(() => listExports()));
+  // `dir` narrows it to one recording's own, for the library's inspector.
+  // Undefined is every export on the Mac, which is what the pane asks for.
+  ipcMain.handle(IPC_CHANNELS.exportsList, (_event, dir?: string) =>
+    attempt(() => listExports(dir)),
+  );
 
   ipcMain.handle(IPC_CHANNELS.exportsOpen, (_event, path: string) =>
     attempt(() => openExport(path)),
+  );
+
+  // Both guarded inside, by the same check the quick view's reveal leans on:
+  // only a path the app wrote may be revealed or copied, and the path arrives
+  // from a window.
+  ipcMain.handle(IPC_CHANNELS.exportsReveal, (_event, path: string) =>
+    attempt(() => revealExport(path)),
+  );
+
+  ipcMain.handle(IPC_CHANNELS.exportsCopy, (_event, path: string) =>
+    attempt(() => copyListedExport(path)),
   );
 
   ipcMain.handle(IPC_CHANNELS.exportsSaveThumbnail, (_event, path: string, dataUrl: string) =>

@@ -17,7 +17,7 @@ import { basename, dirname, join } from "node:path";
 
 import { homedir } from "node:os";
 
-import { app, nativeImage, shell, type WebContents } from "electron";
+import { app, clipboard, nativeImage, shell, type WebContents } from "electron";
 
 import type { ExportSummary } from "../shared/contract.js";
 import { isImageExport } from "../shared/contract.js";
@@ -52,6 +52,18 @@ interface Entry {
    * Absent on any export recorded before this was kept.
    */
   ms?: number;
+  /**
+   * The recording's directory, so a recording can list its own exports.
+   *
+   * Nothing about the finished file says where it came from — it goes wherever
+   * the save dialog pointed — so this is the only moment the fact exists, the
+   * same argument the ledger itself rests on.
+   *
+   * Absent on any export recorded before this was kept, and on anything
+   * exported from outside a recording. Those belong to no recording rather
+   * than to a guessed one.
+   */
+  dir?: string;
 }
 
 /**
@@ -149,11 +161,24 @@ function write(entries: Entry[]): void {
  * adding a second, and the cached still for it is dropped so the pane takes a
  * new one of the new file.
  */
-export function recordExport(path: string, durationMs: number | null, at = Date.now()): void {
+export function recordExport(
+  path: string,
+  durationMs: number | null,
+  dir: string | null = null,
+  at = Date.now(),
+): void {
   const kept = read().filter((entry) => entry.path !== path);
   forgetThumbnail(path);
   write(
-    [{ path, at, ...(durationMs === null ? {} : { ms: durationMs }) }, ...kept].slice(0, LIMIT),
+    [
+      {
+        path,
+        at,
+        ...(durationMs === null ? {} : { ms: durationMs }),
+        ...(dir === null ? {} : { dir }),
+      },
+      ...kept,
+    ].slice(0, LIMIT),
   );
 }
 
@@ -165,7 +190,7 @@ export function recordExport(path: string, durationMs: number | null, at = Date.
  * moved it, sent it, deleted it — and a list of things that are not there is a
  * list nobody can act on.
  */
-export function listExports(): ExportSummary[] {
+export function listExports(dir?: string): ExportSummary[] {
   const entries = read();
   const summaries: ExportSummary[] = [];
   const alive: Entry[] = [];
@@ -180,10 +205,17 @@ export function listExports(): ExportSummary[] {
 
     alive.push(entry);
 
+    // After the `stat`, deliberately. The pass over the ledger is also what
+    // drops entries whose file has gone, and filtering first would leave a
+    // recording's dead exports in it for ever — swept only on the day somebody
+    // opened the whole pane.
+    if (dir !== undefined && entry.dir !== dir) continue;
+
     const id = exportId(entry.path);
     const name = basename(entry.path);
     summaries.push({
       path: entry.path,
+      dir: entry.dir ?? null,
       name,
       folder: abbreviate(dirname(entry.path)),
       createdAt: entry.at,
@@ -269,6 +301,27 @@ export function revealExport(path: string): void {
     return;
   }
   shell.showItemInFolder(path);
+}
+
+/**
+ * Puts an export on the pasteboard, as a file.
+ *
+ * The file rather than its path: dropped into Mail or Slack this is the video,
+ * which is what somebody copying an export wants. Guarded like the reveal — the
+ * path arrives from a window, and only a path the app wrote may be read.
+ */
+export function copyExport(path: string): void {
+  if (!isRecordedExport(path)) {
+    console.warn(`[exports] refusing to copy a path that is not a recorded export: ${path}`);
+    return;
+  }
+
+  // `public.file-url`, which is how macOS carries a file on the pasteboard —
+  // `writeText` of a path pastes the words into a document instead.
+  clipboard.writeBuffer(
+    "public.file-url",
+    Buffer.from(encodeURI(`file://${path}`).replace(/#/g, "%23"), "utf8"),
+  );
 }
 
 /**

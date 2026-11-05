@@ -58,12 +58,20 @@ export function composition(
       auto: project.frame.presetId === AUTO_PRESET_ID,
     },
     settings,
-    screen: screen && { url: url(screen.segment.file_name), at: screen.at },
+    screen: screen && {
+      url: url(screen.segment.file_name),
+      at: screen.at,
+      // Clamped into the segment the moment landed in, not mapped afresh: the
+      // clip may run past the end of this file — a take is several segments —
+      // and a loop asked to play beyond one would stall at its last frame.
+      until: inside(screen.segment, moment.end),
+    },
     stillScreen: isStill(manifest),
     camera: camera && {
       url: url(camera.segment.file_name),
       matteUrl: camera.segment.matte ? url(camera.segment.matte.file_name) : null,
       at: camera.at,
+      until: inside(camera.segment, moment.end),
     },
     images: pictures(settings, url),
   };
@@ -81,15 +89,22 @@ export function composition(
 function momentOf(
   slices: readonly Slice[],
   duration: MediaTime,
-): { at: MediaTime; overrides: SliceOverrides | undefined } {
+): { at: MediaTime; end: MediaTime; overrides: SliceOverrides | undefined } {
   const kept = slices.reduce((total, slice) => total + (slice.source.end - slice.source.start), 0);
-  if (kept <= 0) return { at: duration * AT, overrides: undefined };
+  if (kept <= 0) return { at: duration * AT, end: duration, overrides: undefined };
 
   let remaining = kept * AT;
   for (const slice of slices) {
     const length = slice.source.end - slice.source.start;
     if (remaining < length) {
-      return { at: slice.source.start + remaining, overrides: slice.overrides };
+      return {
+        at: slice.source.start + remaining,
+        // The clip's own end, which is what the preview loops back from. Not
+        // the take's: a recording cut down to its middle would otherwise play
+        // on through footage the video no longer contains.
+        end: slice.source.end,
+        overrides: slice.overrides,
+      };
     }
     remaining -= length;
   }
@@ -97,7 +112,7 @@ function momentOf(
   // Only reachable on a rounding edge, where `remaining` lands exactly on the
   // end of the last slice. Its final frame is the honest answer.
   const last = slices[slices.length - 1]!;
-  return { at: last.source.end, overrides: last.overrides };
+  return { at: last.source.end, end: last.source.end, overrides: last.overrides };
 }
 
 /**
@@ -123,8 +138,18 @@ function segmentAt(
     segments.find((candidate) => at >= candidate.start && at < candidate.end) ??
     (at < segments[0]!.start ? segments[0]! : segments[segments.length - 1]!);
 
-  const inside = Math.min(Math.max(at, segment.start), segment.end) - segment.start;
-  return { segment, at: inside / 1e9 };
+  return { segment, at: inside(segment, at) };
+}
+
+/**
+ * How far into a segment's own file a source time is, in seconds.
+ *
+ * **Zero-based files**, as above: the segment's `start` comes off here.
+ * Clamped, so a moment outside the segment answers with its nearest edge
+ * rather than a negative seek or one past the end.
+ */
+function inside(segment: Segment, at: MediaTime): number {
+  return (Math.min(Math.max(at, segment.start), segment.end) - segment.start) / 1e9;
 }
 
 /** Every picture the plan names by path, with the URL to fetch it over. */
