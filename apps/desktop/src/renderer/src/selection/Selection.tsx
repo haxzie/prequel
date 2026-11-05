@@ -1012,21 +1012,29 @@ function SelectionCard({
           between them is what says they are alternatives, and it is the dock's
           own `--dock-line`, which is the rule between two trays over there.
 
-          The dock's panel exactly: `dock-theme` for the palette, the same fill,
-          the same rim, the same shadow and the same 44 points tall. This is the
+          The dock's panel for everything but the colour: the same rim, the same
+          shadow, the same radius and the same 44 points tall. This is the
           object the recording bar becomes the moment it is pressed — the panel
-          slides into place where this was — and until now it was a red pill
-          handing over to a dark one, which read as two apps rather than one
-          control changing what it says.
+          slides into place where this was — and a pill that changed shape on
+          the way read as two apps rather than one control changing what it
+          says.
+
+          The fill is the app's blue, which the highlight around the thing
+          being offered is already drawn in. The card is the one thing on a
+          dimmed screen that can be acted on, and the dock's near-black put it
+          at the same weight as everything it is lying on top of. The rim, the
+          divider and the hover are white over the blue rather than the dock's
+          own — those were picked to sit a few units above a near-black fill and
+          are invisible on this one.
 
           Red *is* the record button everywhere, and painting the pill in it
           would have said that about the screenshot half too. The red is on the
           dot, where it belongs. */}
       <div
         className={
-          "dock-theme pointer-events-auto mt-4 flex items-center rounded-full " +
-          "border border-dock-rim bg-dock-bg px-[5px] text-[13px] font-medium " +
-          "whitespace-nowrap text-dock-fg shadow-[0_2px_8px_rgba(0,0,0,0.3)] [text-shadow:none]"
+          "pointer-events-auto mt-4 flex items-center rounded-full " +
+          "border border-white/15 bg-selected px-[5px] text-[13px] font-medium " +
+          "whitespace-nowrap text-white shadow-[0_2px_8px_rgba(0,0,0,0.3)] [text-shadow:none]"
         }
         // The panel's own height, from the one constant main sizes its window
         // to. A pill that merely looked about right beside it would be a
@@ -1040,20 +1048,17 @@ function SelectionCard({
           return (
             <Fragment key={mode}>
               {/* Between, never at an end, so a card offering one thing is a
-                  plain button and not a button with a rule beside it. The
-                  dock's own divider, down to the seven tenths. */}
+                  plain button and not a button with a rule beside it. Seven
+                  tenths tall, which is the dock's own figure for a rule between
+                  two trays. */}
               {index > 0 && (
-                <span
-                  aria-hidden
-                  className="mx-1 h-[70%] w-px flex-none self-center bg-dock-line"
-                />
+                <span aria-hidden className="mx-1 h-[70%] w-px flex-none self-center bg-white/25" />
               )}
               <button
                 type="button"
                 // 34 inside 44, which is the tray height the three source
-                // buttons sit in over on the panel — see `SetupPanel`. The
-                // hover is the dock's too, so the two surfaces light up alike.
-                className="flex h-[34px] items-center gap-2 rounded-full px-3 hover:bg-dock-hover"
+                // buttons sit in over on the panel — see `SetupPanel`.
+                className="flex h-[34px] items-center gap-2 rounded-full px-3 hover:bg-white/15"
                 onClick={(event) => {
                   // The overlay treats a click anywhere as "choose this", so
                   // this must not count twice — and it means something stronger.
