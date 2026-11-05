@@ -91,14 +91,16 @@ function ClipCount({ takes }: { takes: number }) {
 export function SetupPanel({ state }: { state: DockState }) {
   const { activeMode, selection, preferences, cameraError } = state;
   /**
-   * Whether this panel is setting up a screenshot.
+   * The devices, which this panel always offers.
    *
-   * Three controls come off the strip when it is — the camera, the microphone
-   * and the prompter — and the permissions warning narrows with them. All four
-   * read this rather than the preference, so there is one answer to "is this a
-   * screenshot" in this file.
+   * It used to take the camera, the microphone and the prompter off the strip
+   * for a screenshot, which was right while a switch up here said which was
+   * being set up. The card over the picked source asks now — see
+   * `SelectionSetup.offers` — so nothing on screen knows what the next capture
+   * is until it has already happened, and hiding them on the strength of what
+   * the *last* one was left somebody who had taken one screenshot with no way
+   * to reach their camera again. A still simply ignores all three.
    */
-  const photo = preferences.captureMode === "photo";
   const cameras = useMediaDevices("videoinput");
   const microphones = useMediaDevices("audioinput");
   // Which drop-up is open comes from main, not from here: the menu is native
@@ -118,13 +120,14 @@ export function SetupPanel({ state }: { state: DockState }) {
   // What a recording started *now* would be missing, which is not the same as
   // what is ungranted: a camera nobody has switched on needs no camera grant.
   //
-  // A screenshot needs neither device whatever is chosen: it writes one frame
-  // of the screen and no camera or microphone track at all, so a camera grant
-  // the next *recording* will want must not raise a warning over a shot that
-  // will not.
+  // Asked of a recording, because that is what the panel is setting up until
+  // the card says otherwise. A screenshot needs neither device and will simply
+  // not raise either warning's subject — but it is taken from the same panel,
+  // and a warning that came and went with what the last capture happened to be
+  // would be the strip rearranging itself for no reason anybody could see.
   const missing = missingPermissions(permissions.states, {
-    camera: !photo && preferences.cameraId !== null,
-    microphone: !photo && preferences.micId !== null,
+    camera: preferences.cameraId !== null,
+    microphone: preferences.micId !== null,
   });
 
   const chooseMode = (mode: ScreenMode) => void window.prequel.dock.chooseMode(mode);
@@ -271,52 +274,48 @@ export function SetupPanel({ state }: { state: DockState }) {
         })}
       </div>
 
-      {/* Absent for a screenshot, rather than disabled. A still has no camera
-          track, no microphone track and nothing to read a script to, so three
-          dead controls would be the panel offering choices that cannot affect
-          the result. The settings behind them are untouched — switching back to
-          video finds the camera and the microphone exactly as they were. */}
-      {!photo && (
-        <div className="flex items-center gap-0.5">
-          <DeviceMenu
-            kind="camera"
-            devices={cameras}
-            selectedId={preferences.cameraId}
-            selectedLabel={preferences.cameraLabel}
-            error={cameraError}
-            open={open === "camera"}
-            onOpen={(anchor) => void openMenu("camera", anchor)}
-            onSelect={(device) => choose("camera", device)}
-            OnIcon={CameraIcon}
-            OffIcon={CameraOffIcon}
-          />
+      {/* Always, now. See the note at the top of the component: the panel
+          cannot know whether the next press is a recording or a still, so it
+          sets up the one that needs these. */}
+      <div className="flex items-center gap-0.5">
+        <DeviceMenu
+          kind="camera"
+          devices={cameras}
+          selectedId={preferences.cameraId}
+          selectedLabel={preferences.cameraLabel}
+          error={cameraError}
+          open={open === "camera"}
+          onOpen={(anchor) => void openMenu("camera", anchor)}
+          onSelect={(device) => choose("camera", device)}
+          OnIcon={CameraIcon}
+          OffIcon={CameraOffIcon}
+        />
 
-          <DeviceMenu
-            kind="microphone"
-            devices={microphones}
-            selectedId={preferences.micId}
-            selectedLabel={preferences.micLabel}
-            meter
-            open={open === "microphone"}
-            onOpen={(anchor) => void openMenu("microphone", anchor)}
-            onSelect={(device) => choose("microphone", device)}
-            OnIcon={MicIcon}
-            OffIcon={MicOffIcon}
-          />
+        <DeviceMenu
+          kind="microphone"
+          devices={microphones}
+          selectedId={preferences.micId}
+          selectedLabel={preferences.micLabel}
+          meter
+          open={open === "microphone"}
+          onOpen={(anchor) => void openMenu("microphone", anchor)}
+          onSelect={(device) => choose("microphone", device)}
+          OnIcon={MicIcon}
+          OffIcon={MicOffIcon}
+        />
 
-          {/* Only with a microphone: the prompter follows a voice, and a panel
+        {/* Only with a microphone: the prompter follows a voice, and a panel
               with no microphone chosen is not about to record one. Auto-scroll
               and manual would work without, but the control's whole reason to
               sit beside the microphone is that it belongs to it. */}
-          {preferences.micId !== null && (
-            <TeleprompterMenu
-              enabled={preferences.teleprompter}
-              open={open === "teleprompter"}
-              onOpen={(anchor) => void openMenu("teleprompter", anchor)}
-            />
-          )}
-        </div>
-      )}
+        {preferences.micId !== null && (
+          <TeleprompterMenu
+            enabled={preferences.teleprompter}
+            open={open === "teleprompter"}
+            onOpen={(anchor) => void openMenu("teleprompter", anchor)}
+          />
+        )}
+      </div>
 
       {/* Towards the end, and absent entirely when there is nothing wrong. Far
           enough along that it cannot push the controls people reach for before

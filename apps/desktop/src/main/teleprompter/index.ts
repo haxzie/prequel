@@ -97,16 +97,13 @@ export class Teleprompter {
     // microphone and only while one is chosen, and the island follows the
     // control rather than outliving it.
     //
-    // And never for a screenshot. There is nothing to read a script to in one
-    // frame, the panel stops offering the control, and an island left on screen
-    // would be excluded from the shot and so visible only to the person taking
-    // it — a window with no purpose that nothing on the panel explains.
-    if (
-      !panelVisible ||
-      !preferences.teleprompter ||
-      preferences.micId === null ||
-      preferences.captureMode === "photo"
-    ) {
+    // The capture mode is not asked. There is nothing to read a script to in
+    // one frame, but nothing knows a still is coming until the card over the
+    // picked source is pressed — see `SelectionSetup.offers` — and hiding the
+    // island on the strength of the *last* capture meant one screenshot took
+    // the prompter away until a recording brought it back. `shoot` syncs it
+    // off before it fires, which is what keeps it out of the picture.
+    if (!panelVisible || !preferences.teleprompter || preferences.micId === null) {
       this.hide();
       return;
     }

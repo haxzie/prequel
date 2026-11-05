@@ -257,25 +257,6 @@ export const SHOTS: readonly Shot[] = [
     pad: 28,
   },
   {
-    id: "dock-setup-photo",
-    frame: "dock",
-    // The panel as the last capture leaves it when that capture was a
-    // screenshot, which is what takes the camera, the microphone and the
-    // prompter off the strip — see `SetupPanel`. The shot exists because that
-    // absence is the thing to show: a reader comparing it with `dock-setup`
-    // can see what a still does not need.
-    install: install((base) => ({
-      dock: {
-        ...base.dock,
-        preferences: { ...base.dock.preferences, captureMode: "photo" },
-      },
-    })),
-    render: () => <Dock />,
-    steps: [],
-    clip: "[data-view='setup']",
-    pad: 28,
-  },
-  {
     id: "dock-adding-clip",
     frame: "dock",
     // The panel as Add Clip leaves it, with what it is adding to at the head of

@@ -1396,23 +1396,24 @@ describe("recording or a screenshot", () => {
     expect(shots[0]!.showCursor).toBe(false);
   });
 
-  it("puts the camera bubble away without forgetting the camera", async () => {
-    const { flow, camera, preferences } = makeFlow({ cameraId: "cam-1", cameraLabel: "FaceTime" });
-    // From the panel, which is the only place the switch exists and the only
-    // state the bubble shows in at all.
+  it("keeps the bubble up until the shot itself, and forgets no camera", async () => {
+    // The bubble used to come off the moment the panel was switched to Photo.
+    // There is no switch: nothing knows a still is coming until the card is
+    // pressed, so the preview stays up while the picker is — and `shoot` is
+    // what takes it away, one frame before it fires.
+    const { flow, camera, preferences } = makeFlow(
+      { cameraId: "cam-1", cameraLabel: "FaceTime" },
+      { ...CONFIRMED, start: true, capture: "photo" },
+    );
     flow.open();
     expect(camera.shown).toBe(true);
 
-    flow.setCaptureMode("photo");
+    await flow.chooseMode("screen");
 
-    // A still has no camera track, so the bubble has nothing to preview and the
-    // light would be on for a frame nobody is going to put a face in.
+    expect(shots).toHaveLength(1);
     expect(camera.shown).toBe(false);
-    // The choice itself is untouched: switching back finds the setup as it was.
+    // The choice itself is untouched: the next recording finds it as it was.
     expect(preferences().cameraId).toBe("cam-1");
-
-    flow.setCaptureMode("video");
-    expect(camera.shown).toBe(true);
   });
 
   it("leaves an overlay that is up alone", () => {

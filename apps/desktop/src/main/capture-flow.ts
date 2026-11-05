@@ -589,11 +589,12 @@ export class CaptureFlow {
     log("info", "adding a recording", { dir, takes: manifest.takes.length });
 
     // Never a still. A screenshot is a session of its own and `shoot` knows
-    // nothing about an extend, so a panel left on Photo by the last capture
-    // would take a shot, open a card on it, and leave this flag set for the
-    // next stop to merge something unrelated into this recording. The switch
-    // is hidden while an addition is being set up — see `SetupPanel` — and
-    // this is what makes hiding it true rather than cosmetic.
+    // nothing about an extend, so a hotkey pressed mid-addition against a
+    // remembered "photo" would take a shot, open a card on it, and leave this
+    // flag set for the next stop to merge something unrelated into this
+    // recording. The card drops its screenshot button while an addition is
+    // being set up — see `chooseMode` — and this covers the one way in that
+    // does not go through the card.
     this.deps.preferences.update({ captureMode: "video" });
 
     this.showDock();
@@ -661,24 +662,25 @@ export class CaptureFlow {
    * Remembers what the last capture was.
    *
    * No longer a switch anybody presses: the panel's two icons are gone, the
-   * tray's three screenshot rows are gone, and the card over the picked window
-   * asks instead. What is left is the *memory* of the answer, written by
-   * `confirmSelection` from the button that was pressed — the panel's
-   * right-hand half reads it, because a screenshot has no camera, no
-   * microphone and nothing to read a script to, so those three come off the
-   * strip until the next recording.
+   * tray's three screenshot rows are gone, and the card over the picked source
+   * asks instead. What is left is a memory, written by `confirmSelection` from
+   * the button that was pressed, and `capture` is the one thing that reads
+   * it — the hotkey and the library's Record button repeat whatever was done
+   * last, which is the only sense a capture with no picker in front of it can
+   * make.
    *
-   * Nothing is cleared. The camera, the microphone and the prompter keep their
-   * settings and simply stop being offered — see `syncCamera` and the prompter's
-   * own `sync` — so switching back finds the setup exactly as it was left.
+   * Nothing on screen follows it any more, and that is deliberate. The panel's
+   * camera, microphone and prompter used to come off the strip for a
+   * screenshot, which was right while a switch up here said which was being
+   * set up; nothing knows now until the card is pressed, and hiding them on
+   * the strength of the last capture left somebody who had taken one
+   * screenshot unable to reach their camera at all.
    */
   setCaptureMode(captureMode: CaptureMode): DockState {
     if (this.deps.preferences.get().captureMode === captureMode) return this.state();
 
     this.deps.preferences.update({ captureMode });
     this.emit();
-    this.syncCamera();
-    this.deps.teleprompter.sync(this.deps.dock.isVisible);
 
     return this.state();
   }
@@ -754,7 +756,13 @@ export class CaptureFlow {
     // goes to the welcome flow for a missing permission, never opens one. The
     // comment on that branch in `main/index.ts` names the bubble it was trying
     // to avoid.
-    const wanted = preferences.cameraId !== null && preferences.captureMode === "video";
+    // Not gated on the capture mode any more. Nothing knows whether the next
+    // press is a recording or a still until the card over the picked source is
+    // pressed — see `SelectionSetup.offers` — and the bubble following what the
+    // *last* capture was meant one screenshot took the preview away until a
+    // recording brought it back. `shoot` hides it before it fires, which is
+    // what kept it out of the picture before this and still does.
+    const wanted = preferences.cameraId !== null;
     if (wanted && this.watching) this.deps.camera.show();
     else this.deps.camera.hide();
   }
