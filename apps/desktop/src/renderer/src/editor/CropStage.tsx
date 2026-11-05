@@ -10,7 +10,8 @@ import {
 import type { Rect, Size } from "../../../shared/layout";
 import { clampCrop } from "./boxes";
 import { fitInside } from "./fit";
-import { isCorner, pulled, type Handle } from "./handles";
+import { pulled, type Handle } from "./handles";
+import { HANDLE_AT, SELECTION_HANDLE, SELECTION_RING } from "./surfaces";
 import { cn } from "../lib/cn";
 
 /**
@@ -268,9 +269,13 @@ export function CropStage({
             rectangle is dragged. The board's `overflow-hidden` is what keeps
             the spread on the stage. */}
         <div
+          // The app's own blue, and the preview's ring exactly — see
+          // `SELECTION_RING`. This is the same gesture on the same kind of box
+          // as resizing the recording, and a white outline here against a blue
+          // one over the composition read as two different tools.
           className={cn(
             "absolute cursor-move shadow-[0_0_0_9999px_rgba(0,0,0,0.62)]",
-            "outline outline-white/90",
+            SELECTION_RING,
           )}
           style={window_}
           onPointerDown={begin(null)}
@@ -297,14 +302,20 @@ export function CropStage({
           {HANDLES.map((handle) => (
             <span
               key={handle}
-              // Centred on the point the pull pivots about, like the preview's
-              // own — see `HANDLE_AT` there. Larger than those: this is the
-              // only thing on the board to grab, so there is no neighbouring
-              // control for a generous target to swallow.
+              // The preview's handles to the pixel, placed by the same map.
+              //
+              // The target is grown past the mark with a `::before` rather
+              // than by drawing a bigger handle, and that is the one way this
+              // differs from the ring over the composition: there the pointer
+              // is tested against the canvas with a tolerance around each
+              // corner, and here the handle *is* the element being pressed. An
+              // 8px square is a small thing to catch with a mouse, and the
+              // alternative — a handle large enough to grab — is a handle that
+              // does not match the one it is meant to be.
               className={cn(
-                "absolute rounded-[3px] border border-black/30 bg-white shadow-sm",
-                isCorner(handle) ? "size-3" : "size-2.5",
-                AT[handle],
+                SELECTION_HANDLE,
+                "before:absolute before:-inset-2 before:content-['']",
+                HANDLE_AT[handle],
                 CURSOR[handle],
               )}
               onPointerDown={begin(handle)}
@@ -330,18 +341,6 @@ interface Point {
 }
 
 const HANDLES: readonly Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
-
-/** Where each handle sits on the window, centred on its own point. */
-const AT: Record<Handle, string> = {
-  nw: "-top-1.5 -left-1.5",
-  n: "-top-1.25 left-1/2 -translate-x-1/2",
-  ne: "-top-1.5 -right-1.5",
-  e: "-right-1.25 top-1/2 -translate-y-1/2",
-  se: "-right-1.5 -bottom-1.5",
-  s: "-bottom-1.25 left-1/2 -translate-x-1/2",
-  sw: "-bottom-1.5 -left-1.5",
-  w: "-left-1.25 top-1/2 -translate-y-1/2",
-};
 
 const CURSOR: Record<Handle, string> = {
   nw: "cursor-nwse-resize",

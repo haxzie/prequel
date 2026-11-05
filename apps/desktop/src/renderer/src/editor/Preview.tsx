@@ -61,6 +61,7 @@ import {
   STILL_AT,
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
+import { HANDLE_AT, SELECTION_HANDLE, SELECTION_RING } from "./surfaces";
 import { boxPatch, seededBoxes, type Grabbable, type RestingBoxes } from "./boxes";
 import { ambientColours, ambientGradient } from "./ambience";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
@@ -1783,7 +1784,7 @@ export function Preview({
         <div
           ref={outline}
           aria-hidden
-          className="group/ring pointer-events-none absolute top-0 left-0 border border-selected"
+          className={cn("group/ring pointer-events-none absolute top-0 left-0", SELECTION_RING)}
           // Hidden inline rather than with `hidden`, because the loop below
           // shows it by writing `display` — and an inline property cleared
           // against a class that also sets `display: none` never comes back.
@@ -1798,7 +1799,7 @@ export function Preview({
                 // Centred on the corner rather than tucked inside it, so the
                 // handle marks the point the drag actually pivots about. The
                 // half pixel that costs is in `HANDLE_AT`.
-                "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
+                SELECTION_HANDLE,
                 // Gone on a picture a shot has taken, which is ringed but not
                 // pullable — see `grabbed`.
                 "group-data-[handles=none]/ring:hidden",
@@ -1846,7 +1847,7 @@ export function Preview({
             <span
               key={edge}
               className={cn(
-                "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm",
+                SELECTION_HANDLE,
                 "group-data-[handles=corners]/ring:hidden",
                 "group-data-[handles=none]/ring:hidden",
                 HANDLE_AT[edge],
@@ -2344,22 +2345,6 @@ const CORNERS = ["nw", "ne", "se", "sw"] as const;
 const EDGES = ["n", "e", "s", "w"] as const;
 
 /**
- * Where each handle sits on the ring.
- *
- * Four and a half pixels out, not four. An absolutely positioned child is
- * placed against its container's *padding* box, and the ring has a 1px border
- * — so an 8px handle at -4px centres half a pixel inside the stroke rather
- * than on it. Every offset is pulled the same way, which is what makes the
- * eight of them read as tucked into the box instead of sitting on its edge.
- * Half the handle, plus half the stroke.
- *
- * The midpoints need no such correction: `left-1/2` is half the padding box,
- * which with the border on both sides is the border box's middle exactly. The
- * margin there is half the handle and nothing else — by margin rather than a
- * transform, because the ring itself is moved with `transform` every frame and
- * a second one on a child is a separate property that reads as the same thing.
- */
-/**
  * Where each radius dot sits on the ring.
  *
  * `--radius-dot` in from both of its corner's edges, which is where the arc
@@ -2372,17 +2357,6 @@ const RADIUS_AT: Record<Corner, string> = {
   ne: "top-[var(--radius-dot)] right-[var(--radius-dot)] translate-x-1/2 -translate-y-1/2",
   se: "bottom-[var(--radius-dot)] right-[var(--radius-dot)] translate-x-1/2 translate-y-1/2",
   sw: "bottom-[var(--radius-dot)] left-[var(--radius-dot)] -translate-x-1/2 translate-y-1/2",
-};
-
-const HANDLE_AT: Record<Handle, string> = {
-  nw: "-top-[4.5px] -left-[4.5px]",
-  ne: "-top-[4.5px] -right-[4.5px]",
-  se: "-right-[4.5px] -bottom-[4.5px]",
-  sw: "-bottom-[4.5px] -left-[4.5px]",
-  n: "-top-[4.5px] left-1/2 -ml-1",
-  s: "-bottom-[4.5px] left-1/2 -ml-1",
-  w: "-left-[4.5px] top-1/2 -mt-1",
-  e: "-right-[4.5px] top-1/2 -mt-1",
 };
 
 /**

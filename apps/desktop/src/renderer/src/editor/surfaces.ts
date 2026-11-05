@@ -7,6 +7,8 @@
  * constant comes to be copied instead of imported.
  */
 
+import type { Handle } from "./handles";
+
 /**
  * How tall the editor's title bar is.
  *
@@ -77,3 +79,52 @@ export const ANNOTATE_BAR = "3.125rem";
 export const FLOATING =
   "border border-editor-line bg-editor-scrim backdrop-blur-3xl " +
   "shadow-[0_2px_10px_rgba(0,0,0,0.28)]";
+
+/**
+ * What a selected thing in the composition is ringed with.
+ *
+ * The app's own blue — `--selected`, the same colour a switch turns and a clip
+ * on the timeline is outlined in. One constant because two surfaces draw it
+ * now: the preview's ring around a picture, and the crop surface's window on
+ * the take. They are the same gesture on the same kind of box, and a handle
+ * that was white in one and blue in the other read as two different tools.
+ */
+export const SELECTION_RING = "border border-selected";
+
+/**
+ * One of the eight handles on a selected box.
+ *
+ * Here rather than in `Preview`, for the reason the material above is: reaching
+ * into a two-thousand-line component for a string of utilities is how a style
+ * constant comes to be copied instead of imported, and this one has already
+ * been copied once.
+ */
+export const SELECTION_HANDLE =
+  "absolute size-2 rounded-[2px] border border-selected bg-white shadow-sm";
+
+/**
+ * Where each handle sits on the ring.
+ *
+ * Four and a half pixels out, not four. An absolutely positioned child is
+ * placed against its container's *padding* box, and the ring has a 1px border
+ * — so an 8px handle at -4px centres half a pixel inside the stroke rather
+ * than on it. Every offset is pulled the same way, which is what makes the
+ * eight of them read as tucked into the box instead of sitting on its edge.
+ * Half the handle, plus half the stroke.
+ *
+ * The midpoints need no such correction: `left-1/2` is half the padding box,
+ * which with the border on both sides is the border box's middle exactly. The
+ * margin there is half the handle and nothing else — by margin rather than a
+ * transform, because the ring itself is moved with `transform` every frame and
+ * a second one on a child is a separate property that reads as the same thing.
+ */
+export const HANDLE_AT: Record<Handle, string> = {
+  nw: "-top-[4.5px] -left-[4.5px]",
+  ne: "-top-[4.5px] -right-[4.5px]",
+  se: "-right-[4.5px] -bottom-[4.5px]",
+  sw: "-bottom-[4.5px] -left-[4.5px]",
+  n: "-top-[4.5px] left-1/2 -ml-1",
+  s: "-bottom-[4.5px] left-1/2 -ml-1",
+  w: "-left-[4.5px] top-1/2 -mt-1",
+  e: "-right-[4.5px] top-1/2 -mt-1",
+};
