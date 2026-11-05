@@ -282,9 +282,18 @@ pub fn reset_pointer_shape() {
     POINTER_KIND.store(CursorKind::Arrow.to_u8(), Ordering::Relaxed);
 }
 
-/// Tolerance on the proportions below. Generous: these are compared against
-/// the system's own cursors, not against constants, so anything within a
-/// fiftieth of the image is the same cursor.
+/// How far a shape may sit from a reference and still be that cursor.
+///
+/// A cap on the *nearest* match rather than the first match inside it, which is
+/// the distinction that matters: several system cursors are square with a
+/// hotspot a hundredth from the middle, and against a threshold whichever was
+/// listed first swallowed the rest. Against the nearest, each one lands on
+/// itself — the live read comes back with exactly the reference's own numbers,
+/// so the distance to the right answer is zero and the distance to its
+/// neighbour is not.
+///
+/// Still generous, because the cap is only there to keep an unknown cursor from
+/// being adopted by whichever reference happens to be closest to it.
 const SHAPE_TOLERANCE: f64 = 0.02;
 
 /// Every `NSCursor` worth telling apart, and what it is drawn as.
@@ -292,23 +301,71 @@ const SHAPE_TOLERANCE: f64 = 0.02;
 /// Both I-beams map onto one kind on purpose: a vertical text cursor is still
 /// a text cursor, and drawing the upright one for it is closer than an arrow.
 ///
-/// The arrow itself is absent — it is what anything unrecognised falls back to,
-/// so matching it would only be a slower way of reaching the same answer.
+/// The one-way resize cursors are here too. A pane edge at the end of its
+/// travel is still a pane edge, and the two-headed arrow is what a viewer reads
+/// as "this can be dragged" — a one-headed pointer is one nobody has seen in a
+/// screen recording. `resizeUp` and `resizeDown` are a sixtieth either side of
+/// the middle and `openHand` sits between them, which is why this has to be a
+/// nearest match: they are three different cursors inside one tolerance.
 ///
-/// The *one-way* resize cursors are absent too, and that is not an oversight.
-/// `resizeUp` sits at (0.50, 0.5417) of a square image and `openHand` at
-/// (0.50, 0.5312) of one: a hundredth apart, which is inside the tolerance
-/// below. Listing them would draw a vertical resize arrow every time somebody
-/// picked up a canvas to pan it — the collision is pinned by
-/// `no_two_measured_cursors_of_different_kinds_look_alike`. Three numbers are
-/// enough to separate the five drawn here and not enough to separate those, so
-/// a pane edge at the end of its travel keeps the arrow it always had.
+/// The arrow itself is absent — it is what anything unrecognised falls back to,
+/// so matching it would only be a slower way of reaching the same answer. The
+/// two entries below that *are* arrows are there to claim a shape rather than
+/// to draw one; see the note on them.
+///
+/// `resizeLeftCursor` and `resizeRightCursor` are absent, and that *is* a
+/// deliberate hole. Both are a 24-point square with a centred hotspot, and so
+/// are the two diagonal window-corner cursors — four cursors, one shape, and
+/// nothing in three numbers to separate them. Listing them would draw a
+/// sideways arrow on every window corner. Pinned by
+/// `no_two_measured_cursors_of_different_kinds_look_alike`.
 const REFERENCES: &[(&str, CursorKind)] = &[
     ("pointingHandCursor", CursorKind::Hand),
     ("IBeamCursor", CursorKind::Text),
     ("IBeamCursorForVerticalLayout", CursorKind::Text),
     ("resizeLeftRightCursor", CursorKind::ResizeH),
     ("resizeUpDownCursor", CursorKind::ResizeV),
+    ("resizeUpCursor", CursorKind::ResizeV),
+    ("resizeDownCursor", CursorKind::ResizeV),
+    // The two hands, listed as arrows on purpose, which is the one entry in
+    // here that is not about drawing something.
+    //
+    // An open hand sits at (0.50, 0.5312) and `resizeUp` at (0.50, 0.5417): a
+    // hundredth apart, closer than the cap. Unlisted, the nearest reference to
+    // a hand is a vertical resize, so picking a canvas up to pan it would have
+    // drawn a resize arrow — the exact collision that kept the one-way resizes
+    // out of this table until now. Listing the hands puts them at a distance of
+    // nothing from themselves, and nothing can be nearer than that.
+    //
+    // They draw as an arrow because that is all the first four styles have for
+    // them. The day there is a hand to draw, these two change kind and nothing
+    // else here moves.
+    ("openHandCursor", CursorKind::Arrow),
+    ("closedHandCursor", CursorKind::Arrow),
+];
+
+/// The resize pointers a window edge actually shows, which are not public.
+///
+/// This is the hole the whole widening exists to close. `resizeLeftRight` is
+/// what an app sets on a divider it drew itself; the edge of a *window*, and
+/// the split views AppKit draws, use `_windowResizeEastWestCursor` and its twin
+/// — which are a different size and a different shape, match nothing in the
+/// public list, and so were recorded as an arrow. Across every recording on
+/// this machine that left two `resize-v` samples in total: dragging a window
+/// taller is one of the most ordinary things in a screen recording and it had
+/// never once been drawn.
+///
+/// Optional, and that is the point of keeping them apart: a private selector
+/// may be gone in the next release, and a missing one of these must leave the
+/// rest of the table standing rather than taking the public cursors down with
+/// it. `references` drops whichever does not answer and keeps going.
+///
+/// The two diagonal corner cursors are not here, for the reason the one-way
+/// resizes are not: both are a 22-point square with a centred hotspot, which is
+/// the same three numbers as each other and as `resizeLeft`.
+const PRIVATE_REFERENCES: &[(&str, CursorKind)] = &[
+    ("_windowResizeEastWestCursor", CursorKind::ResizeH),
+    ("_windowResizeNorthSouthCursor", CursorKind::ResizeV),
 ];
 
 /// Which of the cursors above the window server is currently showing.
@@ -353,10 +410,42 @@ fn read_pointer_kind() -> CursorKind {
         return CursorKind::Arrow;
     };
 
+    nearest(shape, &references)
+}
+
+/// The closest reference to `shape`, or `Arrow` where nothing is close enough.
+///
+/// Nearest rather than first-within-tolerance, and that one word is most of
+/// what this change was. The system's square cursors — the one-way resizes, the
+/// open hand, the crosshair — sit a hundredth apart on these three numbers, so
+/// against a threshold the first one listed answered for all of them and the
+/// rest could never be added at all. The live read comes back carrying the
+/// reference's own numbers to the bit, so the right answer is at distance zero
+/// and a neighbour a hundredth away never wins.
+///
+/// The tolerance stays as a cap: an unknown cursor must fall through to the
+/// arrow rather than be adopted by whichever reference it happens to be nearest.
+fn nearest(shape: (f64, f64, f64), references: &[((f64, f64, f64), CursorKind)]) -> CursorKind {
     references
         .iter()
-        .find(|(reference, _)| matches(shape, *reference))
+        .filter(|(reference, _)| matches(shape, *reference))
+        .min_by(|(a, _), (b, _)| {
+            distance(shape, *a)
+                .partial_cmp(&distance(shape, *b))
+                // Two references at the same distance is a tie the order
+                // breaks, which is what `min_by` does with `Equal` anyway. The
+                // comparison cannot be `NaN` — every number here came out of a
+                // division by a size already checked to be positive.
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .map_or(CursorKind::Arrow, |(_, kind)| *kind)
+}
+
+/// How far apart two shapes are. Squared, because only the order is read.
+fn distance(shape: (f64, f64, f64), reference: (f64, f64, f64)) -> f64 {
+    (shape.0 - reference.0).powi(2)
+        + (shape.1 - reference.1).powi(2)
+        + (shape.2 - reference.2).powi(2)
 }
 
 fn matches(shape: (f64, f64, f64), reference: (f64, f64, f64)) -> bool {
@@ -374,10 +463,17 @@ fn matches(shape: (f64, f64, f64), reference: (f64, f64, f64)) -> bool {
 /// worth asking and the table stays empty, which leaves every pointer an arrow —
 /// exactly what a build with no cursors to compare against drew before.
 ///
-/// Cached only once the canary answers. Caching a table built too early would
-/// mean the I-beam never appearing for the life of the process, which is the
-/// failure this whole dance exists to avoid: it looks precisely like a recording
-/// where the user never happened to click into a text field.
+/// Cached only once every public reference answers. A table built too early is
+/// not merely short, it is *wrong and permanent*: `OnceLock` keeps whatever it
+/// was handed, so one cursor that had no image yet is one kind that never
+/// appears again for the life of the process — which looks precisely like a
+/// recording where the user never happened to click into a text field.
+///
+/// The canary is not enough on its own, and that is what this used to lean on.
+/// `arrowCursor` answers before `IBeamCursor` does, so a look taken in the gap
+/// passed the canary and then quietly dropped the I-beam on its way through a
+/// `filter_map`. Every public reference has to be whole or nothing is kept, and
+/// the next look tries again.
 fn references() -> Vec<((f64, f64, f64), CursorKind)> {
     static SHAPES: OnceLock<Vec<((f64, f64, f64), CursorKind)>> = OnceLock::new();
 
@@ -391,13 +487,21 @@ fn references() -> Vec<((f64, f64, f64), CursorKind)> {
     let built: Option<Vec<_>> = unsafe {
         let pool = objc_autoreleasePoolPush();
 
-        let ready = shape_named("arrowCursor").is_some();
-        let built = ready.then(|| {
-            REFERENCES
-                .iter()
-                .filter_map(|(name, kind)| Some((shape_named(name)?, *kind)))
-                .collect::<Vec<_>>()
-        });
+        let built = REFERENCES
+            .iter()
+            .map(|(name, kind)| Some((shape_named(name)?, *kind)))
+            .collect::<Option<Vec<_>>>()
+            .map(|mut table| {
+                // The private ones after, and only those that answer: a
+                // selector AppKit has dropped must cost its own entry and
+                // nothing else. See `PRIVATE_REFERENCES`.
+                table.extend(
+                    PRIVATE_REFERENCES
+                        .iter()
+                        .filter_map(|(name, kind)| Some((shape_named(name)?, *kind))),
+                );
+                table
+            });
 
         objc_autoreleasePoolPop(pool);
         built
@@ -584,11 +688,23 @@ mod tests {
         ("resizeLeftRight", (0.5000, 0.5000, 1.2500)),
         ("resizeUpDown", (0.5000, 0.5000, 0.8571)),
         ("resizeLeft", (0.5000, 0.5000, 1.0000)),
+        ("resizeRight", (0.5000, 0.5000, 1.0000)),
         ("resizeUp", (0.5000, 0.5417, 1.0000)),
         ("resizeDown", (0.5000, 0.4583, 1.0000)),
         ("openHand", (0.5000, 0.5312, 1.0000)),
         ("closedHand", (0.5000, 0.5312, 1.0000)),
         ("crosshair", (0.4583, 0.4583, 1.0000)),
+        ("dragLink", (0.6875, 0.1429, 0.7619)),
+        // The private pair a window edge actually shows — see
+        // `PRIVATE_REFERENCES`. Both are a different size from the public
+        // resize cursors they stand next to, which is what makes them
+        // separable at all: 1.3333 against 1.25, and 0.6429 against 0.8571.
+        ("windowResizeEastWest", (0.5000, 0.5000, 1.3333)),
+        ("windowResizeNorthSouth", (0.5000, 0.5000, 0.6429)),
+        // And the two window *corners*, which are the reason the one-way
+        // horizontal resizes are not listed: these three are one shape.
+        ("windowResizeNorthEastSouthWest", (0.5000, 0.5000, 1.0000)),
+        ("windowResizeNorthWestSouthEast", (0.5000, 0.5000, 1.0000)),
     ];
 
     /// What each measured cursor should be drawn as.
@@ -596,13 +712,16 @@ mod tests {
         match name {
             "iBeam" | "iBeamVertical" => CursorKind::Text,
             "pointingHand" => CursorKind::Hand,
-            "resizeLeftRight" => CursorKind::ResizeH,
-            "resizeUpDown" => CursorKind::ResizeV,
+            "resizeLeftRight" | "windowResizeEastWest" => CursorKind::ResizeH,
+            "resizeUpDown" | "resizeUp" | "resizeDown" | "windowResizeNorthSouth" => {
+                CursorKind::ResizeV
+            }
             _ => CursorKind::Arrow,
         }
     }
 
-    /// `REFERENCES`, by the measured shapes rather than by asking AppKit.
+    /// `REFERENCES` and `PRIVATE_REFERENCES`, by the measured shapes rather
+    /// than by asking AppKit.
     fn reference_table() -> Vec<((f64, f64, f64), CursorKind)> {
         let named = |name: &str| {
             MEASURED
@@ -618,6 +737,12 @@ mod tests {
             "iBeamVertical",
             "resizeLeftRight",
             "resizeUpDown",
+            "resizeUp",
+            "resizeDown",
+            "windowResizeEastWest",
+            "windowResizeNorthSouth",
+            "openHand",
+            "closedHand",
         ]
         .iter()
         .map(|name| (named(name), expected(name)))
@@ -627,7 +752,7 @@ mod tests {
         // cursor is added to one list and not the other.
         assert_eq!(
             table.len(),
-            REFERENCES.len(),
+            REFERENCES.len() + PRIVATE_REFERENCES.len(),
             "the two reference lists disagree"
         );
         table
@@ -635,20 +760,15 @@ mod tests {
 
     #[test]
     fn the_matcher_draws_each_system_cursor_as_the_right_pointer() {
-        // Three numbers telling twelve cursors apart, and every way of getting
-        // it wrong is silent: a tolerance too tight loses the I-beam, one too
+        // Three numbers telling eighteen cursors apart, and every way of
+        // getting it wrong is silent: a cap too tight loses the I-beam, one too
         // loose turns an open hand into a resize arrow, and either way the
         // recording just looks like one where the user never did the thing.
         let table = reference_table();
 
         for (name, shape) in MEASURED {
-            let drawn = table
-                .iter()
-                .find(|(reference, _)| matches(*shape, *reference))
-                .map_or(CursorKind::Arrow, |(_, kind)| *kind);
-
             assert_eq!(
-                drawn,
+                nearest(*shape, &table),
                 expected(name),
                 "{name} is drawn as the wrong pointer"
             );
@@ -656,21 +776,67 @@ mod tests {
     }
 
     #[test]
-    fn no_two_measured_cursors_of_different_kinds_look_alike() {
-        // The failure the tolerance exists to avoid, stated directly: whichever
-        // reference is listed first would win for both, and nothing anywhere
-        // would say so.
-        for (index, (name, shape)) in MEASURED.iter().enumerate() {
-            for (other_name, other) in MEASURED.iter().skip(index + 1) {
-                if expected(name) == expected(other_name) {
-                    continue;
-                }
+    fn a_cursor_lands_on_itself_rather_than_on_the_reference_listed_first() {
+        // The whole of why this is a nearest match. `resizeUp`, `resizeDown`
+        // and `openHand` are three different cursors inside one tolerance of
+        // each other — a sixtieth apart on the hotspot and identical on the
+        // other two numbers. Against a first-match the one listed earliest
+        // answered for all three, which is why the one-way resizes could never
+        // be listed at all and why picking a canvas up to pan it would have
+        // started drawing a resize arrow.
+        let table = reference_table();
+        let shape = |name: &str| {
+            MEASURED
+                .iter()
+                .find(|(other, _)| *other == name)
+                .expect("measured")
+                .1
+        };
 
-                assert!(
-                    !matches(*shape, *other),
-                    "{name} and {other_name} are the same shape but drawn differently"
-                );
-            }
+        assert_eq!(nearest(shape("resizeUp"), &table), CursorKind::ResizeV);
+        assert_eq!(nearest(shape("resizeDown"), &table), CursorKind::ResizeV);
+        // Still an arrow, and it has to be: an open hand is not a resize, and
+        // it sits between the two that are.
+        assert_eq!(nearest(shape("openHand"), &table), CursorKind::Arrow);
+        assert_eq!(nearest(shape("closedHand"), &table), CursorKind::Arrow);
+    }
+
+    #[test]
+    fn every_cursor_is_nearer_its_own_reference_than_any_other_kind() {
+        // The margin the whole table rests on, stated directly rather than
+        // left to the cap. Several of these sit a hundredth apart, so the
+        // question is never "is anything else within tolerance" — it is
+        // whether the right answer is the *nearest* one. Erode that margin by
+        // adding a cursor and the matcher starts drawing a resize arrow for a
+        // hand, which is a recording that looks like one where the user did
+        // something they did not.
+        let table = reference_table();
+
+        for (name, shape) in MEASURED {
+            let kind = expected(name);
+            let mine = table
+                .iter()
+                .filter(|(_, other)| *other == kind)
+                .map(|(reference, _)| distance(*shape, *reference))
+                .fold(f64::INFINITY, f64::min);
+            let theirs = table
+                .iter()
+                .filter(|(_, other)| *other != kind)
+                .map(|(reference, _)| distance(*shape, *reference))
+                .fold(f64::INFINITY, f64::min);
+
+            // Two ways to be safe, and a cursor needs one of them: its own
+            // reference is nearer than anybody else's, or nobody else is close
+            // enough to claim it at all. The plain arrow has only the second —
+            // it has no reference, because it is what a miss falls back to.
+            let unclaimed = !table
+                .iter()
+                .any(|(reference, other)| *other != kind && matches(*shape, *reference));
+
+            assert!(
+                mine < theirs || unclaimed,
+                "{name} is nearer a reference of another kind than its own"
+            );
         }
     }
 
@@ -689,10 +855,15 @@ mod tests {
         }
 
         // With AppKit up, a short table is a kind that silently never appears.
-        assert_eq!(
-            references.len(),
-            REFERENCES.len(),
+        // The public ones must all be there — `references` keeps nothing at all
+        // unless they are — and the private pair is allowed to have gone.
+        assert!(
+            references.len() >= REFERENCES.len(),
             "NSCursor gave no shape for one of the reference cursors"
+        );
+        assert!(
+            references.len() <= REFERENCES.len() + PRIVATE_REFERENCES.len(),
+            "the table has more entries than there are cursors to measure"
         );
 
         // And asking about the live one must not crash, whatever the pointer
