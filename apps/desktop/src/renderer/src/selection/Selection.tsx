@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, Ref } from "react";
 
 import { PANEL_HEIGHT } from "../../../shared/contract";
@@ -936,9 +936,19 @@ const OFFERS: readonly CaptureMode[] = ["photo", "video"];
  * corners cropped is what a screenshot looks like being taken, and between them
  * the pair is readable before either word is.
  */
-const CONFIRM: Record<CaptureMode, { label: string; Mark: () => ReactNode }> = {
-  photo: { label: "Screenshot", Mark: ShutterMark },
-  video: { label: "Record", Mark: RecordMark },
+const CONFIRM: Record<CaptureMode, { label: string; Mark: () => ReactNode; fill: string }> = {
+  // Plain, on the pill's own fill: a screenshot is the quieter of the two, and
+  // two filled buttons side by side would be the card shouting both halves of
+  // a question at once.
+  photo: { label: "Screenshot", Mark: ShutterMark, fill: "text-dock-fg hover:bg-dock-hover" },
+  // Filled, in the recorder's own red — `--dock-record`, the value the
+  // recording light burns at. It is what the app is for, and the one button on
+  // this card that starts something that then has to be stopped.
+  video: {
+    label: "Record",
+    Mark: RecordMark,
+    fill: "bg-dock-record text-white hover:brightness-110",
+  },
 };
 
 /**
@@ -962,9 +972,15 @@ function ShutterMark() {
   );
 }
 
-/** The record light, for the other half. The app's own red, not the text's. */
+/**
+ * The record light, for the other half.
+ *
+ * White, because the button it sits on is already the red. A red dot on a red
+ * fill is a hole in it, and the colour has only one thing to say here — it is
+ * saying it on the larger surface.
+ */
 function RecordMark() {
-  return <span aria-hidden className="size-[11px] rounded-full bg-[#e5484d]" />;
+  return <span aria-hidden className="size-[11px] rounded-full bg-white" />;
 }
 
 function SelectionCard({
@@ -1019,22 +1035,16 @@ function SelectionCard({
           the way read as two apps rather than one control changing what it
           says.
 
-          The fill is the app's blue, which the highlight around the thing
-          being offered is already drawn in. The card is the one thing on a
-          dimmed screen that can be acted on, and the dock's near-black put it
-          at the same weight as everything it is lying on top of. The rim, the
-          divider and the hover are white over the blue rather than the dock's
-          own — those were picked to sit a few units above a near-black fill and
-          are invisible on this one.
-
-          Red *is* the record button everywhere, and painting the pill in it
-          would have said that about the screenshot half too. The red is on the
-          dot, where it belongs. */}
+          Red *is* the record button everywhere, and painting the whole pill in
+          it would have said that about the screenshot half too. So the red is
+          where it means something: on the Record button alone, filled, inside
+          a dark pill — which is exactly what the panel it hands over to looks
+          like while a take is running. */}
       <div
         className={
-          "pointer-events-auto mt-4 flex items-center rounded-full " +
-          "border border-white/15 bg-selected px-[5px] text-[13px] font-medium " +
-          "whitespace-nowrap text-white shadow-[0_2px_8px_rgba(0,0,0,0.3)] [text-shadow:none]"
+          "dock-theme pointer-events-auto mt-4 flex items-center gap-1 rounded-full " +
+          "border border-dock-rim bg-dock-bg px-[5px] text-[13px] font-medium " +
+          "whitespace-nowrap text-dock-fg shadow-[0_2px_8px_rgba(0,0,0,0.3)] [text-shadow:none]"
         }
         // The panel's own height, from the one constant main sizes its window
         // to. A pill that merely looked about right beside it would be a
@@ -1043,33 +1053,28 @@ function SelectionCard({
         // A press must not begin a new area drag underneath the card.
         onMouseDown={(event) => event.stopPropagation()}
       >
-        {offers.map((mode, index) => {
-          const { label, Mark } = CONFIRM[mode];
+        {/* No rule between them. One of the two is filled, which separates the
+            pair on its own — a divider as well would be the card saying twice
+            that these are alternatives. */}
+        {offers.map((mode) => {
+          const { label, Mark, fill } = CONFIRM[mode];
           return (
-            <Fragment key={mode}>
-              {/* Between, never at an end, so a card offering one thing is a
-                  plain button and not a button with a rule beside it. Seven
-                  tenths tall, which is the dock's own figure for a rule between
-                  two trays. */}
-              {index > 0 && (
-                <span aria-hidden className="mx-1 h-[70%] w-px flex-none self-center bg-white/25" />
-              )}
-              <button
-                type="button"
-                // 34 inside 44, which is the tray height the three source
-                // buttons sit in over on the panel — see `SetupPanel`.
-                className="flex h-[34px] items-center gap-2 rounded-full px-3 hover:bg-white/15"
-                onClick={(event) => {
-                  // The overlay treats a click anywhere as "choose this", so
-                  // this must not count twice — and it means something stronger.
-                  event.stopPropagation();
-                  onStart(mode);
-                }}
-              >
-                <Mark />
-                {label}
-              </button>
-            </Fragment>
+            <button
+              key={mode}
+              type="button"
+              // 34 inside 44, which is the tray height the three source buttons
+              // sit in over on the panel — see `SetupPanel`.
+              className={`flex h-[34px] items-center gap-2 rounded-full px-3 ${fill}`}
+              onClick={(event) => {
+                // The overlay treats a click anywhere as "choose this", so this
+                // must not count twice — and it means something stronger.
+                event.stopPropagation();
+                onStart(mode);
+              }}
+            >
+              <Mark />
+              {label}
+            </button>
           );
         })}
       </div>
