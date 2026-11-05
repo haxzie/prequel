@@ -458,6 +458,12 @@ export async function cancelExport(): Promise<void> {
 }
 
 function finish(update: ExportProgress): void {
+  // Taken before the flag is dropped, and this line is the whole reason the
+  // recording an export came out of was never written down: `running` *is*
+  // that directory — see `startExport` — and it is read seventy lines below,
+  // where it is always null. Every export recorded `dir: null`, so every
+  // recording's Exports tab was empty whatever had been exported from it.
+  const from = running;
   running = null;
 
   // Read here, once, while the path is certainly still what was written. The
@@ -526,10 +532,10 @@ function finish(update: ExportProgress): void {
   // from then on it is an ordinary video in an ordinary folder.
   if (update.stage === "done" && update.outputPath) {
     update.url = publishExport(update.outputPath);
-    // `running` is the request's own directory — see `startExport`. It is the
-    // only thing here that knows where this file came from, and after this
-    // line nothing does.
-    recordExport(update.outputPath, duration(update.framesTotal), running);
+    // `from` is the request's own directory, taken at the top of this function.
+    // It is the only thing here that knows where this file came from, and after
+    // this line nothing does.
+    recordExport(update.outputPath, duration(update.framesTotal), from);
   }
 
   // Nothing is revealed here. The export dialog offers Show in Finder beside
