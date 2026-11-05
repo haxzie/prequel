@@ -54,8 +54,6 @@ import {
 } from "./handles";
 import {
   captionLook,
-  type LayoutSettings,
-  type WatermarkSettings,
   type SliceSettings,
   type TextSlice,
   type TextTrack,
@@ -63,6 +61,7 @@ import {
   STILL_AT,
 } from "../../../shared/project";
 import { cn } from "../lib/cn";
+import { boxPatch, seededBoxes, type Grabbable, type RestingBoxes } from "./boxes";
 import { ambientColours, ambientGradient } from "./ambience";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
@@ -109,18 +108,41 @@ export type Grab = () => Promise<string | null>;
 export type Picked = Grabbable | "captions";
 
 /**
+ * The ringed picture, as the bar above it needs it.
+ *
+ * Every rectangle in here is the plan's own. `box` is in output pixels and
+ * `window` in the source's, which are two coordinate spaces in one object
+ * because they are two halves of one answer: where the picture is, and what of
+ * it is in shot.
+ */
+export interface PictureContext {
+  target: PlanSource;
+  /** Where the picture rests, in output pixels — the box a resize writes. */
+  box: Rect;
+  /** The part of the source on show, in source pixels — what a crop writes. */
+  window: Rect;
+  /** The take's own dimensions, off the element the loop draws. */
+  source: Size;
+  /** Both boxes as they stand, for `boxPatch` to seed `custom` from. */
+  rest: RestingBoxes;
+}
+
+/**
  * What a drag in the preview can take hold of.
  *
- * `PlanSource` and the logo. Deliberately wider than `PlanSource`, which names
- * the two *video* textures — a watermark is a still file, and the only thing it
- * shares with them is that it has a box somebody can move.
+ * Re-exported rather than declared here: the arithmetic a gesture on one of
+ * these writes lives in `boxes.ts`, which the picture bar and the crop surface
+ * share with this file, and the type belongs beside it.
  */
-export type Grabbable = PlanSource | "watermark";
+export type { Grabbable } from "./boxes";
 
 export function Preview({
   inset,
   headroom,
   footroom,
+  toolbar,
+  picture,
+  onPickPicture,
   ready,
   frame,
   settings,
@@ -200,6 +222,36 @@ export function Preview({
   headroom?: string;
   /** The same, for the frame bar under it. */
   footroom?: string;
+  /**
+   * The bar that belongs to the picture, floated just above it.
+   *
+   * Here rather than in the editor's own column, and that is the point of the
+   * slot: the bar is about the composition, so it hangs off the composition's
+   * box and travels with it as the frame changes shape. Centred over the
+   * picture's own middle for the same reason — a bar centred in the column sits
+   * off-centre over a picture that is not filling it.
+   *
+   * A function for the reason `overlay` is one: what the bar needs is the
+   * ringed picture's box and the part of its source on show, and both are this
+   * component's — measured off the elements the loop draws and placed by the
+   * same `placement` every gesture goes through. Handed back rather than
+   * worked out again on the other side, which is the second implementation of
+   * "where does the camera sit" that `shared/layout.ts` warns about.
+   *
+   * Null when nothing is ringed, or when the ringed thing is the logo — which
+   * has no source to crop and no picture to take a region out of.
+   */
+  toolbar?: (picked: PictureContext | null) => ReactNode;
+  /**
+   * Which picture is ringed, or null when nothing is.
+   *
+   * The editor's, like `selectedTextId`, because the bar above the picture is
+   * the ringed picture's own controls — so the two have to agree on which one
+   * it is.
+   */
+  picture: Grabbable | null;
+  /** A picture was ringed, or the ring was taken off by a press on the board. */
+  onPickPicture: (picture: Grabbable | null) => void;
   /**
    * Drawn over the composition, inside the picture's own box.
    *
@@ -376,11 +428,15 @@ export function Preview({
   /**
    * Which picture is ringed, or null when nothing is.
    *
-   * Local to the preview. Nothing else in the editor acts on it, and a
-   * selection held in the project would have to be cleared from every place
-   * that can change the arrangement out from under it.
+   * The editor's now, where it was the preview's own for a long time. What
+   * changed is that something else acts on it: the bar over the picture turns
+   * into that picture's own controls, and the crop surface takes the whole
+   * board over for it. Still not in the project — a selection saved to disk
+   * would have to be cleared from every place that can change the arrangement
+   * out from under it.
    */
-  const [selected, setSelected] = useState<Grabbable | null>(null);
+  const selected = picture;
+  const setSelected = onPickPicture;
   /**
    * The mark being drawn, in a ref *and* in state.
    *
@@ -922,6 +978,35 @@ export function Preview({
   };
 
   /**
+   * The ringed picture and what the bar above it has to know, or null.
+   *
+   * Null for the logo as well as for nothing: the bar is about a region of
+   * footage, and a watermark is a file placed by four numbers with no source
+   * behind it. The frame's own bar stays up in both cases.
+   *
+   * Computed during render rather than in the draw loop, which is where the
+   * same `pictures()` is read sixty times a second. What it feeds is a React
+   * tree, so a frame's worth of lag is invisible and a render per frame would
+   * not be.
+   */
+  const picked = (): PictureContext | null => {
+    if (selected === null || selected === "watermark") return null;
+
+    const { screen, camera, sources } = pictures();
+    const found = selected === "screen" ? screen : camera;
+    const source = sources[selected];
+    if (!found || !source) return null;
+
+    return {
+      target: selected,
+      box: found.dstRect,
+      window: found.srcRect,
+      source,
+      rest: restingBoxes(),
+    };
+  };
+
+  /**
    * The logo's box, or null when there is none.
    *
    * Worked out here rather than read off the plan, and it is the same
@@ -1286,41 +1371,19 @@ export function Preview({
     return null;
   };
 
-  /** The keys one gesture writes, worked out from where the pointer has got to. */
   /**
-   * Both boxes exactly where they are now, as `custom` would store them.
+   * Where both pictures are right now, for `boxPatch` to seed `custom` from.
    *
-   * Written whenever a drag falls out of an arrangement, so the picture that is
-   * *not* being dragged stays where it was. Without it, resizing the screen out
-   * of a split sent the camera back to the default bubble in the corner — a
-   * jump nobody asked for, on the one gesture where the eye is on the other
-   * picture waiting to see what happens to it.
+   * Off the same `placement` every gesture is measured in, so the picture that
+   * is not being dragged keeps the box it is drawn in rather than the one its
+   * settings would rest it in.
    */
-  const seeded = (): Partial<LayoutSettings> => {
-    const unit = Math.min(frame.width, frame.height);
+  const restingBoxes = (): RestingBoxes => {
     const { screen, camera } = pictures();
-    const patch: Partial<LayoutSettings> = {};
-
-    if (screen) {
-      patch.screenX = (screen.dstRect.x + screen.dstRect.width / 2) / frame.width;
-      patch.screenY = (screen.dstRect.y + screen.dstRect.height / 2) / frame.height;
-      patch.screenWidth = screen.dstRect.width / unit;
-      patch.screenHeight = screen.dstRect.height / unit;
-    }
-
-    if (camera) {
-      patch.cameraX = (camera.dstRect.x + camera.dstRect.width / 2) / frame.width;
-      patch.cameraY = (camera.dstRect.y + camera.dstRect.height / 2) / frame.height;
-      patch.cameraWidth = camera.dstRect.width / unit;
-      patch.cameraHeight = camera.dstRect.height / unit;
-      // Which dressing it had, so `custom` can keep it. Without this, dragging
-      // the screen out of a split turned the camera beside it from a
-      // square-cornered card into a round bubble — a change to the picture the
-      // user was not touching.
-      patch.cameraCard = camera.card;
-    }
-
-    return patch;
+    return {
+      screen: screen?.dstRect ?? null,
+      camera: camera ? { ...camera.dstRect, card: camera.card } : null,
+    };
   };
 
   /** The keys one gesture writes, worked out from where the pointer has got to. */
@@ -1543,81 +1606,19 @@ export function Preview({
           );
 
     caught.current = { x: dragged.hitX, y: dragged.hitY };
-    const box = dragged.box;
 
-    const centre = {
-      x: (box.x + box.width / 2) / frame.width,
-      y: (box.y + box.height / 2) / frame.height,
-    };
-
-    if (grip.target === "watermark") {
-      // Nothing to seed and no arrangement to fall out of: the logo is placed
-      // by its own four numbers in every composition, so a drag writes them and
-      // there is nothing else to keep in step.
-      const patch: Partial<WatermarkSettings> = {
-        watermarkX: centre.x,
-        watermarkY: centre.y,
-      };
-
-      if (grip.kind === "resize") {
-        patch.watermarkWidth = box.width / unit;
-        patch.watermarkHeight = box.height / unit;
-      }
-
-      return { section: "watermark", patch };
-    }
-
-    if (grip.target === "camera") {
-      // The `over-*` arrangements and `custom` already leave the camera's box
-      // to its own settings, so neither moving nor resizing it there is a
-      // change of arrangement at all: write the box and leave the preset be.
-      // Forcing `custom` on any resize also froze the *screen* box, which is
-      // how pulling a corner of the bubble quietly disconnected the padding
-      // slider from the picture beside it.
-      //
-      // Anywhere else the arrangement placed the camera. Moving it is a request
-      // for the arrangement that does not — keeping whatever full-bleed or
-      // padded look the screen already had, because that is not what was being
-      // changed. Resizing it has no `over-*` answer, the camera being given a
-      // shape of its own, which is what `custom` is for.
-      const placed = detached(layout.preset) !== null;
-      const loose = !placed ? null : grip.kind === "resize" ? "custom" : detached(layout.preset);
-      const detaching = loose !== null && loose !== layout.preset;
-
-      const patch: Partial<LayoutSettings> = {
-        ...(detaching ? seeded() : {}),
-        cameraX: centre.x,
-        cameraY: centre.y,
-      };
-
-      if (grip.kind === "resize") {
-        patch.cameraWidth = box.width / unit;
-        patch.cameraHeight = box.height / unit;
-      }
-      if (detaching) {
-        patch.preset = loose!;
-        // `camera-*` ignores the toggle, so the camera may have been on screen
-        // with it switched off. The arrangement it lands in respects it.
-        patch.cameraVisible = true;
-      }
-
-      return { section: "layout", patch };
-    }
-
-    // The screen has no free-standing arrangement to fall back on: every
-    // arrangement that placed it owns its box, so moving or resizing it is
-    // `custom` by definition.
-    return {
-      section: "layout",
-      patch: {
-        ...(layout.preset === "custom" ? {} : seeded()),
-        preset: "custom",
-        screenX: centre.x,
-        screenY: centre.y,
-        screenWidth: box.width / unit,
-        screenHeight: box.height / unit,
-      },
-    };
+    // The leaves themselves are `boxes.ts`'s, which the picture bar's typed
+    // numbers and the crop surface's Done also go through. Everything above
+    // this line is about the pointer; everything below it was the same three
+    // branches written a second time.
+    return boxPatch(
+      grip.target,
+      grip.kind === "resize",
+      dragged.box,
+      frame,
+      layout,
+      restingBoxes(),
+    );
   };
 
   return (
@@ -1688,6 +1689,33 @@ export function Preview({
           pixels scaled once, and so the handles hanging off its corners are not
           clipped by anything — this box has no overflow of its own. */}
       <div className="relative" style={{ width: fitted.width, height: fitted.height }}>
+        {/* Anchored to the picture rather than to the top of the window, so it
+            stays with the thing it is about: a 9:16 composition leaves most of
+            the board empty, and a bar pinned under the title bar was a long
+            way from a narrow picture with nothing between them. `bottom-full`
+            puts it in the headroom the stage already holds clear — see
+            `headroom`, which is what guarantees there is room up there for it.
+
+            `z-30` over the ring and the handles, which can hang above the
+            picture's top edge on a composition resized past the frame. */}
+        {toolbar && (
+          <div
+            // `inset-x-0` and a centring flex rather than `left-1/2` and a
+            // translate: an absolutely positioned box is shrink-to-fit *within
+            // what is left of its containing block*, so anchoring at the
+            // halfway mark left the bar half the picture's width to lay out in
+            // and the frame's size wrapped onto two lines. Spanning the box and
+            // centring inside it gives the bar its whole width, and `flex-none`
+            // lets it stay centred where it is wider than the picture.
+            //
+            // `pointer-events-none` on the strip and `auto` on the bar: the
+            // strip covers the headroom above the picture, and without it the
+            // invisible half of it would swallow presses meant for the board.
+            className="pointer-events-none absolute inset-x-0 bottom-full z-30 mb-3 flex justify-center"
+          >
+            <span className="pointer-events-auto flex-none">{toolbar(picked())}</span>
+          </div>
+        )}
         {/* The background's own colours, thrown on the board behind the
             composition — see `ambience.ts`. Outside the picture on every side
             and heavily blurred, so what reaches the eye is light rather than a
@@ -1868,6 +1896,12 @@ export function Preview({
       {ready && (
         <div
           className="absolute inset-0"
+          // Named by attribute for the documentation screenshots, which have to
+          // press the composition to ring it: the canvas above takes no
+          // pointer, so the thing a shot clicks is this. Same convention as
+          // `data-panel='inspector'` — `gallery/shots.tsx` finds it this way so
+          // the utilities above can be rearranged without breaking a shot.
+          data-stage="composition"
           onPointerEnter={() => {
             canvasBox.current = canvas.current?.getBoundingClientRect() ?? null;
           }}
@@ -2615,31 +2649,4 @@ function pulledPoints(
 
     return { x: x / Math.max(frame.width, 1), y: y / Math.max(frame.height, 1) };
   });
-}
-
-/**
- * The arrangement to fall into when the bubble is picked up, or null.
- *
- * The `over-*` arrangements already leave the camera free, so dragging inside
- * one changes nothing structural. Every other arrangement placed the bubble,
- * and moving it is a request to stop.
- */
-function detached(preset: LayoutSettings["preset"]): LayoutSettings["preset"] | null {
-  switch (preset) {
-    case "over-full":
-    case "over-padded":
-    case "custom":
-      return null;
-    // Dragged out of its corner, the person keeps the screen they were
-    // standing on: `over-full` is this arrangement with the box handed back to
-    // the camera's own four numbers. `over-padded` would put a margin round a
-    // picture that was full-bleed a moment ago, which is not what moving
-    // somebody asked for.
-    case "over-cutout":
-      return "over-full";
-    case "split":
-    case "camera-full":
-    default:
-      return "over-padded";
-  }
 }

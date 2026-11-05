@@ -325,6 +325,15 @@ export function CameraIcon() {
   );
 }
 
+/** Lucide's `crop`. Two corners of a rectangle, which is the gesture. */
+export function CropIcon() {
+  return (
+    <svg {...STROKE} strokeWidth={1.75} aria-hidden="true">
+      <path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" />
+    </svg>
+  );
+}
+
 export function ZoomInIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

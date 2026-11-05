@@ -211,6 +211,23 @@ export interface LayoutSettings {
   screenOffsetX: number;
   screenOffsetY: number;
   /**
+   * How far into the recording's own picture to crop.
+   *
+   * 1 shows all of it; above that tightens in on the middle, which with
+   * `screenOffsetX/Y` is how a region of the take is chosen. The exact twin of
+   * `cameraZoom`, down to the arithmetic in `place` — it crops the source
+   * rather than resizing the box, which is `screenWidth`/`screenHeight`.
+   *
+   * Deliberately not a slider, and that is the whole of why it is named a crop:
+   * the static screen *zoom* was taken out because how far into the recording
+   * to push is what a zoom moment answers, and two controls for one question
+   * are two ways for the preview and the timeline to disagree. See `NO_ZOOM` in
+   * `shared/layout.ts`. This is written only by the crop tool, which is a
+   * statement about which pixels of the take are in play at all, and a zoom
+   * moment pushes into whatever it leaves.
+   */
+  screenCrop: number;
+  /**
    * What is being drawn attention to, or nothing.
    *
    * A screenshot's own, and there is no static equivalent on a recording for
@@ -1803,6 +1820,8 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   screenHeight: 1,
   screenOffsetX: 0,
   screenOffsetY: 0,
+  // The whole recording, which is every project until the crop tool is used.
+  screenCrop: 1,
   // Flat, unfocused, and inert at every one of these defaults — so a plan built
   // from a project that has never seen them is the plan it always was.
   focusMode: "none",

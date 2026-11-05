@@ -1342,7 +1342,7 @@ export function buildRenderPlan(
       sources.screen,
       slot.area,
       slot.fit,
-      NO_ZOOM,
+      layout.screenCrop,
       layout.screenOffsetX,
       layout.screenOffsetY,
     );
@@ -8200,7 +8200,14 @@ export function placement(
 
   const fitted =
     which === "screen"
-      ? place(source, slot.area, slot.fit, NO_ZOOM, layout.screenOffsetX, layout.screenOffsetY)
+      ? place(
+          source,
+          slot.area,
+          slot.fit,
+          layout.screenCrop,
+          layout.screenOffsetX,
+          layout.screenOffsetY,
+        )
       : place(
           source,
           slot.area,
@@ -8367,19 +8374,21 @@ function halves(area: Rect, gap: number): [Rect, Rect] {
 }
 
 /**
- * What the screen is placed at, now that it has no zoom of its own.
+ * What the screen is placed at where nothing has cropped it.
  *
- * The static `screenZoom` slider is gone: how far into the recording to push is
- * what a zoom moment answers, and two controls for one question are two ways
- * for the shot in the preview and the shot on the timeline to disagree. The
- * camera keeps its own, which crops a different picture entirely.
+ * The static `screenZoom` slider is gone and is not coming back: how far into
+ * the recording to push is what a zoom moment answers, and two controls for one
+ * question are two ways for the shot in the preview and the shot on the
+ * timeline to disagree. What the screen has instead is `screenCrop`, which this
+ * is the resting value of — a crop says which pixels of the take are in play at
+ * all, and a zoom moment pushes into whatever it leaves.
  *
  * A screenshot has no zoom either, and for a plainer reason: the picture can be
  * resized by dragging a corner, so a slider that made it bigger would be the
  * same statement twice. What it has instead is a focus area — see
  * `LayoutSettings.focusMode`.
  */
-const NO_ZOOM = 1;
+export const NO_ZOOM = 1;
 
 /**
  * Where a picture lands, and which part of it is shown.

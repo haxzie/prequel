@@ -57,12 +57,24 @@ import { ExportDialog } from "./ExportDialog";
 import { FeedbackDialog } from "./FeedbackDialog";
 import { UpgradeDialog } from "./UpgradeDialog";
 import { FrameBar } from "./FrameBar";
+import { BarSwap } from "./BarSwap";
+import { CropStage } from "./CropStage";
+import { CropBar, PictureBar } from "./PictureBar";
+import {
+  boxPatch,
+  clampCrop,
+  cropPatch,
+  flipCrop,
+  type Grabbable,
+  type RestingBoxes,
+} from "./boxes";
 import { Inspector, PANEL_WIDTH, type CategoryId } from "./Inspector";
 import { PlaybackControls } from "./PlaybackControls";
 import { maskRegions } from "../../../shared/annotations";
+import type { PlanSource, Rect, Size } from "../../../shared/layout";
 import { AnnotateBar, stillShortcut } from "./AnnotateBar";
 import { Annotations } from "./Annotations";
-import { Preview, type Grab, type Picked } from "./Preview";
+import { Preview, type Grab, type Picked, type PictureContext } from "./Preview";
 import { asCard } from "./poster";
 import { previewReady } from "./ready";
 import { matteKey, mediaKey, segmentAt, segmentsOf } from "./segments";
@@ -1723,6 +1735,224 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [session.media],
   );
 
+  /**
+   * Which picture in the composition is ringed, or null.
+   *
+   * Here rather than inside `Preview`, where it was for a long time, for the
+   * reason `panelTab` is here: something outside the preview acts on it now.
+   * The bar over the picture is the ringed picture's own controls, and Done and
+   * Cancel on that bar take the ring off.
+   */
+  const [picture, setPicture] = useState<Grabbable | null>(null);
+  /**
+   * The project as it was when the ring went on, for Cancel to restore.
+   *
+   * A whole project rather than the handful of leaves the bar writes — see the
+   * `revert` action, which spells out why putting the numbers back is not the
+   * same as putting the project back.
+   */
+  const beforePicture = useRef<Project | null>(null);
+  /** Read by the handlers below, which must not close over a stale project. */
+  const projectNow = useRef(state.project);
+  projectNow.current = state.project;
+  const ringed = useRef<Grabbable | null>(null);
+  ringed.current = picture;
+
+  /**
+   * The crop in progress, or null.
+   *
+   * Everything the commit needs, taken when the surface opens rather than read
+   * as it closes: the crop surface is the only thing on the board while it is
+   * up — no timeline, no inspector, no transport — so the box the picture rests
+   * in and the arrangement it is in cannot change underneath it. Reading them
+   * at the end would be two chances for them to be different numbers for no
+   * gain.
+   */
+  const [cropping, setCropping] = useState<{
+    target: PlanSource;
+    /** The take's own dimensions, which is the space `crop` is measured in. */
+    size: Size;
+    /** Where the picture rests, for `cropPatch` to shape its box inside. */
+    drawn: Rect;
+    rest: RestingBoxes;
+    /**
+     * Whether the take is drawn the other way round.
+     *
+     * The camera usually is. Carried rather than read at the end, like
+     * everything else here, and it is what makes the rectangle below mean
+     * something: a crop is in the coordinates of the picture it was dragged
+     * on, and those are the file's own only when nothing flipped it.
+     */
+    mirrored: boolean;
+    /**
+     * The region that stays, in the coordinates of what is *drawn*. Dragged on
+     * the surface, typed in the bar, and reflected into the file's own on the
+     * way to a setting — see `flipCrop`.
+     */
+    crop: Rect;
+  } | null>(null);
+
+  /** One dispatch per key, because that is what the override bookkeeping counts
+      in: a gesture that writes five keys has to mark five keys as set for this
+      clip, or resetting one of them would take its neighbours with it. */
+  const writeSettings = useCallback(
+    (section: "background" | "layout" | "watermark", patch: Record<string, unknown>) => {
+      for (const [key, value] of Object.entries(patch)) {
+        dispatch({ type: "setSetting", section, key, value });
+      }
+    },
+    [dispatch],
+  );
+
+  /**
+   * A picture was ringed, or the ring was taken off by a press on the board.
+   *
+   * The snapshot is taken here and nowhere else, which is what makes Cancel
+   * mean "since you selected it". Only on the way in from nothing: clicking
+   * straight from the recording to the camera is one session of placing things,
+   * and a second snapshot would make Cancel undo half of it.
+   */
+  const pickPicture = useCallback((next: Grabbable | null) => {
+    if (next === null) beforePicture.current = null;
+    else if (ringed.current === null) beforePicture.current = projectNow.current;
+
+    setPicture(next);
+  }, []);
+
+  /** Done: keep it. The ring comes off, which is what puts the frame bar back. */
+  const donePicture = useCallback(() => pickPicture(null), [pickPicture]);
+
+  const cancelPicture = useCallback(() => {
+    const was = beforePicture.current;
+    // Nothing was touched, or the snapshot is already the project — `revert`
+    // declines a no-op anyway, and this keeps an undo entry off the stack.
+    if (was && was !== projectNow.current) dispatch({ type: "revert", project: was });
+    pickPicture(null);
+  }, [dispatch, pickPicture]);
+
+  /**
+   * Done on the crop: the region becomes the picture's, and the board comes
+   * back.
+   *
+   * One patch through `cropPatch`, which writes the box and the crop together —
+   * see the note there on why writing one without the other draws the wrong
+   * region in the wrong shape.
+   */
+  const doneCrop = useCallback(() => {
+    if (!cropping) return;
+
+    const { section, patch } = cropPatch(
+      cropping.target,
+      cropping.mirrored ? flipCrop(cropping.crop, cropping.size) : cropping.crop,
+      cropping.size,
+      cropping.drawn,
+      state.project.frame,
+      previewSettings.layout,
+      cropping.rest,
+    );
+    writeSettings(section, patch);
+    setCropping(null);
+  }, [cropping, state.project.frame, previewSettings.layout, writeSettings]);
+
+  /**
+   * Escape backs out of a crop, and Enter keeps it.
+   *
+   * The two keys the surface is modal enough to owe: with the timeline, the
+   * transport and the inspector all off the board, a crop somebody opened by
+   * accident has two buttons and no keyboard without this. On the window
+   * rather than the surface, because the surface rarely has focus — the press
+   * that opened the crop was on the bar.
+   */
+  useEffect(() => {
+    if (!cropping) return;
+
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCropping(null);
+      if (event.key === "Enter") doneCrop();
+    };
+
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [cropping, doneCrop]);
+
+  // Paused on the way in. The transport is not on the board while the crop is,
+  // so a recording left running would play on behind a surface with no way to
+  // stop it — and its sound would carry on with nothing on screen to explain
+  // where it was coming from.
+  useEffect(() => {
+    if (cropping) media.playback.pause();
+  }, [cropping, media.playback]);
+
+  /**
+   * The bar over the picture: the frame's, the ringed picture's, or the crop's.
+   *
+   * One slot, three bars, and never two at once — they are the same pill in the
+   * same place asking about a narrower subject each time. See `toolbar` in
+   * `Preview` for why it hangs off the composition rather than off the window.
+   */
+  const pictureToolbar = useCallback(
+    (picked: PictureContext | null) => (
+      // Keyed on which bar *and* which picture, so clicking from the recording
+      // to the camera animates too — the glyph and the name change, and a
+      // swap that happened on one frame there would read as the bar glitching
+      // rather than as the selection moving.
+      <BarSwap id={picked ? `picture:${picked.target}` : "frame"}>
+        {picked ? (
+          <PictureBar
+            target={picked.target}
+            box={picked.box}
+            canCrop={picked.source.width > 0}
+            onBox={(box, resize) => {
+              const { section, patch } = boxPatch(
+                picked.target,
+                resize,
+                box,
+                state.project.frame,
+                previewSettings.layout,
+                picked.rest,
+              );
+              writeSettings(section, patch);
+            }}
+            onCrop={() => {
+              const mirrored = picked.target === "camera" && previewSettings.layout.cameraMirror;
+              const window = clampCrop(picked.window, picked.source);
+
+              setCropping({
+                target: picked.target,
+                size: picked.source,
+                drawn: picked.box,
+                rest: picked.rest,
+                mirrored,
+                // Whatever is on show now, so the surface opens on the picture
+                // the user is already looking at rather than on the whole take —
+                // reflected like the picture itself, because that is the space
+                // the surface works in.
+                crop: mirrored ? flipCrop(window, picked.source) : window,
+              });
+            }}
+            onDone={donePicture}
+            onCancel={cancelPicture}
+          />
+        ) : (
+          <FrameBar
+            frame={state.project.frame}
+            recorded={screenSource}
+            onChange={(frame) => dispatch({ type: "setFrame", frame })}
+          />
+        )}
+      </BarSwap>
+    ),
+    [
+      state.project.frame,
+      previewSettings.layout,
+      screenSource,
+      writeSettings,
+      donePicture,
+      cancelPicture,
+      dispatch,
+    ],
+  );
+
   useAutoFrame(state.project.frame, screenSource, dispatch);
   useFirstCut(session, state, dispatch);
   usePersistence(session, state.project, state.revision, superseded);
@@ -1844,141 +2074,163 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               on it; the stage below carries the headroom the bar needs, so
               nothing is ever behind it. */}
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-            {/* `pointer-events-none` on the strip and `auto` on the bar: this
-                spans the full width to centre its contents, and without it the
-                invisible half of the strip would swallow every click meant for
-                the board — including the one that deselects. */}
-            {/* Inset by the panel for the same reason the stage is: this
-                column now runs the full width of the board, and a bar centred
-                in it would sit off-centre over the part of the board anybody
-                can see. */}
-            {/* Above the picture, under the title bar. It sat below for a
-                while, in the space the transport occupies on the other side of
-                the seam — which balanced the window and put the frame's own
-                controls at the far end from the frame. */}
-            <div
-              className="pointer-events-none absolute inset-x-0 z-20 flex justify-center transition-[padding] duration-200 ease-out"
-              style={{ top: TITLE_BAR, paddingRight: panelOpen ? PANEL_WIDTH : 0 }}
-            >
-              <span className="pointer-events-auto">
-                <FrameBar
-                  frame={state.project.frame}
-                  recorded={screenSource}
-                  onChange={(frame) => dispatch({ type: "setFrame", frame })}
-                />
-              </span>
-            </div>
-            <Preview
-              // The room the floating panel needs. The stage keeps the picture
-              // out from under it while the board itself runs the whole width.
-              inset={panelOpen ? PANEL_WIDTH : undefined}
-              // The room the two bars above need, and then the same gutter the
-              // picture has from the transport below it. Written as one sum so
-              // the two gaps are the same number rather than two numbers that
-              // happen to agree: the space over the picture and the space under
-              // it are read together, and a window where they differ by four
-              // pixels looks like it is sagging.
-              headroom={`calc(${TITLE_BAR} + ${FRAME_BAR} + 1.5rem)`}
-              // And the room the tool row needs, on a screenshot: it floats
-              // over the board too, so the picture has to clear it the way it
-              // clears the frame bar. Its own gutter plus the one it is
-              // anchored at — `bottom-6` on the strip above — so the gap over
-              // the bar is the gap under it.
-              footroom={still ? `calc(${ANNOTATE_BAR} + 3rem)` : "1.5rem"}
-              ready={ready}
-              frame={state.project.frame}
-              // `drawnSettings`, not `previewSettings`: the compositor looks the
-              // cue bitmaps up by `captionLook(settings.captions)`, so handing
-              // it the project's font while `useCaptions` rasterised the
-              // hovered one would miss the key and fall through to the stale
-              // set — the hover would cost the work and show nothing.
-              settings={drawnSettings}
-              enter={previewEnter}
-              media={media}
-              shot={shot}
-              // Only for a screenshot. A mark is drawn by one 2D painter the
-              // preview and the still export share, and a recording's export
-              // goes through Rust — which does not share it. On a recording the
-              // marks would be in the preview and missing from the file; see
-              // `shared/annotations.ts`.
-              overlay={
-                still
-                  ? (drawing) => (
-                      <Annotations
-                        // The *project's* frame, which is what the picture
-                        // beside it is drawn at — not the export's, which is
-                        // the same shape scaled. Every coordinate here is a
-                        // fraction, so the two would agree; the one that
-                        // matches the canvas is the one to paint in.
-                        frame={state.project.frame}
-                        annotations={state.project.annotations}
-                        drawing={drawing}
-                        ink={state.ink}
-                      />
-                    )
-                  : undefined
-              }
-              // The marks themselves go to the preview, which is where every
-              // gesture on the picture is worked out — see `Preview.marks`.
-              // Only on a screenshot: a recording has none, and handing it an
-              // empty list would put a hit test on every frame of one.
-              marks={still ? state.project.annotations : undefined}
-              tool={still ? state.tool : null}
-              selectedMarkId={state.selectedAnnotationId}
-              // The masks among them, resolved to the frame the preview draws.
-              // `maskRegions` is the only thing that puts a mark in a plan, and
-              // this is the only call that reaches the preview's — see the note
-              // on `buildSlices`'s own flag for what must never be handed one.
-              masks={masks}
-              onPickMark={pickMark}
-              onDrawMark={(kind, points) => {
-                dispatch({ type: "addAnnotation", kind, points });
-                // The tool is put down once it has drawn, so the mark can be
-                // nudged and recoloured straight away. Drawing three arrows is
-                // three presses of the tool, which is the trade: the
-                // alternative leaves somebody who has finished drawing unable
-                // to click anything without drawing again.
-                dispatch({ type: "pickTool", tool: null });
-              }}
-              onDragMark={(annotationId, drag) => {
-                // A fresh gesture gets its own undo entry rather than joining
-                // the last one's — see `beginEdit`.
-                if (drag.kind === "move") {
-                  dispatch({ type: "moveAnnotation", annotationId, by: drag.by });
-                } else {
-                  dispatch({ type: "setAnnotation", annotationId, patch: { points: drag.points } });
+            {/* The bar that was pinned here, under the title bar, is anchored
+                to the composition now — see `toolbar` on `Preview`. It sat up
+                here for as long as the only thing on it was the frame's own
+                size, which is a statement about the window; once it became the
+                selected picture's controls it had to be beside the picture. On
+                a 9:16 composition the two were most of the board apart.
+
+                The strip it lived in is gone with it, and so is the inset that
+                kept it clear of the panel: the bar is centred on the picture,
+                which the stage already holds out from under the panel. */}
+            {cropping ? (
+              <CropStage
+                source={
+                  cropping.target === "camera"
+                    ? media.getElement("camera")
+                    : (shot ?? media.getElement("screen"))
                 }
-              }}
-              images={images}
-              cursor={session.cursor}
-              clicks={session.clicks}
-              blobs={session.blobs}
-              zooms={state.project.zooms}
-              cues={captions.byLook}
-              texts={placedTexts}
-              rendered={textBitmaps.rendered}
-              tags={cursorTags}
-              selectedTextId={state.selectedTextId}
-              grab={grab}
-              onPick={showPanelFor}
-              onPickText={pickText}
-              onDragText={(textId, drag) => {
-                if (drag.kind === "move") {
-                  dispatch({ type: "setText", textId, patch: { x: drag.x, y: drag.y } });
-                } else {
-                  dispatch({ type: "sizeText", textId, sizes: drag.sizes });
+                size={cropping.size}
+                crop={cropping.crop}
+                mirrored={cropping.mirrored}
+                onChange={(crop) => setCropping((held) => (held ? { ...held, crop } : held))}
+                headroom={`calc(${TITLE_BAR} + ${FRAME_BAR} + 1.5rem)`}
+                footroom="3rem"
+                toolbar={
+                  <CropBar
+                    target={cropping.target}
+                    crop={cropping.crop}
+                    size={cropping.size}
+                    onCropChange={(crop) =>
+                      setCropping((held) =>
+                        held ? { ...held, crop: clampCrop(crop, held.size) } : held,
+                      )
+                    }
+                    onReset={() =>
+                      setCropping((held) =>
+                        held ? { ...held, crop: { x: 0, y: 0, ...held.size } } : held,
+                      )
+                    }
+                    onDone={doneCrop}
+                    // Nothing to put back: the crop lives in this component's
+                    // own state and the project has not been touched.
+                    onCancel={() => setCropping(null)}
+                  />
                 }
-              }}
-              onDrag={(section, patch) => {
-                // One dispatch per key, because that is what the override
-                // bookkeeping counts in: a gesture that writes five keys has to
-                // mark five keys as set for this clip, or resetting one of them
-                // would take its neighbours with it.
-                for (const [key, value] of Object.entries(patch)) {
-                  dispatch({ type: "setSetting", section, key, value });
+              />
+            ) : (
+              <Preview
+                toolbar={pictureToolbar}
+                picture={picture}
+                onPickPicture={pickPicture}
+                // The room the floating panel needs. The stage keeps the picture
+                // out from under it while the board itself runs the whole width.
+                inset={panelOpen ? PANEL_WIDTH : undefined}
+                // The room the two bars above need, and then the same gutter the
+                // picture has from the transport below it. Written as one sum so
+                // the two gaps are the same number rather than two numbers that
+                // happen to agree: the space over the picture and the space under
+                // it are read together, and a window where they differ by four
+                // pixels looks like it is sagging.
+                headroom={`calc(${TITLE_BAR} + ${FRAME_BAR} + 1.5rem)`}
+                // And the room the tool row needs, on a screenshot: it floats
+                // over the board too, so the picture has to clear it the way it
+                // clears the frame bar. Its own gutter plus the one it is
+                // anchored at — `bottom-6` on the strip above — so the gap over
+                // the bar is the gap under it.
+                footroom={still ? `calc(${ANNOTATE_BAR} + 3rem)` : "1.5rem"}
+                ready={ready}
+                frame={state.project.frame}
+                // `drawnSettings`, not `previewSettings`: the compositor looks the
+                // cue bitmaps up by `captionLook(settings.captions)`, so handing
+                // it the project's font while `useCaptions` rasterised the
+                // hovered one would miss the key and fall through to the stale
+                // set — the hover would cost the work and show nothing.
+                settings={drawnSettings}
+                enter={previewEnter}
+                media={media}
+                shot={shot}
+                // Only for a screenshot. A mark is drawn by one 2D painter the
+                // preview and the still export share, and a recording's export
+                // goes through Rust — which does not share it. On a recording the
+                // marks would be in the preview and missing from the file; see
+                // `shared/annotations.ts`.
+                overlay={
+                  still
+                    ? (drawing) => (
+                        <Annotations
+                          // The *project's* frame, which is what the picture
+                          // beside it is drawn at — not the export's, which is
+                          // the same shape scaled. Every coordinate here is a
+                          // fraction, so the two would agree; the one that
+                          // matches the canvas is the one to paint in.
+                          frame={state.project.frame}
+                          annotations={state.project.annotations}
+                          drawing={drawing}
+                          ink={state.ink}
+                        />
+                      )
+                    : undefined
                 }
-              }}
-            />
+                // The marks themselves go to the preview, which is where every
+                // gesture on the picture is worked out — see `Preview.marks`.
+                // Only on a screenshot: a recording has none, and handing it an
+                // empty list would put a hit test on every frame of one.
+                marks={still ? state.project.annotations : undefined}
+                tool={still ? state.tool : null}
+                selectedMarkId={state.selectedAnnotationId}
+                // The masks among them, resolved to the frame the preview draws.
+                // `maskRegions` is the only thing that puts a mark in a plan, and
+                // this is the only call that reaches the preview's — see the note
+                // on `buildSlices`'s own flag for what must never be handed one.
+                masks={masks}
+                onPickMark={pickMark}
+                onDrawMark={(kind, points) => {
+                  dispatch({ type: "addAnnotation", kind, points });
+                  // The tool is put down once it has drawn, so the mark can be
+                  // nudged and recoloured straight away. Drawing three arrows is
+                  // three presses of the tool, which is the trade: the
+                  // alternative leaves somebody who has finished drawing unable
+                  // to click anything without drawing again.
+                  dispatch({ type: "pickTool", tool: null });
+                }}
+                onDragMark={(annotationId, drag) => {
+                  // A fresh gesture gets its own undo entry rather than joining
+                  // the last one's — see `beginEdit`.
+                  if (drag.kind === "move") {
+                    dispatch({ type: "moveAnnotation", annotationId, by: drag.by });
+                  } else {
+                    dispatch({
+                      type: "setAnnotation",
+                      annotationId,
+                      patch: { points: drag.points },
+                    });
+                  }
+                }}
+                images={images}
+                cursor={session.cursor}
+                clicks={session.clicks}
+                blobs={session.blobs}
+                zooms={state.project.zooms}
+                cues={captions.byLook}
+                texts={placedTexts}
+                rendered={textBitmaps.rendered}
+                tags={cursorTags}
+                selectedTextId={state.selectedTextId}
+                grab={grab}
+                onPick={showPanelFor}
+                onPickText={pickText}
+                onDragText={(textId, drag) => {
+                  if (drag.kind === "move") {
+                    dispatch({ type: "setText", textId, patch: { x: drag.x, y: drag.y } });
+                  } else {
+                    dispatch({ type: "sizeText", textId, sizes: drag.sizes });
+                  }
+                }}
+                onDrag={writeSettings}
+              />
+            )}
 
             {/* The still's verbs, floating over the board at the bottom in the
                 same material the frame picker wears at the top — see
@@ -1989,7 +2241,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 full-width strip and `auto` on the pill, or the invisible half
                 would swallow every press meant for the board underneath,
                 including the one that deselects. */}
-            {still && (
+            {still && !cropping && (
               <div
                 className={
                   "pointer-events-none absolute inset-x-0 bottom-6 z-20 flex justify-center " +
@@ -2047,8 +2299,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               the icons sit in it. The composition still takes the space back —
               through the stage's padding now rather than through this width,
               which is why both carry the same transition. */}
+          {/* Put away entirely while a crop is in progress, rather than
+              disabled. The crop is a decision about the footage, and a column
+              of controls for the padding, the background and the bubble beside
+              it is a page of answers to a question nobody is asking yet — all
+              of which would move the thing being judged. It comes back with the
+              picture, showing the same tab it was on. */}
           <div
-            aria-hidden={!panelOpen}
+            aria-hidden={!panelOpen || cropping !== null}
             // Named by attribute for the documentation screenshots, which clip
             // to this box: `gallery/shots.tsx` finds it this way rather than by
             // class, so the utilities above can be rearranged without moving
@@ -2057,12 +2315,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             className={cn(
               "absolute right-0 bottom-0 z-30 flex overflow-hidden",
               "transition-[width,opacity] duration-200 ease-out",
-              panelOpen ? "opacity-100" : "pointer-events-none opacity-0",
+              panelOpen && !cropping ? "opacity-100" : "pointer-events-none opacity-0",
             )}
             // `top` rather than `inset-y-0`: the board reaches the top of the
             // window and this must not, or it would slide up behind the title
             // bar's own controls.
-            style={{ top: TITLE_BAR, width: panelOpen ? PANEL_WIDTH : 0 }}
+            style={{ top: TITLE_BAR, width: panelOpen && !cropping ? PANEL_WIDTH : 0 }}
           >
             <Inspector
               state={state}
@@ -2210,7 +2468,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
             length. Absent rather than disabled, so the picture takes the room
             back — a still is one composition being looked at, and the two rows
             are a third of the window. */}
-        {!still && (
+        {!still && !cropping && (
           <>
             <PlaybackControls
               media={media}

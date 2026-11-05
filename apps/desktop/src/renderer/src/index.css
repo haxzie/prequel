@@ -188,6 +188,29 @@
      crosses. `linear`, because a shimmer that eased would read as something
      being pointed at rather than light passing over it. */
   --animate-shape-sheen: shape-sheen 620ms linear var(--shape-delay, 0ms) both;
+  /* One bar over the composition replaced by another — the frame's, a picture's
+     and the crop's are the same pill showing a narrower subject each time, and
+     swapping their contents on a single frame read as a flicker. Both move the
+     same few pixels and in opposite directions, so the pair reads as one thing
+     being exchanged rather than as a carousel. The exit is quicker and on a
+     sharper curve, and holds its end frame: it is a control already gone, and
+     it must not flash back for the tick before it unmounts. */
+  --animate-bar-in: bar-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-bar-out: bar-out 130ms cubic-bezier(0.4, 0, 1, 1) forwards;
+
+  @keyframes bar-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0) scale(0.96);
+    }
+  }
+
+  @keyframes bar-out {
+    to {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0) scale(0.96);
+    }
+  }
 
   @keyframes view-in {
     from {

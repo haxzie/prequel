@@ -9,6 +9,7 @@ import {
 } from "../../../shared/presets";
 import type { Size } from "../../../shared/layout";
 import { cn } from "../lib/cn";
+import { PillNumber } from "./controls/PillNumber";
 import { FLOATING } from "./surfaces";
 
 export interface Frame {
@@ -145,15 +146,17 @@ export function FrameBar({
       </button>
 
       <div className="flex items-center gap-1.5 text-xs">
-        <SizeField
+        <PillNumber
           label="Width"
           value={frame.width}
+          normalise={evenSize}
           onChange={(width) => onChange({ ...frame, width, presetId: null })}
         />
         <span className="text-editor-fg">×</span>
-        <SizeField
+        <PillNumber
           label="Height"
           value={frame.height}
+          normalise={evenSize}
           onChange={(height) => onChange({ ...frame, height, presetId: null })}
         />
       </div>
@@ -226,37 +229,6 @@ export function FrameBar({
         </ul>
       )}
     </div>
-  );
-}
-
-function SizeField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState<string | null>(null);
-
-  return (
-    <input
-      aria-label={label}
-      className="w-16 rounded-full bg-transparent px-2 py-1 text-center tabular-nums outline-none hover:bg-white/5 focus:bg-white/10"
-      value={draft ?? String(value)}
-      // Held as text while being typed: committing on every keystroke would
-      // clamp "10" to the minimum before "1080" could be finished.
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => {
-        if (draft !== null) onChange(evenSize(Number(draft) || value));
-        setDraft(null);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
-        if (event.key === "Escape") setDraft(null);
-      }}
-    />
   );
 }
 

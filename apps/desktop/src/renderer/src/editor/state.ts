@@ -512,6 +512,21 @@ export type EditorAction =
   | { type: "trimText"; textId: string; edge: "start" | "end"; at: MediaTime }
   | { type: "undo" }
   /**
+   * Puts the project back exactly as it was, a gesture having been cancelled.
+   *
+   * The whole project and not a list of leaves, which is the point of it: the
+   * picture bar writes positions, sizes, a crop and sometimes an arrangement,
+   * and some of those are marked as this clip's own on the way in. Restoring
+   * the values alone would leave the clip overriding every one of them at the
+   * number it started at — so it would stop following a change made to the
+   * project afterwards, and nothing on screen would say why.
+   *
+   * One step of undo, like every other one-shot action. The snapshot is the
+   * caller's: it is taken when the gesture begins, which is the only moment
+   * anybody knows what "as it was" means.
+   */
+  | { type: "revert"; project: Project }
+  /**
    * A new drag is starting, so it must not join the previous one's undo entry.
    *
    * Dispatched on pointer-down by anything that then streams edits. Two drags of
@@ -711,6 +726,10 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     case "applyPreset":
     case "applyToAll":
     case "setFrame":
+    // And the third: Cancel on the picture bar restores a snapshot, which is
+    // one press undoing a gesture — so it is one step, and pressing Cancel by
+    // mistake has a way back.
+    case "revert":
       return { coalesce: null };
 
     // Dragged, so every one of these arrives as a stream keyed by what is being
@@ -974,6 +993,9 @@ function apply(
 
     case "setFrame":
       return edit(state, (project) => framed({ ...project, frame: action.frame }));
+
+    case "revert":
+      return edit(state, () => action.project);
 
     // Persisted with the rest of the edit rather than kept in the dialog: a
     // recording exported once as a GIF is nearly always exported as a GIF the

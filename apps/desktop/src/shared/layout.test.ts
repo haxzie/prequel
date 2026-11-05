@@ -2383,6 +2383,38 @@ describe("the screen is never stretched", () => {
     }
   });
 
+  it("samples a tighter window where the recording is cropped", () => {
+    // The crop tool's half of the statement, in the plan the exporter reads.
+    // `boxes.test.ts` pins the arithmetic that writes these numbers; this pins
+    // that the plan honours them, which is the half that reaches a file.
+    const frame = { width: 1920, height: 1080 };
+    const whole = buildRenderPlan(
+      frame,
+      { screen: SCREEN, camera: null },
+      settings({ layout: { ...settings().layout, preset: "over-full" } }),
+    );
+    const cropped = buildRenderPlan(
+      frame,
+      { screen: SCREEN, camera: null },
+      settings({
+        layout: { ...settings().layout, preset: "over-full", screenCrop: 2, screenOffsetX: 0.1 },
+      }),
+    );
+
+    const before = image(whole, "screen")!;
+    const after = image(cropped, "screen")!;
+
+    expect(after.srcRect.width).toBeCloseTo(before.srcRect.width / 2, 5);
+    expect(after.srcRect.height).toBeCloseTo(before.srcRect.height / 2, 5);
+    // A tenth of the source to the right of where it started, and still the
+    // same shape as the box it is drawn into.
+    expect(after.srcRect.x - before.srcRect.x).toBeCloseTo(
+      SCREEN.width * 0.1 + before.srcRect.width / 4,
+      5,
+    );
+    expect(after.dstRect).toEqual(before.dstRect);
+  });
+
   it("never samples outside either recording, in any arrangement", () => {
     for (const frame of FRAMES) {
       for (const preset of PRESETS) {
