@@ -496,18 +496,24 @@ export class CaptureFlow {
    * recording.
    *
    * The switch *and* the source, because from the tray they are one decision:
-   * somebody choosing "Screenshot a Window" has said both, and leaving the
-   * panel on video would open a window picker whose confirm button starts
-   * recording.
+   * somebody choosing "Screenshot a Window" has said both, so the card over
+   * the window offers the one thing that was asked for rather than asking
+   * again.
    *
    * Through the same picker a recording goes through rather than shooting on
-   * the spot. The overlay is what names the target — and the confirm button
-   * there already reads the capture mode, so the one path to a capture stays
-   * one path. See `capture`.
+   * the spot. The overlay is what names the target, so the one path to a
+   * capture stays one path. See `capture`.
    */
   shootMode(mode: ScreenMode): void {
     this.setCaptureMode("photo");
-    this.openMode(mode);
+    this.showDock();
+
+    // Through `chooseMode` rather than `openMode`, for the one argument:
+    // somebody who picked "Screenshot a Window" has already answered the
+    // question the card asks, so the card does not ask it again.
+    void this.chooseMode(mode, ["photo"]).catch((cause) => {
+      console.warn("[flow] could not open the picker:", cause);
+    });
   }
 
   /** Opens a recording for editing, hiding the recorder's floating UI. */
@@ -677,14 +683,19 @@ export class CaptureFlow {
   }
 
   /**
-   * Switches between recording and taking a screenshot.
+   * Records what the next capture is, and what the last one was.
    *
-   * Reopens the picker when one is up, rather than leaving the overlay to be
-   * corrected. The panel sits *above* the overlay and this switch is live while
-   * a picker is on screen, so the card under it would otherwise go on offering
-   * "Start recording" and counting down three seconds to a still frame. A
-   * reopen is also what pressing one of the three mode buttons does, so the two
-   * behave the same.
+   * No longer a switch anybody presses: the panel's two icons are gone and the
+   * card over the picked window asks instead. What is left is the *memory* of
+   * the answer, which the panel's right-hand half reads — a screenshot has no
+   * camera, no microphone and nothing to read a script to, so those three come
+   * off the strip. Written by the tray's screenshot rows before the picker
+   * opens, and by `confirmSelection` from the button that was pressed.
+   *
+   * It still reopens an overlay that is up, because the tray can reach this
+   * with one on screen and the card under it would otherwise go on offering
+   * what it was opened with. A reopen is also what pressing one of the three
+   * mode buttons does, so the two behave the same.
    *
    * Nothing is cleared. The camera, the microphone and the prompter keep their
    * settings and simply stop being offered — see `syncCamera` and the prompter's
@@ -791,7 +802,7 @@ export class CaptureFlow {
    * of it is committed — and on a second monitor it is the only way to say
    * which screen, rather than silently taking whichever one the cursor was on.
    */
-  async chooseMode(mode: ScreenMode): Promise<DockState> {
+  async chooseMode(mode: ScreenMode, offers?: readonly CaptureMode[]): Promise<DockState> {
     log("info", "choosing a source", { mode });
     this.deps.preferences.update({ mode });
 
@@ -811,6 +822,8 @@ export class CaptureFlow {
     this.emit();
 
     let start = false;
+    /** Which button on the card was pressed, for the branch at the end. */
+    let chosen: CaptureMode | null = null;
     // Both pickers describe something that moves underneath them: the window
     // picker a stack that reorders, the area picker a screen that redraws.
     // Only the display's own geometry is fixed while an overlay is up.
@@ -825,9 +838,12 @@ export class CaptureFlow {
       const targets = this.pickable(await (await getRecorder()).listTargets());
       const opened = this.deps.selection.open(
         mode,
-        // What the confirm button does, which the overlay needs for its own
-        // copy, its countdown and its hint — see `SelectionSetup.capture`.
-        this.deps.preferences.get().captureMode,
+        // What the card may offer. Both unless the caller has already said
+        // which — the tray's "Screenshot a Window" has — and recording alone
+        // while a clip is being added: a screenshot is a session of its own and
+        // cannot be a clip of anything, so offering it there would be a button
+        // that abandons the addition. See `SelectionSetup.offers`.
+        offers ?? (this.extending ? ["video"] : ["photo", "video"]),
         targets,
         mode === "window" ? await windowIcons(targets) : undefined,
       );
@@ -858,6 +874,7 @@ export class CaptureFlow {
       if (result) {
         this.pending = { mode, target: result.target, crop: result.crop, label: result.label };
         start = result.start === true;
+        chosen = result.capture ?? null;
       } else if (run === this.selectionRun) {
         // Cancelled. Nothing is chosen, so nothing should look chosen — and the
         // next attempt has to be asked for, rather than the panel sitting there
@@ -892,12 +909,21 @@ export class CaptureFlow {
     // After `selecting` has been cleared, or the capture would begin against a
     // panel that still believes an overlay is up.
     //
-    // Which of the two is read here rather than carried on the result: the
-    // overlay says *that* it was confirmed, and what confirming means is the
-    // panel's own setting — so a switch flipped while the picker was up cannot
-    // leave the overlay's idea of it deciding.
+    // Which of the two is carried on the result now rather than read off the
+    // panel. It used to be the other way round, on the argument that the
+    // overlay only says *that* it was confirmed and what confirming means is
+    // the panel's own setting — but the panel has no such setting any more.
+    // The card asks, so the press is the answer, and a stale preference cannot
+    // record where a screenshot was asked for.
+    //
+    // Written back as well as read. It is what the panel's device row follows —
+    // a screenshot has no camera and no microphone to offer — and without this
+    // one still taken from the tray would leave every panel after it with those
+    // controls missing and nothing on screen able to bring them back.
     if (start) {
-      return this.deps.preferences.get().captureMode === "photo" ? this.shoot() : this.record();
+      const capture = chosen ?? this.deps.preferences.get().captureMode;
+      this.setCaptureMode(capture);
+      return capture === "photo" ? this.shoot() : this.record();
     }
 
     // A source was chosen without starting, so the countdown never ran to a

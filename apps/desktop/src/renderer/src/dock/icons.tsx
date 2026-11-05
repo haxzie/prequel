@@ -171,68 +171,6 @@ export function MicOffIcon() {
   );
 }
 
-/**
- * Record: a movie camera.
- *
- * A clapperboard would say "video" more loudly and says "editing" with it, and
- * on an 18px grid its diagonal stripes turn into noise. This is the shape
- * everything else on the strip already uses — a rounded box — with the lens
- * block that makes it a camera rather than a window.
- */
-export function VideoIcon() {
-  return (
-    <svg {...box}>
-      <rect
-        x="2"
-        y="5.5"
-        width="11"
-        height="9"
-        rx="2"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-      />
-      <path
-        d="M13 9l4.2-2.3v6.6L13 11z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/**
- * Screenshot: a picture — Jam's `picture`.
- *
- * Paired with `VideoIcon` and read against it at a glance, which on a 30px
- * button is the whole job. It was a stills camera, which lost that: two
- * cameras side by side differ only in their proportions and which end the lens
- * is at, and the thing being chosen is not which camera but whether this is a
- * film or a still. A picture is the still itself.
- *
- * The set's own box rather than the 20 the rest share, offsets and all: the
- * shape is 20 by 16 with four units of air above and below, and squaring that
- * up by hand would move the drawing rather than the numbers. It lands at the
- * dock's weight anyway — the frame's rule is two units on a box of 24, which
- * at 18px is the 1.5 the strokes beside it come out at.
- *
- * Filled rather than stroked, like the camera it replaces, so the counters in
- * it — the sun, the hill — are the panel showing through and follow whatever
- * is behind.
- */
-export function PhotoIcon() {
-  return (
-    <svg viewBox="-2 -4 24 24" aria-hidden={true}>
-      <path
-        fill="currentColor"
-        d="M18 8.503V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3.504l4.39-7.322a3 3 0 0 1 4.69-.582zm0 2.823l-3.828-3.814a1 1 0 0 0-1.563.195L8.836 14H17a1 1 0 0 0 1-1zM3 0h14a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H3a3 3 0 0 1-3-3V3a3 3 0 0 1 3-3m3 9a3 3 0 1 1 0-6a3 3 0 0 1 0 6m0-2a1 1 0 1 0 0-2a1 1 0 0 0 0 2"
-      />
-    </svg>
-  );
-}
-
 export function CloseIcon() {
   return (
     <svg {...box}>

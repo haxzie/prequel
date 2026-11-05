@@ -14,7 +14,10 @@
  */
 import { beforeEach, describe as suite, expect, it, vi } from "vitest";
 
-import type { Target } from "../../shared/contract.js";
+import type { CaptureMode, Target } from "../../shared/contract.js";
+
+/** What the card offers wherever the caller has not narrowed it. */
+const BOTH: readonly CaptureMode[] = ["photo", "video"];
 
 const DISPLAYS = [
   { id: 1, label: "Built-in Retina Display", bounds: { x: 0, y: 0, width: 1512, height: 982 } },
@@ -113,7 +116,7 @@ suite("an overlay whose zoom is not 1", () => {
     // small against a screen that had not moved.
     zoomFactor = 1.2 ** -0.5;
 
-    void overlay.open("area", "video", []);
+    void overlay.open("area", BOTH, []);
     // `loadRoute` resolves on a microtask in the fake, and the check runs with
     // the push that follows it.
     await Promise.resolve();
@@ -123,7 +126,7 @@ suite("an overlay whose zoom is not 1", () => {
   });
 
   it("is left alone when it is already 1", async () => {
-    void overlay.open("area", "video", []);
+    void overlay.open("area", BOTH, []);
     await Promise.resolve();
     await Promise.resolve();
 
@@ -135,7 +138,7 @@ suite("an overlay that asks what to show", () => {
   it("is answered for the display it covers, in area mode", () => {
     // Not awaited: the promise settles when the user picks, which is the thing
     // that never happened in the bug.
-    void overlay.open("area", "video", []);
+    void overlay.open("area", BOTH, []);
 
     const setup = overlay.setupFor(panels[0]?.webContents as never);
 
@@ -148,7 +151,7 @@ suite("an overlay that asks what to show", () => {
   });
 
   it("gives each display its own view, in screen mode", () => {
-    void overlay.open("screen", "video", []);
+    void overlay.open("screen", BOTH, []);
 
     expect(panels).toHaveLength(2);
     expect(overlay.setupFor(panels[0]?.webContents as never)?.displayId).toBe(1);
@@ -162,7 +165,7 @@ suite("an overlay that asks what to show", () => {
   });
 
   it("answers with the newest list rather than the one it opened with", () => {
-    void overlay.open("window", "video", [windowTarget(10, 0, "Before")]);
+    void overlay.open("window", BOTH, [windowTarget(10, 0, "Before")]);
 
     overlay.update([windowTarget(11, 0, "After")]);
 
@@ -170,17 +173,18 @@ suite("an overlay that asks what to show", () => {
     expect(setup?.windows.map((entry) => entry.target.title)).toEqual(["After"]);
   });
 
-  it("carries which one it is confirming, through a refresh", () => {
-    // The card's copy and its countdown come off this. The window picker
-    // re-describes itself every second while it is up, and a refresh that
-    // forgot would put "Start recording" back on a screenshot's card.
-    void overlay.open("window", "photo", [windowTarget(10, 0, "Before")]);
+  it("carries what it may confirm, through a refresh", () => {
+    // The card's two buttons come off this. The window picker re-describes
+    // itself every second while it is up, and a refresh that forgot would put
+    // a screenshot button back on a card that must not have one — which while
+    // a clip is being added is a press that abandons the addition.
+    void overlay.open("window", ["video"], [windowTarget(10, 0, "Before")]);
 
-    expect(overlay.setupFor(panels[0]?.webContents as never)?.capture).toBe("photo");
+    expect(overlay.setupFor(panels[0]?.webContents as never)?.offers).toEqual(["video"]);
 
     overlay.update([windowTarget(11, 0, "After")]);
 
-    expect(overlay.setupFor(panels[0]?.webContents as never)?.capture).toBe("photo");
+    expect(overlay.setupFor(panels[0]?.webContents as never)?.offers).toEqual(["video"]);
   });
 
   it("gives each display only the shapes found on it", () => {
@@ -189,7 +193,7 @@ suite("an overlay that asks what to show", () => {
     // somewhere else entirely on the monitor beside it — and an overlay handed
     // the wrong display's shapes would highlight empty space, with nothing in
     // a log to say why.
-    void overlay.open("area", "video", []);
+    void overlay.open("area", BOTH, []);
 
     const shapes = [{ x: 10, y: 20, width: 300, height: 200 }];
     overlay.setShapes(2, shapes);
@@ -202,22 +206,22 @@ suite("an overlay that asks what to show", () => {
     // They describe the screen as it looked then. Opening a second picker
     // means the screen has been used since, and drawing the old rectangles
     // over the new arrangement would be worse than drawing none.
-    void overlay.open("area", "video", []);
+    void overlay.open("area", BOTH, []);
     overlay.setShapes(1, [{ x: 10, y: 20, width: 300, height: 200 }]);
 
-    void overlay.open("area", "video", []);
+    void overlay.open("area", BOTH, []);
 
     expect(overlay.setupFor(panels[2]?.webContents as never)?.shapes).toEqual([]);
   });
 
   it("does not answer web contents that are not one of its overlays", () => {
-    void overlay.open("area", "video", []);
+    void overlay.open("area", BOTH, []);
 
     expect(overlay.setupFor(fakeWindow().webContents as never)).toBeNull();
   });
 
   it("has nothing to say once the overlays are gone", () => {
-    void overlay.open("area", "video", []);
+    void overlay.open("area", BOTH, []);
     const contents = panels[0]?.webContents as never;
 
     overlay.cancel();
@@ -255,7 +259,7 @@ suite("the picker's hold on Escape", () => {
   it("is taken while an overlay is on screen and cancels it", async () => {
     const { keys, overlay } = held();
 
-    const opened = overlay.open("area", "video", []);
+    const opened = overlay.open("area", BOTH, []);
     expect(keys.grabs).toBe(1);
 
     keys.cancel?.();
@@ -267,7 +271,7 @@ suite("the picker's hold on Escape", () => {
   it("is given back when the user picks something", async () => {
     const { keys, overlay } = held();
 
-    const opened = overlay.open("screen", "video", []);
+    const opened = overlay.open("screen", BOTH, []);
     const setup = overlay.setupFor(panels[0]?.webContents as never);
     overlay.choose({
       target: setup?.screenTarget as never,

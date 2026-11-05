@@ -1,5 +1,4 @@
 import type {
-  CaptureMode,
   DockMenu,
   DockMenuPick,
   DockState,
@@ -19,9 +18,7 @@ import {
   CloseIcon,
   MicIcon,
   MicOffIcon,
-  PhotoIcon,
   ScreenIcon,
-  VideoIcon,
   WindowIcon,
 } from "./icons";
 import { RecordingsIcon } from "../workspace/icons";
@@ -43,33 +40,18 @@ const MODES: { mode: ScreenMode; label: string; Icon: typeof ScreenIcon }[] = [
 ];
 
 /**
- * Record, or take a screenshot.
+ * What says a clip is being added rather than a take being started.
  *
- * Two choices in their own tray at the head of the row, because this is the
- * question asked before any of the others: what the three mode buttons beside
- * it pick, what the confirm button on the picker's card does, and whether the
- * camera, the microphone and the prompter are relevant at all.
+ * It stood where the Record-or-Screenshot switch used to, and it is the only
+ * thing left of that end of the row. The switch is gone because the question
+ * it asked — is this a recording or a still — was asked before a source had
+ * even been picked, and it only makes sense once you are looking at the thing:
+ * it is on the picker's card now, beside the window it is about. See
+ * `SelectionSetup.offers`.
  *
- * Icons rather than words. The panel is 44pt tall and the strip is sized to its
- * contents, so "Video" and "Photo" spelled out would cost about seventy points
- * of width that the device names already compete for — and the two glyphs are
- * drawn to read against each other at a glance, which is what the switch has
- * to do.
- */
-const CAPTURE_MODES: { mode: CaptureMode; label: string; Icon: typeof ScreenIcon }[] = [
-  { mode: "video", label: "Record a video", Icon: VideoIcon },
-  { mode: "photo", label: "Take a screenshot", Icon: PhotoIcon },
-];
-
-/**
- * What stands where the capture switch does while a clip is being added.
- *
- * The switch cannot be offered: a screenshot is a session of its own and
- * cannot be a clip of a recording, so one of its two choices would abandon the
- * addition — see `extendRecording`, which also forces the mode. Something has
- * to be in its place, though, because the panel is otherwise identical to the
- * one that starts a fresh take and nothing on screen would say that the next
- * press appends to a project rather than making one.
+ * This still has to be here, though, because the panel is otherwise identical
+ * to the one that starts a fresh take and nothing on screen would say that the
+ * next press appends to a project rather than making one.
  *
  * So: the clips the project already has, as a count beside the mark the app
  * window's sidebar uses for a recording — the same glyph, because this is the
@@ -259,42 +241,10 @@ export function SetupPanel({ state }: { state: DockState }) {
           at that figure the tray reads rounder than the row it sits in; held
           equal, the 2px the button's corner overshoots by is below what the
           edge of a 34px tray shows. */}
-      {/* First, in a tray of its own rather than in the one beside it. The
-          three buttons there pick *what* is captured and these two pick what
-          capturing means — one tray of five would read as five alternatives,
-          and the two halves are not alternatives to each other. */}
-      {/* A pill, where the tray beside it is a rounded square. This one sits
-          against the left end of the panel, which is now a semicircle, and a
-          rounded square inside it left two corners aimed at an arc several
-          pixels away. Its chips are circles for the same reason — the tray is
-          2px larger than they are, so a square corner on either of them would
-          be the shape the tray had just stopped being. */}
-      {state.extending ? (
-        <ClipCount takes={state.extending.takes} />
-      ) : (
-        <div
-          className="flex items-center gap-0.5 rounded-full bg-dock-group p-0.5"
-          role="radiogroup"
-          aria-label="Record or screenshot"
-        >
-          {CAPTURE_MODES.map(({ mode, label, Icon }) => {
-            const active = preferences.captureMode === mode;
-            return (
-              <IconButton
-                key={mode}
-                role="radio"
-                aria-checked={active}
-                selected={active}
-                tone="mode"
-                title={label}
-                onClick={() => void window.prequel.dock.setCaptureMode(mode)}
-              >
-                <Icon />
-              </IconButton>
-            );
-          })}
-        </div>
-      )}
+      {/* Only while a clip is being added. The row starts on the three source
+          buttons otherwise — the switch that used to head it is on the
+          picker's card now; see `ClipCount`. */}
+      {state.extending && <ClipCount takes={state.extending.takes} />}
 
       <div
         className="flex items-center gap-0.5 rounded-full bg-dock-group p-0.5"

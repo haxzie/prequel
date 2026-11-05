@@ -666,7 +666,6 @@ export const IPC_CHANNELS = {
   chooseMode: "dock:chooseMode",
   startRecording: "dock:startRecording",
   /** Renderer → main: record, or take a screenshot. */
-  setCaptureMode: "dock:setCaptureMode",
   preferences: "prefs:get",
   updatePreferences: "prefs:update",
   ensureDeviceAccess: "devices:ensureAccess",
@@ -1590,14 +1589,19 @@ export interface PickerWindow {
 export interface SelectionSetup {
   mode: ScreenMode;
   /**
-   * Whether confirming starts a recording or takes a screenshot.
+   * What confirming may do, in the order the card offers it.
    *
-   * The overlay needs it for three things, and all three would be wrong
-   * without it: what the confirm button says, whether a countdown runs — three
-   * seconds before a still frame is three seconds of nothing — and what the
-   * hint offers.
+   * A list rather than the one mode this used to carry, because the choice is
+   * made here now: the panel had a switch deciding what a confirm meant before
+   * a source had even been picked, and the question only makes sense once you
+   * are looking at the thing — the same window is worth a screenshot one minute
+   * and a recording the next.
+   *
+   * Usually both. One entry where the ask was already specific — the tray's
+   * "Screenshot a Window" has said both halves — and one entry while a clip is
+   * being added, where a screenshot is not a clip of anything. Never empty.
    */
-  capture: CaptureMode;
+  offers: readonly CaptureMode[];
   displayId: number;
   /** Human name for this display, e.g. "Built-in Retina Display". */
   displayLabel: string;
@@ -1624,13 +1628,23 @@ export interface SelectionResult {
   crop: Region | null;
   label: string;
   /**
-   * Start recording immediately rather than returning to the panel.
+   * Start capturing immediately rather than returning to the panel.
    *
-   * Set by the hovered window's "Start recording" button, which says what it
-   * does. Clicking the window itself still only chooses it, so the camera and
-   * microphone can be changed before the take begins.
+   * Set by the card's own buttons, which say what they do. Clicking the window
+   * itself still only chooses it, so the camera and microphone can be changed
+   * before the take begins.
    */
   start?: boolean;
+  /**
+   * Which of the card's buttons was pressed.
+   *
+   * Absent wherever nothing was started, because then nothing was asked: a
+   * click on a window chooses it and says nothing about what will be done with
+   * it. Read in `confirmSelection`, which used to take this off the panel's own
+   * switch — there is no switch now, and the answer belongs to the press that
+   * gave it.
+   */
+  capture?: CaptureMode;
 }
 
 /**

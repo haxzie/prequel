@@ -259,11 +259,11 @@ export const SHOTS: readonly Shot[] = [
   {
     id: "dock-setup-photo",
     frame: "dock",
-    // The switch at the head of the row thrown to a screenshot, which is what
-    // takes the camera, the microphone and the prompter off the strip — see
-    // `SetupPanel`. The shot exists because that absence is the thing to show:
-    // a reader comparing it with `dock-setup` can see what a still does not
-    // need.
+    // The panel as the last capture leaves it when that capture was a
+    // screenshot, which is what takes the camera, the microphone and the
+    // prompter off the strip — see `SetupPanel`. The shot exists because that
+    // absence is the thing to show: a reader comparing it with `dock-setup`
+    // can see what a still does not need.
     install: install((base) => ({
       dock: {
         ...base.dock,
@@ -278,9 +278,9 @@ export const SHOTS: readonly Shot[] = [
   {
     id: "dock-adding-clip",
     frame: "dock",
-    // The panel as Add Clip leaves it. The capture switch is gone — a
-    // screenshot cannot be a clip — and in its place is what the panel is
-    // adding to: the clips the recording already has.
+    // The panel as Add Clip leaves it, with what it is adding to at the head of
+    // the row: the clips the recording already has. The picker's card drops its
+    // screenshot button for the same reason — a screenshot cannot be a clip.
     install: install((base) => ({
       dock: { ...base.dock, extending: { takes: 2 } },
     })),

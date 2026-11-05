@@ -163,15 +163,6 @@ const api = {
     state: (): Promise<DockState> => ipcRenderer.invoke(IPC_CHANNELS.sessionState),
     chooseMode: (mode: ScreenMode): Promise<IpcResult<DockState>> =>
       ipcRenderer.invoke(IPC_CHANNELS.chooseMode, mode),
-    /**
-     * Record, or take a screenshot.
-     *
-     * Reopens the picker when one is up: the panel sits above the overlay, so
-     * flipping the switch has to re-describe the card underneath it — see
-     * `CaptureFlow.setCaptureMode`.
-     */
-    setCaptureMode: (mode: CaptureMode): Promise<IpcResult<DockState>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.setCaptureMode, mode),
     updatePreferences: (patch: Partial<RecordingPreferences>): Promise<DockState> =>
       ipcRenderer.invoke(IPC_CHANNELS.updatePreferences, patch),
     /**

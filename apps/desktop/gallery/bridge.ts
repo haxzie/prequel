@@ -174,10 +174,6 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     dock: {
       state: () => Promise.resolve(state.dock),
       chooseMode: async (mode) => ({ ok: true, value: await dock({ activeMode: mode }) }),
-      setCaptureMode: async (captureMode) => ({
-        ok: true,
-        value: await dock({ preferences: { ...state.dock.preferences, captureMode } }),
-      }),
       updatePreferences: (patch) => dock({ preferences: { ...state.dock.preferences, ...patch } }),
       record: () => ok(state.dock),
       stop: () => ok(undefined),

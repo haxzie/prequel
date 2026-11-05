@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, Ref } from "react";
 
 import type {
@@ -120,13 +120,13 @@ const CARD_SHADOW = "[text-shadow:0_1px_3px_rgba(0,0,0,0.75),0_0_12px_rgba(0,0,0
     alpha rather than the box. */
 const GLYPH_SHADOW = "[filter:drop-shadow(0_2px_6px_rgba(0,0,0,0.6))]";
 
-/** What a mode hands up when its Start button is pressed. */
+/** What a mode hands up when one of the card's buttons is pressed. */
 type Pending = { result: SelectionResult; rect: Rect };
 
 export function Selection() {
   const [setup, setSetup] = useState<SelectionSetup | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
-  const capture = setup?.capture ?? "video";
+  const offers = setup?.offers ?? OFFERS;
   const space = useOverlaySpace(setup);
 
   /**
@@ -137,14 +137,19 @@ export function Selection() {
    * be filmed — and a still frame is neither: there is no camera to open, and
    * what is on screen now is exactly what is wanted, so a countdown would only
    * be three seconds in which it can change.
+   *
+   * Which of the two is on the result, because it is the button that was
+   * pressed rather than a mode set somewhere before any of this. The whole
+   * point of the card carrying both is that the question is answered while
+   * looking at the thing it is about.
    */
-  const begin = useCallback(
-    (confirmed: Pending) => {
-      if (capture === "photo") void window.prequel.selection.choose(confirmed.result);
-      else setPending(confirmed);
-    },
-    [capture],
-  );
+  const begin = useCallback((confirmed: Pending) => {
+    if (confirmed.result.capture === "photo") {
+      void window.prequel.selection.choose(confirmed.result);
+    } else {
+      setPending(confirmed);
+    }
+  }, []);
 
   // Asked for as well as subscribed to, which for this window is the whole
   // difference between working and not. Every view is a `lazy()` chunk, so this
@@ -368,7 +373,7 @@ function WindowSelection({
     setHovered((previous) => (previous?.target === next?.target ? previous : next));
   };
 
-  const start = () => {
+  const start = (capture: CaptureMode) => {
     if (!hovered) return;
     onStart({
       result: {
@@ -376,6 +381,7 @@ function WindowSelection({
         crop: null,
         label: label(hovered.target),
         start: true,
+        capture,
       },
       rect: hovered.rect,
     });
@@ -416,7 +422,7 @@ function WindowSelection({
             // From the target rather than from the outline: the outline is in
             // CSS pixels and this is the resolution of the file.
             size={pixelSize(hovered.target.bounds, hovered.target.scaleFactor || setup.scaleFactor)}
-            capture={setup.capture}
+            offers={setup.offers}
             onStart={start}
           />
         </div>
@@ -447,9 +453,15 @@ function ScreenSelection({
   // correctly said the whole of it.
   const whole = toPixels({ x: 0, y: 0, width: setup.width, height: setup.height }, space);
 
-  const start = () => {
+  const start = (capture: CaptureMode) => {
     onStart({
-      result: { target: setup.screenTarget, crop: null, label: "Entire screen", start: true },
+      result: {
+        target: setup.screenTarget,
+        crop: null,
+        label: "Entire screen",
+        start: true,
+        capture,
+      },
       rect: whole,
     });
   };
@@ -470,7 +482,7 @@ function ScreenSelection({
           name="Entire screen"
           detail={setup.displayLabel}
           size={pixelSize({ width: setup.width, height: setup.height }, setup.scaleFactor)}
-          capture={setup.capture}
+          offers={setup.offers}
           onStart={start}
         />
       </div>
@@ -549,7 +561,7 @@ function AreaSelection({
   };
 
   const start = useCallback(
-    (dragged: Region) => {
+    (dragged: Region, capture: CaptureMode) => {
       // ScreenCaptureKit crops in points, relative to the display's own origin,
       // and this overlay covers exactly that display — so the only thing
       // between the two is the unit the rectangle was drawn in.
@@ -561,6 +573,7 @@ function AreaSelection({
           crop,
           label: `Area ${Math.round(crop.width)}×${Math.round(crop.height)}`,
           start: true,
+          capture,
         },
         rect: dragged,
       });
@@ -781,8 +794,8 @@ function AreaSelection({
               }
               name="Selected area"
               size={pixelSize(toPoints(region, space), setup.scaleFactor)}
-              capture={setup.capture}
-              onStart={() => start(region)}
+              offers={setup.offers}
+              onStart={(capture) => start(region, capture)}
             />
           ) : (
             <span
@@ -900,38 +913,73 @@ function Grips({ onGrip }: { onGrip: (handle: Handle) => (event: ReactMouseEvent
  * one it describes.
  */
 /**
- * What the confirm button says, and the dot beside it.
+ * Both answers, in the order the card shows them.
  *
- * A red dot and "Start recording" is what a record button looks like
- * everywhere, and putting it on a screenshot would be the one word in the flow
- * that is wrong — somebody who pressed it would be waiting for a stop button
- * that is never coming. The screenshot's is the same button in the same place,
- * saying what it does.
+ * The default for an overlay that has not been told, which is only ever the
+ * moment before the first setup arrives. Named so the fallback is not a fresh
+ * array on every render — `offers` is a prop and a new one each time would
+ * rebuild the card for nothing.
  */
-const CONFIRM: Record<CaptureMode, { label: string; dot: string }> = {
-  video: { label: "Start recording", dot: "rounded-full bg-white" },
-  // A square rather than a circle: the shutter's own shape, and the one thing
-  // that distinguishes the two buttons at a glance when the words are read
-  // second.
-  photo: { label: "Take screenshot", dot: "rounded-[3px] bg-white" },
+const OFFERS: readonly CaptureMode[] = ["photo", "video"];
+
+/**
+ * What each button says, and the mark beside it.
+ *
+ * One word each, not two. They sit side by side now — the panel used to carry
+ * a switch deciding this before a source had even been picked, and the
+ * question only makes sense once you are looking at the thing — and "Take
+ * screenshot" beside "Start recording" is four words to read where the
+ * difference is in two of them.
+ *
+ * A red dot is what a record button looks like everywhere. The camera is the
+ * shutter's own glyph, and between them the pair is readable before either
+ * word is.
+ */
+const CONFIRM: Record<CaptureMode, { label: string; Mark: () => ReactNode }> = {
+  photo: { label: "Screenshot", Mark: ShutterMark },
+  video: { label: "Record", Mark: RecordMark },
 };
+
+/** The shutter, for the screenshot half. Lucide's `camera` geometry. */
+function ShutterMark() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="size-[17px]"
+    >
+      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z" />
+      <circle cx="12" cy="13" r="3" />
+    </svg>
+  );
+}
+
+/** The record light, for the other half. The app's own red, not the text's. */
+function RecordMark() {
+  return <span aria-hidden className="size-[11px] rounded-full bg-[#e5484d]" />;
+}
 
 function SelectionCard({
   icon,
   name,
   detail,
   size,
-  capture,
+  offers,
   onStart,
 }: {
   icon: ReactNode;
   name: string;
   detail?: string;
   size: string;
-  capture: CaptureMode;
-  onStart: () => void;
+  /** What this card may confirm, in the order it shows it. Never empty. */
+  offers: readonly CaptureMode[];
+  onStart: (capture: CaptureMode) => void;
 }) {
-  const confirm = CONFIRM[capture];
   return (
     // The overlay owns the click, so the card must not eat hover tracking —
     // the Start button re-enables pointer events for itself.
@@ -955,29 +1003,54 @@ function SelectionCard({
 
       <div className="mt-0.5 text-xs tabular-nums">{size}</div>
 
-      <button
-        type="button"
+      {/* One pill holding both answers, rather than two buttons side by side.
+          They are one question — what to do with the thing under the pointer —
+          and two separate pills read as two unrelated offers. A hairline
+          between them is what says they are alternatives.
+
+          The pill is the dock's own material rather than the red it used to be
+          when there was only ever one button on it. Red *is* the record button
+          everywhere, and painting the whole pill in it would say that about
+          the screenshot half too; the red is on the dot, where it belongs, and
+          the surface underneath stays neutral for both.
+
+          Still a pill: this and the recording bar that replaces it the moment
+          it is pressed are the same object as far as anybody using them is
+          concerned, and a rounded square handing over to a pill reads as two
+          apps. */}
+      <div
         className={
-          // A pill, like the dock's own controls: this button and the bar that
-          // replaces it the moment it is pressed are the same object as far as
-          // anybody using them is concerned, and a rounded square handing over
-          // to a pill reads as two apps.
-          "pointer-events-auto mt-4 flex h-[34px] items-center gap-[7px] rounded-full " +
-          "bg-[#e5484d] px-4 text-[13px] font-semibold whitespace-nowrap text-white " +
-          "shadow-[0_4px_14px_rgba(0,0,0,0.45)] [text-shadow:none] hover:brightness-[1.12]"
+          "pointer-events-auto mt-4 flex h-[44px] items-center rounded-full " +
+          "bg-[#1c1a21]/95 px-1 text-[15px] font-semibold whitespace-nowrap text-white " +
+          "shadow-[0_4px_18px_rgba(0,0,0,0.5)] [text-shadow:none] backdrop-blur-xl"
         }
         // A press must not begin a new area drag underneath the card.
         onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          // The overlay treats a click anywhere as "choose this", so this must
-          // not count twice — and it means something stronger.
-          event.stopPropagation();
-          onStart();
-        }}
       >
-        <span className={`size-2.5 ${confirm.dot}`} />
-        {confirm.label}
-      </button>
+        {offers.map((mode, index) => {
+          const { label, Mark } = CONFIRM[mode];
+          return (
+            <Fragment key={mode}>
+              {/* Between, never at an end, so a card offering one thing is a
+                  plain button and not a button with a rule beside it. */}
+              {index > 0 && <span aria-hidden className="h-5 w-px flex-none bg-white/20" />}
+              <button
+                type="button"
+                className="flex h-[36px] items-center gap-2.5 rounded-full px-4 hover:bg-white/10"
+                onClick={(event) => {
+                  // The overlay treats a click anywhere as "choose this", so
+                  // this must not count twice — and it means something stronger.
+                  event.stopPropagation();
+                  onStart(mode);
+                }}
+              >
+                <Mark />
+                {label}
+              </button>
+            </Fragment>
+          );
+        })}
+      </div>
     </div>
   );
 }

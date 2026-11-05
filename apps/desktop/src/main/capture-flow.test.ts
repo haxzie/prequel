@@ -130,11 +130,11 @@ function makeFlow(
     /** What the last picker was given to offer. */
     offered: [] as Target[],
     /** Whether the last picker was confirming a recording or a screenshot. */
-    capture: "video" as CaptureMode,
+    offers: ["photo", "video"] as readonly CaptureMode[],
     browserWindows: () => [],
-    open: async (_mode: ScreenMode, capture: CaptureMode, targets: Target[] = []) => {
+    open: async (_mode: ScreenMode, offers: readonly CaptureMode[], targets: Target[] = []) => {
       selection.opened += 1;
-      selection.capture = capture;
+      selection.offers = offers;
       selection.offered = targets;
       return picked;
     },
@@ -1305,7 +1305,7 @@ const CONFIRMED: SelectionResult = {
  * its own answer. A second answer anywhere is a panel showing a camera icon
  * that records a take.
  */
-describe("the screenshot switch", () => {
+describe("recording or a screenshot", () => {
   it("shoots rather than records when the picker confirms", async () => {
     const { flow, quickView } = makeFlow({ captureMode: "photo" }, { ...CONFIRMED, start: true });
 
@@ -1321,7 +1321,7 @@ describe("the screenshot switch", () => {
     expect(quickView.shown[0]!.still).toBe(true);
   });
 
-  it("records when the switch is back on video", async () => {
+  it("records when the last capture was a recording", async () => {
     const { flow } = makeFlow({ captureMode: "video" }, { ...CONFIRMED, start: true });
 
     await flow.chooseMode("screen");
@@ -1330,14 +1330,53 @@ describe("the screenshot switch", () => {
     expect(shots).toHaveLength(0);
   });
 
-  it("tells the picker which one it is confirming", async () => {
-    // The card's own copy and its countdown come off this. Without it the sheet
-    // offers "Start recording" and counts three seconds down to a still frame.
+  it("offers both to a picker opened from the panel", async () => {
+    // The question the panel's switch used to ask is asked on the card now, so
+    // the picker has to carry both answers — see `SelectionSetup.offers`.
     const { flow, selection } = makeFlow({ captureMode: "photo" });
 
     await flow.chooseMode("window");
 
-    expect(selection.capture).toBe("photo");
+    expect(selection.offers).toEqual(["photo", "video"]);
+  });
+
+  it("offers only a screenshot to a picker opened from the tray's own row", async () => {
+    // "Screenshot a Window" has already answered it. Asking again on the card
+    // would be the one row in that menu that does not do what it says.
+    const { flow, selection } = makeFlow();
+
+    flow.shootMode("window");
+    await vi.waitFor(() => expect(selection.offers).toEqual(["photo"]));
+  });
+
+  it("shoots where the card asked for a shot, whatever the panel last did", async () => {
+    // The press is the answer now. A preference left on video by the last take
+    // used to decide this, which would record where a screenshot was asked for.
+    const { flow, quickView } = makeFlow(
+      { captureMode: "video" },
+      { ...CONFIRMED, start: true, capture: "photo" },
+    );
+
+    await flow.chooseMode("screen");
+
+    expect(shots).toHaveLength(1);
+    expect(requests).toHaveLength(0);
+    expect(quickView.shown[0]!.still).toBe(true);
+  });
+
+  it("records where the card asked for a recording, whatever the panel last did", async () => {
+    const { flow, preferences } = makeFlow(
+      { captureMode: "photo" },
+      { ...CONFIRMED, start: true, capture: "video" },
+    );
+
+    await flow.chooseMode("screen");
+
+    expect(requests).toHaveLength(1);
+    expect(shots).toHaveLength(0);
+    // And remembered, which is what brings the camera and the microphone back
+    // to a panel that a screenshot had taken them off.
+    expect(preferences().captureMode).toBe("video");
   });
 
   it("keeps our own windows out of the shot", async () => {
@@ -1386,24 +1425,25 @@ describe("the screenshot switch", () => {
   });
 
   it("reopens a picker that is already up", async () => {
-    // The panel sits above the overlay and the switch is live while a picker is
-    // on screen, so flipping it has to re-describe the card underneath — which
-    // would otherwise go on offering to record.
+    // The tray can reach this with an overlay on screen, so changing it has to
+    // re-describe the card underneath — which would otherwise go on offering
+    // what it was opened with.
     const { flow, selection } = makeFlow();
     selection.isOpen = true;
+    const before = selection.opened;
 
     flow.setCaptureMode("photo");
-    await vi.waitFor(() => expect(selection.capture).toBe("photo"));
+    await vi.waitFor(() => expect(selection.opened).toBe(before + 1));
   });
 
-  it("does nothing when the switch is already there", () => {
+  it("does nothing when it is already there", () => {
     const { flow, selection } = makeFlow({ captureMode: "photo" });
     selection.isOpen = true;
 
     flow.setCaptureMode("photo");
 
-    // No reopen. The switch is pressed by a radio group that re-reports the
-    // current value on every render of the panel.
+    // No reopen. `confirmSelection` writes this on every capture, and most of
+    // them are the same answer as the one before.
     expect(selection.opened).toBe(0);
   });
 });

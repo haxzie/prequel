@@ -226,14 +226,11 @@ export function registerIpc({
     attempt(() => flow.chooseMode(mode)),
   );
 
-  // `capture`, not `record`: what the button does is the panel's own setting,
+  // `capture`, not `record`: what this does is whatever the last capture was,
   // and a channel that named one of the two would be a second place that has to
-  // agree with the switch — see `CaptureFlow.capture`.
+  // agree with it — see `CaptureFlow.capture`.
   ipcMain.handle(IPC_CHANNELS.startRecording, () => attempt(() => flow.capture()));
 
-  ipcMain.handle(IPC_CHANNELS.setCaptureMode, (_event, mode: CaptureMode) =>
-    attempt(() => flow.setCaptureMode(mode)),
-  );
   ipcMain.handle(IPC_CHANNELS.sessionStop, () => attempt(() => flow.stop()));
   ipcMain.handle(IPC_CHANNELS.sessionDiscard, () => attempt(() => flow.discard()));
   ipcMain.handle(IPC_CHANNELS.sessionTogglePause, () => attempt(() => flow.togglePause()));
