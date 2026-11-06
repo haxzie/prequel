@@ -116,19 +116,19 @@ describe("the ledger", () => {
   });
 
   it("remembers which recording an export came out of", async () => {
-    // The whole of why the directory is on the entry: nothing about the
-    // finished file says where it came from, and this is what lets a recording
-    // list its own exports.
+    // Nothing about a finished file says where it came from — it is written
+    // wherever the save dialog pointed — so the moment it is recorded is the
+    // only moment the fact exists. Nothing reads it yet; it is kept because
+    // the alternative is a gap that cannot be filled in afterwards.
     const { listExports, recordExport } = await fresh();
 
     recordExport(wrote("Mine.mp4"), null, "/takes/one");
-    recordExport(wrote("Theirs.mp4"), null, "/takes/two");
     // From outside a recording, which belongs to none of them.
     recordExport(wrote("Loose.mp4"), null);
 
-    expect(listExports("/takes/one").map((entry) => entry.name)).toEqual(["Mine.mp4"]);
-    expect(listExports().map((entry) => entry.name)).toHaveLength(3);
-    expect(listExports().find((entry) => entry.name === "Loose.mp4")?.dir).toBeNull();
+    const listed = listExports();
+    expect(listed.find((entry) => entry.name === "Mine.mp4")?.dir).toBe("/takes/one");
+    expect(listed.find((entry) => entry.name === "Loose.mp4")?.dir).toBeNull();
   });
 
   it("keeps the length it was given, and answers null without one", async () => {

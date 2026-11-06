@@ -521,20 +521,9 @@ export function createBridge(overrides: Partial<Fixtures> = {}): Bridge {
     },
 
     exports: {
-      // The directory is ignored. The fixtures belong to no recording — see
-      // `EXPORTS` — and a shot of the inspector's Exports tab is worth more
-      // with rows in it than with the filter honoured.
       list: () => ok(state.exports),
       open: (path) => {
         console.warn("[bridge] exports.open", path);
-        return ok(undefined);
-      },
-      reveal: (path) => {
-        console.warn("[bridge] exports.reveal", path);
-        return ok(undefined);
-      },
-      copy: (path) => {
-        console.warn("[bridge] exports.copy", path);
         return ok(undefined);
       },
       saveThumbnail: () => ok(undefined),

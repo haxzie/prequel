@@ -784,9 +784,7 @@ const api = {
    * `stat` where a recording costs four syscalls, and the ledger is capped.
    */
   exports: {
-    /** `dir` narrows it to one recording's own; absent is every one on the Mac. */
-    list: (dir?: string): Promise<IpcResult<ExportSummary[]>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.exportsList, dir),
+    list: (): Promise<IpcResult<ExportSummary[]>> => ipcRenderer.invoke(IPC_CHANNELS.exportsList),
 
     /**
      * Opens the file in whatever the Mac plays it with.
@@ -797,19 +795,6 @@ const api = {
      */
     open: (path: string): Promise<IpcResult<void>> =>
       ipcRenderer.invoke(IPC_CHANNELS.exportsOpen, path),
-
-    /** Shows it in Finder, which is the other thing a row is clicked for. */
-    reveal: (path: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.exportsReveal, path),
-
-    /**
-     * Puts the file itself on the pasteboard, not its path.
-     *
-     * A renderer cannot: `navigator.clipboard` carries text and blobs, and
-     * neither pastes into Finder as a file.
-     */
-    copy: (path: string): Promise<IpcResult<void>> =>
-      ipcRenderer.invoke(IPC_CHANNELS.exportsCopy, path),
 
     /** Caches a still the pane made, so the next open does not have to. */
     saveThumbnail: (path: string, dataUrl: string): Promise<IpcResult<void>> =>

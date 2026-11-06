@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
-import type {
-  ExportSummary,
-  ProjectComposition,
-  ProjectDetails,
-  ProjectSummary,
-} from "../../../shared/contract";
-import { CloseIcon, CopyIcon, FolderIcon, TrashIcon } from "../editor/icons";
+import type { ProjectComposition, ProjectDetails, ProjectSummary } from "../../../shared/contract";
+import { CloseIcon, FolderIcon, TrashIcon } from "../editor/icons";
 import { formatElapsed, formatFileSize, formatTimeAgo } from "../lib/format";
 import { cn } from "../lib/cn";
 import { Preview } from "./Preview";
@@ -44,24 +39,15 @@ export function Inspector({
   onDelete: (dir: string) => void;
 }) {
   const dir = project.dir;
-  const [tab, setTab] = useState<"details" | "exports">("details");
   const [composition, setComposition] = useState<ProjectComposition | null>(null);
   const [details, setDetails] = useState<ProjectDetails | null>(null);
-  const [exports, setExports] = useState<ExportSummary[] | null>(null);
 
-  // Back to the facts whenever the selection moves. The Exports tab is the
-  // answer to a question about one recording, and leaving it open across a
-  // change showed another recording's exports under this one's name.
-  useEffect(() => setTab("details"), [dir]);
-
-  // Three fetches, each cleared on the way in rather than left showing the last
-  // recording's answer while the next one loads. `live` is what stops a slow
-  // reply landing in a pane that has moved on.
+  // Both cleared on the way in rather than left showing the last recording's
+  // answer while the next one loads. `live` is what stops a slow reply landing
+  // in a pane that has moved on.
   useEffect(() => {
     setComposition(null);
     setDetails(null);
-    setExports(null);
-    if (!dir) return;
 
     let live = true;
     void window.prequel.projects.composition(dir).then((result) => {
@@ -69,9 +55,6 @@ export function Inspector({
     });
     void window.prequel.projects.details(dir).then((result) => {
       if (live && result.ok) setDetails(result.value);
-    });
-    void window.prequel.exports.list(dir).then((result) => {
-      if (live && result.ok) setExports(result.value);
     });
 
     return () => {
@@ -153,37 +136,7 @@ export function Inspector({
           </button>
         </div>
 
-        <div className="flex gap-1 rounded-lg bg-white/5 p-1">
-          {(["details", "exports"] as const).map((id) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              className={cn(
-                "flex-1 rounded-md py-1 text-[12px] font-medium capitalize transition-colors",
-                tab === id
-                  ? "bg-white/10 text-editor-fg"
-                  : "text-editor-muted hover:text-editor-fg",
-              )}
-              onClick={() => setTab(id)}
-            >
-              {id}
-              {/* The count on the tab rather than inside it: whether a
-                  recording has ever been exported is worth knowing without
-                  opening the tab that says so. */}
-              {id === "exports" && exports !== null && exports.length > 0 && (
-                <span className="ml-1.5 tabular-nums opacity-60">{exports.length}</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {tab === "details" ? (
-          <Facts project={project} details={details} />
-        ) : (
-          <Exports entries={exports} />
-        )}
+        <Facts project={project} details={details} />
       </div>
     </aside>
   );
@@ -248,63 +201,6 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * Every file this recording has been exported to.
- *
- * Only the ones the ledger knows came from here — see `ExportSummary.dir`. An
- * export written before that was recorded belongs to no recording, and listing
- * it under whichever one looks likely would be a guess presented as a fact.
- */
-function Exports({ entries }: { entries: readonly ExportSummary[] | null }) {
-  if (entries === null) return <p className={EMPTY}>Looking…</p>;
-  if (entries.length === 0) {
-    return <p className={EMPTY}>Nothing exported from this recording yet.</p>;
-  }
-
-  return (
-    <ul className="flex flex-col">
-      {entries.map((entry) => (
-        <li
-          key={entry.path}
-          className="group/row flex items-center gap-2 border-t border-white/4 py-2 first:border-t-0"
-        >
-          {/* The row itself reveals it. Opening Finder is what somebody who
-              has found their export in a list wants next — the file is the
-              thing, and this pane cannot be where it is played. */}
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
-            title={`Show ${entry.name} in Finder`}
-            onClick={() => void window.prequel.exports.reveal(entry.path)}
-          >
-            <span className="w-full truncate text-[12px]">{entry.name}</span>
-            <span className="text-[11px] text-editor-muted">
-              {formatTimeAgo(entry.createdAt)} · {formatFileSize(entry.bytes)}
-              {entry.durationMs !== null && ` · ${formatElapsed(entry.durationMs)}`}
-            </span>
-          </button>
-
-          {/* Shown on hover, like the actions on a timeline clip: a column of
-              copy buttons down a list is a column of things to ignore. */}
-          <button
-            type="button"
-            title="Copy the file"
-            aria-label={`Copy ${entry.name}`}
-            className={cn(
-              "grid size-7 flex-none place-items-center rounded-md text-editor-muted opacity-0",
-              "group-hover/row:opacity-100 hover:bg-white/10 hover:text-editor-fg",
-              "focus-visible:opacity-100 [&_svg]:size-3.5",
-            )}
-            onClick={() => void window.prequel.exports.copy(entry.path)}
-          >
-            <CopyIcon />
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/**
  * The pane itself.
  *
  * A fixed column rather than a share of the row: the grid beside it reflows to
@@ -314,5 +210,3 @@ function Exports({ entries }: { entries: readonly ExportSummary[] | null }) {
 const SHELL =
   "flex w-[280px] flex-none flex-col border-l border-white/8 bg-black/10 " +
   "min-h-0 overflow-hidden";
-
-const EMPTY = "py-6 text-center text-[12px] text-editor-muted";

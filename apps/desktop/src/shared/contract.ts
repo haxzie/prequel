@@ -961,8 +961,6 @@ export const IPC_CHANNELS = {
   exportsList: "exports:list",
   /** Renderer → main: open a finished export in whatever plays it. */
   exportsOpen: "exports:open",
-  exportsReveal: "exports:reveal",
-  exportsCopy: "exports:copy",
   /** Renderer → main: cache a still the Exports pane just made. */
   exportsSaveThumbnail: "exports:saveThumbnail",
   /**
@@ -2542,13 +2540,15 @@ export interface ExportSummary {
    * The recording this came out of, or null for one written before the ledger
    * started keeping it.
    *
-   * What lets a recording list its own exports. Kept on the entry rather than
-   * worked out from the file, because nothing about an export says where it
-   * came from — it is written wherever the save dialog pointed, and from then
-   * on it is an ordinary video in an ordinary folder. Null is shown as nothing
-   * rather than guessed at: an export whose source was never recorded belongs
-   * to no recording, and attaching it to one by its date would be a guess
-   * presented as a fact.
+   * Recorded and not yet shown anywhere, which is deliberate rather than an
+   * oversight: nothing about an export says where it came from — it is written
+   * wherever the save dialog pointed, and from then on it is an ordinary video
+   * in an ordinary folder — so the moment it finishes is the only moment the
+   * fact exists. Dropping the field would make every export written between
+   * now and the day something wants it permanently unattributable, where
+   * keeping it costs one string. Null is never guessed at for the same reason:
+   * attaching an export to a likely-looking recording by its date would be a
+   * guess presented as a fact.
    */
   dir: string | null;
   /** The file's own name, which is what the row is labelled with. */
