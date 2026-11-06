@@ -1998,6 +1998,25 @@
   moving colour, which reads far worse than the weight it saves.
 */
 @utility wordmark-sheen {
+  /*
+    Room for the glyphs to be painted in.
+
+    `background-clip: text` clips to the letters, but the background it is
+    clipping still only exists inside the element's own box — and a handwriting
+    face does not stay in one. Measured on the nav's: the line box is 24px and
+    the ink of "Prequel" spans 32.8 of them, 20.4 above the baseline and 12.4
+    below, with the baseline at 20. So the P's tail and the q's descender hang
+    8.4px past the bottom edge, got no paint at all, and the word read as
+    cropped top and bottom the moment it lit up.
+
+    Padding grows the box the background lives in; the negative margin hands
+    the space straight back, so nothing moves. In `em` because the overflow is
+    a property of the face rather than of this size — 0.75 covers the worst of
+    it with room to spare, and the sans wordmark in the footer, which overflows
+    by nothing, is unaffected either way.
+  */
+  padding-block: 0.75em;
+  margin-block: -0.75em;
   background-image: linear-gradient(
     90deg,
     var(--brand-from),
