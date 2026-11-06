@@ -522,7 +522,7 @@ export const SHOTS: readonly Shot[] = [
       // pointer chooses it. That is the other half of what this shot is for —
       // a pairing that quietly stopped firing would show up as a shot with no
       // dust in it.
-      { kind: "click", selector: 'button[aria-label="Pointer stick"]' },
+      { kind: "click", selector: 'button[aria-label="White pointer"]' },
       { kind: "settle", ms: 300 },
       { kind: "seek", fraction: 0.4606 },
       // Past the write, the plan rebuild and a draw or two.
@@ -542,7 +542,26 @@ export const SHOTS: readonly Shot[] = [
       ...EDITOR_READY,
       { kind: "click", selector: 'button[aria-label="Cursor"]' },
       { kind: "settle", ms: 300 },
-      { kind: "click", selector: 'button[aria-label="Pointer stick"]' },
+      { kind: "click", selector: 'button[aria-label="White pointer"]' },
+      // Past the write, the plan rebuild and a draw or two.
+      { kind: "settle", ms: 900 },
+    ],
+    clip: "frame",
+  },
+  // The arm on the picture, in the corner that is the whole reason it leans.
+  // No test can assert what this is for: that the sleeve runs off the bottom
+  // edge rather than through the right-hand one, and that the join where it is
+  // lengthened is not visible anywhere along it.
+  {
+    id: "cursor-arm",
+    frame: "workspace",
+    install: install(),
+    render: () => <EditorRoute name={recording} />,
+    steps: [
+      ...EDITOR_READY,
+      { kind: "click", selector: 'button[aria-label="Cursor"]' },
+      { kind: "settle", ms: 300 },
+      { kind: "click", selector: 'button[aria-label="Pointing arm"]' },
       // Past the write, the plan rebuild and a draw or two.
       { kind: "settle", ms: 900 },
     ],

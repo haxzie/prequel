@@ -1763,6 +1763,19 @@ export interface DockState {
  * and an HMR round trip, and a serialised manifest in it would not.
  */
 /**
+ * The angle every reaching pointer's artwork is leaned onto, in degrees.
+ *
+ * A copy of `STICK_TILT` in `scripts/make-cursor.mjs`, which is where it is
+ * decided — that file is a build script and cannot be imported by anything
+ * shipped, and `layout.ts` has to know the angle to work out where an arm's
+ * sleeve would leave the frame. `cursors.test.ts` imports the script and pins
+ * the two together, which is what stops this copy drifting into an arm that
+ * stands up by the wrong amount and crosses the edge it was standing up to
+ * avoid.
+ */
+export const REACHING_LEAN_DEG = 28.96383792059517;
+
+/**
  * The pointers the editor can draw, and where each one actually points.
  *
  * The hotspot is the part that acts, and it differs by shape: an arrow points
@@ -1846,23 +1859,31 @@ export const CURSOR_STYLES = [
     },
   },
 
-  // ── The pointer sticks ────────────────────────────────────────────────────
+  // ── The reaching pointers ─────────────────────────────────────────────────
   //
-  // A teacher's pointer: a hand on the end of a rod that runs off the bottom of
-  // the picture, so the handle never has an end anybody can see. One image
-  // each, for the emoji's reason below — a prop has no I-beam.
+  // Something held, rather than something drawn: a hand at the top of a shaft
+  // that runs off the bottom of the picture, so the far end never has an end
+  // anybody can see. One image each, for the emoji's reason below — a prop has
+  // no I-beam.
   //
-  // Photographs of toys rather than drawn shapes, so they come through
+  // Photographs rather than drawn shapes, so they come through
   // `scripts/make-stick-cursors.mjs` instead of `make-cursor.mjs`. The white
-  // one used to be drawn there, in three flat tones, and the reason it is not
-  // any more is the reason the other three exist: a glove, a varnished dowel
-  // and a satin bow are materials, and a material is shading, which a distance
-  // field cannot express at any number of tones.
+  // stick used to be drawn there, in three flat tones, and the reason it is
+  // not any more is the reason the others exist: a glove, a varnished dowel, a
+  // satin bow and worsted suiting are materials, and a material is shading,
+  // which a distance field cannot express at any number of tones.
   //
-  // In pairs, which is what fixes the order: the white glove and its black twin
-  // first, because between them they suit any recording; then the wooden one
-  // for a lesson; then the pink and the fuzzy blue, which are frankly toys and
-  // are where somebody goes looking for one.
+  // The arm leads, because it is the one anybody demonstrating software
+  // actually wants — the other five are a teacher's pointer, which is a prop
+  // for a lesson. Then the sticks in pairs: the white glove and its black twin,
+  // because between them they suit any recording; then the wooden one; then the
+  // pink and the fuzzy blue, which are frankly toys and are where somebody goes
+  // looking for one.
+  //
+  // The arm is also the only one whose shaft is not a rod. A sleeve has a
+  // forearm in it, so it cannot be a hundred rows repeated the way a dowel is
+  // — `sleeveStriper` in that script is the whole of that difference, and the
+  // artwork has to end on a straight stretch for it to have anything to repeat.
   //
   // Leaned onto the default pointer's own angle, which that script takes from
   // `STICK_TILT` rather than picking: hand and handle share one axis, pointing
@@ -1871,12 +1892,12 @@ export const CURSOR_STYLES = [
   // happens to be in the same list. The lean is also why these switch the
   // pointer's own lean off — see `cursorItems`.
   //
-  // `reach` is why they are styles at all: the rod has to leave the frame from
-  // anywhere in the frame, which is a length nothing about the Size control can
-  // promise. It is that length, as a multiple of the frame's shorter edge, and
-  // `cursorItems` sizes the whole sprite from it.
+  // `reach` is why they are styles at all: the shaft has to leave the frame
+  // from anywhere in the frame, which is a length nothing about the Size
+  // control can promise. It is that length, as a multiple of the frame's
+  // shorter edge, and `cursorItems` sizes the whole sprite from it.
   //
-  // 2.2 is the worst case with room to spare. The rod spans more than the
+  // 2.2 is the worst case with room to spare. The shaft spans more than the
   // sprite's own side, and the furthest a line at this lean travels inside a
   // frame before leaving it is twice the shorter edge — a tall 9:16 frame,
   // pointer in the top corner, leaving by the side rather than the bottom. The
@@ -1888,29 +1909,49 @@ export const CURSOR_STYLES = [
   // one.
   //
   // Every one carries a `swatch`. The sprite is a fifteenth hand and the rest
-  // handle, so a tile cut from it is a hairline across an empty square — and
+  // shaft, so a tile cut from it is a hairline across an empty square — and
   // the picker's tiles are the only caption a pointer has.
   //
-  // And each arrives with a mark and a sound. A stick is a prop rather than a
-  // pointer, and the two things a prop does — leave something where it taps,
+  // And each arrives with a mark and a sound. These are props rather than
+  // pointers, and the two things a prop does — leave something where it taps,
   // and make the noise of doing it — are a click mark and a click sound this
   // app already has somewhere else. Choosing the pointer and then hunting down
   // two more settings to make it a pointer is a choice nobody would thank us
   // for.
   //
-  // The mark is `chalk` on every one of them, and that is the point of it: it
-  // is what a stick *does* to the thing it touches, and a pointer that knocked
-  // a puff of dust loose in one material and drew a heart in another would be
+  // The mark is `chalk` on all five sticks, and that is the point of it: it is
+  // what a stick *does* to the thing it touches, and a pointer that knocked a
+  // puff of dust loose in one material and drew a heart in another would be
   // five props rather than one in five finishes. White, because chalk is — the
   // picker writes the mark's own colour along with it, so the tone comes free.
   //
-  // The sound is still each one's own, because that is the other half: these
-  // are a dense rubber glove, a lathe-turned dowel, a satin bow and a handful
-  // of fur, and they do not land alike.
+  // The arm gets `tap` for the same reason read the other way: a finger leaves
+  // no dust. It presses the thing it touches, which is the mark drawn for a
+  // touch-screen and already in the table.
+  //
+  // The sound is still each one's own, because that is the other half: a dense
+  // rubber glove, a lathe-turned dowel, a satin bow, a handful of fur and a
+  // fingertip on glass do not land alike. `hush` on the arm is the quietest in
+  // the list and is described as the one to leave on under a voiceover, which
+  // is what a finger tapping a screen has to be.
   //
   // Written on choosing it, like the colour a click mark arrives in: the three
-  // are the user's from then on, and picking the stick again puts them back.
+  // are the user's from then on, and picking the pointer again puts them back.
   // See `cursorArrivesWith`, and the panel's `CursorPicker`.
+  {
+    // Photographed, lengthened and leaned by `make-stick-cursors.mjs` like the
+    // sticks under it, and sharing their fingertip so that all six point at the
+    // same place — `cursors.test.ts` pins that.
+    id: "arm-suit",
+    label: "Pointing arm",
+    reach: 2.2,
+    lean: REACHING_LEAN_DEG,
+    swatch: "cursor-arm-suit-swatch.png",
+    arrives: { mark: "tap", sound: "hush" },
+    shapes: {
+      arrow: { file: "cursor-arm-suit.png", hotspot: { x: 0.045, y: 0.025 } },
+    },
+  },
   {
     // The id the drawn stick had, kept: a project that chose the stick before
     // this goes on to be a different picture rather than a missing one.
@@ -2144,6 +2185,18 @@ export function cursorArrivesWith(id: string): { mark: string; sound: string } |
 }
 
 /**
+ * The angle a reaching pointer may stand up out of, or null for one that is
+ * drawn at one angle and stays there.
+ *
+ * Only the arm. See `withStanding` in `layout.ts` for what it does with it,
+ * and `REACHING_LEAN_DEG` for why the number is written twice.
+ */
+export function cursorLean(id: string): number | null {
+  const style = cursorStyle(id);
+  return "lean" in style ? style.lean : null;
+}
+
+/**
  * How far a style's pointer has to reach past the frame, or null for one that
  * does not have to reach anywhere — which is all of them but the sticks.
  *
@@ -2196,7 +2249,7 @@ export const CURSOR_FILES: readonly string[] = [
  * no image of its own is drawn as the arrow, which is what every style did for
  * every kind before there were any.
  */
-export function cursorImages(id: string): Pick<CursorTrack, "shapes" | "reach"> {
+export function cursorImages(id: string): Pick<CursorTrack, "shapes" | "reach" | "lean"> {
   const style = cursorStyle(id);
 
   const shapes = Object.fromEntries(
@@ -2206,9 +2259,14 @@ export function cursorImages(id: string): Pick<CursorTrack, "shapes" | "reach"> 
     ]),
   ) as CursorTrack["shapes"];
 
-  // Absent for every style but the stick, which is what leaves the Size control
-  // meaning what it means everywhere else.
-  return "reach" in style ? { shapes, reach: style.reach } : { shapes };
+  // Absent for every style but the sticks and the arm, which is what leaves the
+  // Size control meaning what it means everywhere else. `lean` is narrower
+  // still — the arm alone, which is the only one that may stand up out of the
+  // angle it was drawn at.
+  if (!("reach" in style)) return { shapes };
+  return "lean" in style
+    ? { shapes, reach: style.reach, lean: style.lean }
+    : { shapes, reach: style.reach };
 }
 
 /** The pointer track, ready for the editor to lay out. */

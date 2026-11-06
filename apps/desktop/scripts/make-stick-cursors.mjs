@@ -13,11 +13,18 @@
  * ## What this has to change about them
  *
  * A source image is portrait and upright: the hand at the top, and under it
- * either a rod of one width ending in a rounded butt, or nothing at all. A
- * hand that brings its own rod keeps it, repeated to whatever length is
- * needed; a bare glove is given one here. All of them are bare today, and the
- * other path is kept because a hand drawn on a stick is the obvious thing for
+ * either a rod of one width ending in a rounded butt, a sleeve, or nothing at
+ * all. A hand that brings its own rod keeps it, repeated to whatever length is
+ * needed; a bare glove is given one here. All five gloves are bare, and that
+ * path is kept because a hand drawn on a stick is the obvious thing for
  * somebody to hand this next.
+ *
+ * The sixth is an arm in a suit, and a sleeve is enough unlike a rod to be its
+ * own path end to end — see `anatomy` for where the hand stops and
+ * `sleeveStriper` for the length. A rod is one width and one shading the whole
+ * way down, so a hundred rows of it stand in for all of it. An arm is a
+ * forearm with a shape of its own above a straight tube, and only the tube may
+ * repeat.
  *
  * Ours is one still sprite, and `reach` in `contract.ts` sizes it against the
  * frame so that the rod leaves the picture from anywhere in the picture. So the
@@ -128,14 +135,32 @@ function decodePng(bytes) {
 const SOLID = 8;
 
 /**
+ * How much of a sleeve's far end is taken as the piece that repeats.
+ *
+ * Generous on purpose. The repeat is a seam every time it comes round, and the
+ * longer the piece the fewer seams there are to notice — the arm runs some
+ * twelve of these past the edge of the frame. 1200 rows is the straight part
+ * of the sleeve and nothing above it: by then the centre has stopped moving
+ * (two pixels across the whole slab) and the shading is flat enough that a
+ * join lands within a level and a half of luma.
+ */
+const SLEEVE_SLAB = 1200;
+
+/**
  * Where the hand stops, how wide it is, and where its rod is if it has one.
  *
  * Measured rather than written down, because these are not drawn to one
  * template: the wrist is wherever that hand's cuff happens to end. Under half
  * the hand's own width is rod every time — a fist with one finger up is never
  * less than twice as wide as the stick holding it.
+ *
+ * `sleeve` needs the opposite rule, and getting it wrong is silent. A suit
+ * sleeve never narrows to under half a fist, so the rod rule calls the *last
+ * row of the file* the wrist, sizes the hand to the whole arm, and draws a rod
+ * under a hand four times too big. A cuff is a narrowing instead: the
+ * narrowest row below the fist, taken once the sleeve has climbed clear of it.
  */
-function anatomy({ width, height, rgba }) {
+function anatomy({ width, height, rgba }, sleeve) {
   const rows = [];
   for (let y = 0; y < height; y++) {
     let left = -1;
@@ -153,7 +178,20 @@ function anatomy({ width, height, rgba }) {
   const widest = Math.max(...rows.filter(Boolean).map((row) => row.width));
 
   let wrist = top;
-  for (let y = top; y < height; y++) if (rows[y] && rows[y].width > 0.45 * widest) wrist = y;
+  if (sleeve) {
+    // From the fist down, not from the top: the rows above it narrow to a
+    // fingertip, and the narrowest row of the whole file is a fingernail.
+    const fist = rows.findIndex((row) => row && row.width === widest);
+    let narrow = Infinity;
+    for (let y = fist; y < height && rows[y]; y++) {
+      if (rows[y].width < narrow) {
+        narrow = rows[y].width;
+        wrist = y;
+      } else if (rows[y].width > narrow * 1.15) break;
+    }
+  } else {
+    for (let y = top; y < height; y++) if (rows[y] && rows[y].width > 0.45 * widest) wrist = y;
+  }
 
   // The hand's own box, off the alpha and nothing else: these files carry
   // colour under their transparent pixels, so the bounding box of any other
@@ -169,8 +207,14 @@ function anatomy({ width, height, rgba }) {
 
   // Clear of the cuff above it and of the rounded butt below, so repeating it
   // cannot repeat a highlight that belongs to either.
-  const slab = { from: wrist + 90, to: wrist + 190 };
-  const hasRod = slab.to < height && rows.slice(slab.from, slab.to).every((row) => row !== null);
+  //
+  // A sleeve takes its piece off the far end of the file instead. Everything
+  // between the cuff and there is a forearm — it tapers, it bends, it is lit
+  // across — and a forearm repeated is read as a repeat immediately.
+  const slab = sleeve
+    ? { from: height - SLEEVE_SLAB, to: height }
+    : { from: wrist + 90, to: wrist + 190 };
+  const hasRod = slab.to <= height && rows.slice(slab.from, slab.to).every((row) => row !== null);
 
   return {
     top,
@@ -178,6 +222,10 @@ function anatomy({ width, height, rgba }) {
     hand: { width: right - left + 1, height: wrist - top },
     slab,
     hasRod,
+    sleeve: Boolean(sleeve),
+    // Carried for `sleeveStriper`, which needs each row's own edges to stretch
+    // a repeat onto the width the arm ends at.
+    rows,
     // Where a drawn rod has to meet the hand: the middle of the last row of it.
     cuff: rows[wrist] ? (rows[wrist].left + rows[wrist].right) / 2 : width / 2,
   };
@@ -311,6 +359,49 @@ function rodFor(shape, handle) {
 }
 
 /**
+ * A sleeve's strip: the file itself, and the far end of it for ever after.
+ *
+ * Not the rod's arrangement below, and the difference is the whole of why this
+ * is separate. A rod starts repeating forty rows under the cuff, because every
+ * row of it is the same row. An arm has a forearm in between — it tapers, it
+ * bends, it carries the light across it — and starting the repeat there would
+ * draw that forearm again every twelve hundred rows, which the eye catches at
+ * once. So every row of the file is drawn as itself, and only what runs past
+ * the bottom of it repeats.
+ *
+ * Each repeat is stretched onto the width the file ends at rather than dropped
+ * in at its own. On this arm that is a no-op — it ends as straight as it
+ * repeats — but a sleeve that widened by so much as three per cent across the
+ * slab would pinch at every join, which is a ring down the arm once a frame.
+ * Held at that width rather than carried on widening: a taper continued over
+ * the two frames of sleeve this draws turns the arm into a trumpet.
+ */
+function sleeveStriper(image, shape) {
+  const { width, height, rgba } = image;
+  const last = shape.rows[height - 1];
+  const slabHeight = shape.slab.to - shape.slab.from;
+  /** The last row of the file, in the strip's own rows. */
+  const real = height - 1 - shape.top;
+
+  return (u, v) => {
+    let x = u;
+    let y;
+
+    if (v <= real) y = shape.top + Math.round(v);
+    else {
+      y = shape.slab.from + (Math.round(v - real - 1) % slabHeight);
+      const row = shape.rows[y];
+      x = row.left + ((u - last.left) / last.width) * row.width;
+    }
+
+    x = Math.round(x);
+    if (x < 0 || x >= width || y < 0 || y >= height) return [0, 0, 0, 0];
+    const at = (y * width + x) * 4;
+    return [rgba[at], rgba[at + 1], rgba[at + 2], rgba[at + 3]];
+  };
+}
+
+/**
  * The strip, as a function of where you look rather than as an image.
  *
  * Above the seam it is the hand, in the source's own rows. Below it the rod,
@@ -318,6 +409,8 @@ function rodFor(shape, handle) {
  * nothing and has no joins to get wrong.
  */
 function striper(image, shape, handle) {
+  if (shape.sleeve) return sleeveStriper(image, shape);
+
   const { width, height, rgba } = image;
   const seam = shape.wrist + 40 - shape.top;
   const drawn = shape.hasRod ? null : rodFor(shape, handle);
@@ -467,6 +560,9 @@ const SHAPES = [
  * came without a stick. The pink one takes the silver rod because its glove is
  * pale and a black rod under it reads as two objects rather than one prop; the
  * black glove keeps the dark rod for the same reason in reverse.
+ *
+ * `sleeve` is the sixth, which is not a glove on a stick at all — see the note
+ * at the top. It needs no `handle`: it arrives wearing one.
  */
 const HANDS = [
   // First, and keeping the id the drawn stick had: a project that chose the
@@ -477,13 +573,14 @@ const HANDS = [
   { id: "stick-wood", label: "wooden", from: "hands/hand_wood.png", handle: "dark" },
   { id: "stick-pink", label: "pink", from: "hands/hand_pink.png", handle: "silver" },
   { id: "stick-blue", label: "fuzzy blue", from: "hands/hand_blue.png", handle: "dark" },
+  { id: "arm-suit", label: "suited arm", from: "hands/arm_suit.png", sleeve: true },
 ];
 
 mkdirSync(OUT_DIR, { recursive: true });
 
 for (const entry of HANDS) {
   const image = decodePng(readFileSync(resolve(SOURCE, entry.from)));
-  const shape = anatomy(image);
+  const shape = anatomy(image, entry.sleeve);
 
   for (const form of SHAPES) {
     const file = resolve(OUT_DIR, `cursor-${entry.id}${form.suffix}.png`);
@@ -491,7 +588,14 @@ for (const entry of HANDS) {
     console.log(
       `wrote ${file} (${String(form.size)}px, hotspot ${form.tip.x.toFixed(4)},` +
         ` ${form.tip.y.toFixed(4)}, lean ${STICK_TILT.toFixed(2)}°,` +
-        ` rod ${shape.hasRod ? "its own" : entry.handle})`,
+        ` ${
+          shape.sleeve
+            ? // Printed because it is measured rather than written down, and a
+              // cuff found in the wrong place is a hand the wrong size with
+              // nothing else to say so — see `anatomy`.
+              `sleeve, cuff at row ${String(shape.wrist)}`
+            : `rod ${shape.hasRod ? "its own" : entry.handle}`
+        })`,
     );
   }
 }

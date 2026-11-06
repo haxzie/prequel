@@ -17,7 +17,7 @@
  * The pointers the card offers: the five teacher's sticks, then the five name
  * tags.
  *
- * Ten of the app's twenty-four, and the ten that are not a pointer somebody
+ * Ten of the app's twenty-five, and ten that are not a pointer somebody
  * already has. A Mac's own arrow in black or white is the thing being replaced
  * rather than a reason to replace it, and the props — a frog, a corn, a
  * football — are a joke that lands once and then has to be scrolled past.
@@ -85,7 +85,7 @@ export const POINTERS: PointerStyle[] = [
 export const TAG_NAME = "Prequel";
 
 /** What the pointer card claims, which is the app's own total. */
-export const POINTER_COUNT = 24;
+export const POINTER_COUNT = 25;
 
 /**
  * The keyboards, in `KeyProfile::ALL`'s order.

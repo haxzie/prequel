@@ -1710,6 +1710,7 @@ export function buildRenderPlan(
       items.push(
         ...cursorItems(
           cursor,
+          frame,
           sources.screen,
           srcRect,
           dstRect,
@@ -5603,6 +5604,14 @@ export interface CursorTrack {
    * picture. See `CURSOR_STYLES`.
    */
   reach?: number;
+  /**
+   * For a reaching pointer that may stand up out of the angle it was drawn at:
+   * that angle, in degrees.
+   *
+   * Set by `cursorImages` from the style, and present on the arm alone. A rod
+   * is held at one angle and a hand is not — see `withStanding`.
+   */
+  lean?: number;
   /** Seconds of stillness before it hides, or null to leave it on screen. */
   hideAfter: number | null;
   /**
@@ -5964,6 +5973,7 @@ function reachingSize(cursor: CursorTrack, unit: number): number {
 
 function cursorItems(
   cursor: CursorTrack,
+  frame: Size,
   source: Size,
   srcRect: Rect,
   dstRect: Rect,
@@ -6080,7 +6090,14 @@ function cursorItems(
   // handle is drawn at the one angle the artwork was leaned onto. A pointer
   // that waves its own stick about is not holding it. The panel stops the
   // control for the same reason, so this is not a setting being ignored.
-  const leaning = withTilt(timed, path.reach ? 0 : tilt, unit);
+  //
+  // The arm is the exception, and it is a different question rather than the
+  // same one answered differently: `withTilt` asks which way the pointer is
+  // travelling, and `withStanding` asks where in the frame it has got to. A
+  // shoulder is not a speed. It overwrites rather than adds to the rotation,
+  // because the line above has already put zero there for anything reaching.
+  const tilted = withTilt(timed, path.reach ? 0 : tilt, unit);
+  const leaning = path.lean === undefined ? tilted : withStanding(tilted, path.lean, frame);
   const smeared = withSmear(leaning, motionBlur, size);
 
   // The image each point is drawn with, which is not the kind it was recorded
@@ -6586,6 +6603,83 @@ const TILT_REF_SPEED = 0.8;
  * never moves it.
  */
 const TILT_SECONDS = 0.1;
+
+/**
+ * How long an arm takes to swing to a new lean, in seconds.
+ *
+ * Slower than `TILT_SECONDS`, and the difference is the point. That lean is a
+ * roll on a small sprite and has to keep up with the hand; this one swings two
+ * frames of sleeve, which is a limb's worth of weight. Run at the pointer's
+ * own figure it snaps, and a snapped arm reads as the sprite being swapped
+ * rather than moved.
+ */
+const STAND_SECONDS = 0.25;
+
+/**
+ * Stands a reaching arm up out of its drawn angle, far enough that its sleeve
+ * leaves the frame by the bottom rather than through the side.
+ *
+ * The sticks do not do this and must not: a rod is held at one angle, and one
+ * that changed angle while the hand holding it stayed put would be a rod
+ * sliding through a fist. An arm is the opposite case — a real one pivots at a
+ * shoulder, and the thing that reads as wrong is an arm entering through a
+ * wall.
+ *
+ * Only ever *upright*, never further over, and never past vertical. The
+ * sleeve is drawn running down and to the right, so standing it up swings its
+ * far end to the left; letting it go the other way would push the end it is
+ * trying to keep inside further out, and letting it past vertical would put
+ * the shoulder on the wrong side of the hand.
+ *
+ * The crossing point itself is not pinned anywhere. It slides with the
+ * pointer, one for one, for as long as it lands inside the frame — which is
+ * most of a recording — and the lean only starts to answer once it would not.
+ */
+function withStanding(points: ShapedPoint[], lean: number, frame: Size): ShapedPoint[] {
+  if (points.length === 0) return points;
+
+  const drawn = (lean * Math.PI) / 180;
+
+  /**
+   * The angle this point has to stand up by, before damping.
+   *
+   * `atan` of the room left to the right edge over the drop to the bottom one:
+   * the angle at which the sleeve would just graze the corner. Anything the
+   * drawn angle has over that is what has to come out of it. A pointer already
+   * past the right edge gives a negative numerator and so a target over the
+   * drawn angle, which clamps to upright — the furthest there is to go.
+   */
+  const standing = (point: ShapedPoint) =>
+    clamp(
+      drawn - Math.atan((frame.width - point.x) / Math.max(1, frame.height - point.y)),
+      0,
+      drawn,
+    );
+
+  const out: ShapedPoint[] = [];
+  // Started at the first point's own answer rather than at zero, or every clip
+  // opens on an arm swinging into place from an angle it was never at.
+  let angle = standing(points[0]!);
+  let angularVelocity = 0;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]!;
+    const previous = points[index - 1];
+    const stepSeconds = previous ? (point.at - previous.at) / 1_000_000_000 : 0;
+
+    [angle, angularVelocity] = damp(
+      angle,
+      angularVelocity,
+      standing(point),
+      Math.max(stepSeconds, 0),
+      STAND_SECONDS,
+    );
+
+    out.push({ ...point, rotation: angle });
+  }
+
+  return out;
+}
 
 /**
  * Writes each point's lean, from the path it is actually drawn on.
