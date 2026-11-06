@@ -1,5 +1,22 @@
 # @prequel/desktop
 
+## 0.11.0
+
+### Minor Changes
+
+- ecd92ef: <!-- highlight: Crop a recording, and preview one beside the library -->
+
+  Click a recording to see it playing beside the library, with its length, its size and where it lives.
+
+- 878529d: Select all and Deselect all in the library's selection bar, taking every recording rather than the ones on screen.
+- 444d0a5: Pick Screenshot or Record right on the window you are pointing at, instead of setting the dock beforehand.
+- 317926d: Select the recording or the camera to crop it, and place it by typing a position and a size.
+
+### Patch Changes
+
+- 878529d: The recordings list no longer sticks half-loaded behind a row that never arrives, after a delete or a rename.
+- d7020d5: A recording now shows the resize pointer wherever you dragged a window or a pane edge, instead of the arrow.
+
 ## 0.10.0
 
 ### Minor Changes
