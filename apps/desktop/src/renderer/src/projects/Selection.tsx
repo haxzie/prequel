@@ -77,10 +77,20 @@ export function Checkbox({
  */
 export function SelectionBar({
   count,
+  onSelectAll,
   onClear,
   onDelete,
 }: {
   count: number;
+  /**
+   * Every recording in this library, not only the ones drawn.
+   *
+   * The grid pages as it is scrolled, so "all" read off what is on screen
+   * would be a button that ticked twelve of sixty and said nothing about the
+   * rest. It is answered from the whole library instead — see `selectAll` —
+   * and the count beside it is what says how many that was.
+   */
+  onSelectAll: () => void;
   onClear: () => void;
   onDelete: () => void;
 }) {
@@ -100,11 +110,18 @@ export function SelectionBar({
       >
         <span className="text-[12px] tabular-nums">{count} selected</span>
 
-        <button
-          type="button"
-          onClick={onClear}
-          className="rounded-full px-2.5 py-1 text-[12px] text-editor-fg/70 transition-colors hover:bg-white/10 hover:text-editor-fg"
-        >
+        {/* The two ends of the same question, side by side and in the same
+            quiet style: neither is the thing the bar is for. Delete is, and it
+            is the only filled button on it.
+
+            "Select all" first, because it adds to what is already ticked and
+            "Clear" throws it away — the undoable one before the one that is
+            not. */}
+        <button type="button" onClick={onSelectAll} className={QUIET}>
+          Select all
+        </button>
+
+        <button type="button" onClick={onClear} className={QUIET}>
           Clear
         </button>
 
@@ -123,6 +140,17 @@ export function SelectionBar({
     </div>
   );
 }
+
+/**
+ * The bar's two plain verbs.
+ *
+ * One constant because they are a pair and have to stay one: written apart,
+ * the first of them to be adjusted becomes the louder of two things that are
+ * meant to weigh the same.
+ */
+const QUIET =
+  "rounded-full px-2.5 py-1 text-[12px] text-editor-fg/70 transition-colors " +
+  "hover:bg-white/10 hover:text-editor-fg";
 
 /** Lucide `check`, at the weight a 18px box wants. */
 function TickIcon() {

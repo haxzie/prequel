@@ -91,8 +91,22 @@ export function Projects({
    */
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 
-  /** How many recordings there are to page through, once the first page says. */
-  const [total, setTotal] = useState(0);
+  /**
+   * Whether there are candidate folders nobody has asked for yet.
+   *
+   * A flag rather than the total it used to be, because the two numbers it was
+   * compared against are in different units. `total` counts *candidates* —
+   * every directory in the recordings folder, a `.DS_Store` among them — and
+   * the grid counts *cards*, which is only the ones holding a readable
+   * recording. One stray file in that folder made `cards < total` true for
+   * ever: the sentinel never went away, and scrolling to it fetched a page
+   * past the end, drew nothing, and left the skeleton row sitting there with
+   * the list apparently stuck half-loaded.
+   *
+   * Counted in candidates on both sides now — how many have been asked for
+   * against how many there are — which is the unit the offset is already in.
+   */
+  const [moreToCome, setMoreToCome] = useState(false);
   /** A page is in flight. Kept in a ref: the observer below reads it, and a
       render per fetch would be a render while the user is scrolling. */
   const loading = useRef(false);
@@ -108,10 +122,17 @@ export function Projects({
     const result = await window.prequel.projects.list(PAGE, 0, still);
     loading.current = false;
 
+    // Back to one page asked for, which is the other half of the stuck list.
+    // Only the mount effect reset this, so a delete or a rename after any
+    // scrolling re-listed from the top and then went on paging from wherever
+    // the scrolling had got to — every page after the first arrived empty and
+    // the grid stopped growing.
+    seen.current = PAGE;
+
     // An empty grid rather than none at all: main has logged whatever went
     // wrong, and a screen that never resolves says nothing to the user.
     setProjects(result.ok ? result.value.projects : []);
-    setTotal(result.ok ? result.value.total : 0);
+    setMoreToCome(result.ok && result.value.total > PAGE);
   }, [still]);
 
   /**
@@ -132,7 +153,7 @@ export function Projects({
 
     seen.current = offset + PAGE;
     setProjects((current) => [...(current ?? []), ...result.value.projects]);
-    setTotal(result.value.total);
+    setMoreToCome(seen.current < result.value.total);
   }, [still]);
 
   /** Candidate folders asked for so far, which is what the offset counts. */
@@ -173,6 +194,26 @@ export function Projects({
   }, []);
 
   const clear = useCallback(() => setSelected(new Set()), []);
+
+  /**
+   * Ticks every recording in this library, not only the ones drawn.
+   *
+   * Asked for unpaged, which is the one call in here that is: the grid pages
+   * as it is scrolled, so a Select all answered from what is on screen would
+   * tick twelve of sixty and say nothing about the rest. The cost is a `stat`
+   * per folder on one deliberate press, against a button that quietly means
+   * something other than what it says.
+   *
+   * The ones that are not drawn are still selected, and `deleteMany` takes
+   * directories rather than cards — so the bar's count is the truth and
+   * Delete acts on all of it.
+   */
+  const selectAll = useCallback(async () => {
+    const result = await window.prequel.projects.list(undefined, 0, still);
+    if (!result.ok) return;
+
+    setSelected(new Set(result.value.projects.map((project) => project.dir)));
+  }, [still]);
 
   const removeSelected = useCallback(async () => {
     const result = await window.prequel.projects.deleteMany([...selected]);
@@ -300,7 +341,7 @@ export function Projects({
               {/* The next page, fetched when this comes into view.
                   Skeletons rather than a spinner: they are the size of what is
                   coming, so the scrollbar stops jumping as each page lands. */}
-              {projects.length < total && <Sentinel view={view} onVisible={more} />}
+              {moreToCome && <Sentinel view={view} onVisible={more} />}
             </div>
 
             {/* Room under the last row for the bar to float over. Reserved only
@@ -310,7 +351,12 @@ export function Projects({
           </div>
 
           {selecting && (
-            <SelectionBar count={selected.size} onClear={clear} onDelete={removeSelected} />
+            <SelectionBar
+              count={selected.size}
+              onSelectAll={() => void selectAll()}
+              onClear={clear}
+              onDelete={removeSelected}
+            />
           )}
 
           {/* Only with a selection. An empty column of its own width beside

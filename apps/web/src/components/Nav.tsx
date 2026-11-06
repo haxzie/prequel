@@ -36,7 +36,7 @@ export function Nav() {
               the thin upstrokes stop being thin and the hand goes out of it. */}
           <Link
             href="/"
-            className="font-script text-base text-fg [-webkit-text-stroke:0.4px_currentColor]"
+            className="wordmark-sheen font-script text-base text-fg [-webkit-text-stroke:0.4px_currentColor]"
             aria-label="Prequel home"
           >
             Prequel

@@ -26,9 +26,14 @@ export function Footer() {
           were crushed to one word per line and overlapped. */}
       <Container className="grid gap-12 py-16 md:grid-cols-[1fr_1.7fr]">
         <div>
-          <Link href="/" className="flex items-center gap-2.5" aria-label="Prequel home">
+          {/* `group`, so the sheen lights from the mark as well as the word:
+              the two read as one logo and hovering half of it should not light
+              the other half only. */}
+          <Link href="/" className="group flex items-center gap-2.5" aria-label="Prequel home">
             <Logo size={32} />
-            <span className="text-base font-medium tracking-tight text-fg">Prequel</span>
+            <span className="wordmark-sheen text-base font-medium tracking-tight text-fg">
+              Prequel
+            </span>
           </Link>
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted">{SITE.description}</p>
           <DownloadCta className="mt-6 max-w-md" bare />

@@ -1581,6 +1581,25 @@
     }
   }
 
+  /* The wordmark, lit from inside while the pointer is on it.
+
+     Four seconds, and linear. This is light moving over the letters rather
+     than an object arriving, and an eased sweep reads as the second — it
+     would slow at each end and the loop would breathe instead of travelling.
+
+     The whole trick is in the distance. The image is twice the box wide and
+     this shifts it by a whole image width, so the frame it ends on is the one
+     it started on — provided the gradient's last stop is its first, which
+     `--wordmark-sheen` is written to make true. Any other distance and the
+     restart is a seam you can see on every lap. */
+  --animate-wordmark: wordmark 4s linear infinite;
+
+  @keyframes wordmark {
+    to {
+      background-position: 200% center;
+    }
+  }
+
   /* The sale strip above the nav. The track holds two copies of the same run
      of text side by side and slides exactly one copy's width, so the frame the
      loop restarts on is pixel-identical to the one before it. Any other distance
@@ -1954,6 +1973,59 @@
 
 @utility brand-gradient {
   background-image: linear-gradient(115deg, var(--brand-from), var(--brand-to));
+}
+
+/*
+  The wordmark's own colours, moving through it while the pointer is on it.
+
+  The mark's four, in the order the artwork puts them: the sun's start and end,
+  the clip's purple, the playhead's blue. Tokens rather than the hex out of the
+  SVG, so the two cannot drift — these *are* the values in `prequel.svg`.
+
+  The run closes on the colour it opened with. That is what makes the loop
+  seamless at `background-position: 200%`; see `--animate-wordmark`, which
+  explains the arithmetic.
+
+  The gradient is painted whether or not the pointer is there, and only the
+  text colour changes — so there is a fade both ways rather than a snap on the
+  way out, which is what a transition from a solid colour to a gradient cannot
+  otherwise give you. Nothing animates until it is hovered.
+
+  One consequence worth naming: `color: transparent` takes the nav wordmark's
+  `-webkit-text-stroke` with it, because that stroke is drawn in `currentColor`
+  and there is no way to paint a stroke with a gradient. The hand is a hair
+  lighter while it is lit. The alternative is a solid outline drawn round
+  moving colour, which reads far worse than the weight it saves.
+*/
+@utility wordmark-sheen {
+  background-image: linear-gradient(
+    90deg,
+    var(--brand-from),
+    var(--brand-to),
+    var(--iris),
+    var(--accent),
+    var(--brand-from)
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  transition: color 220ms ease-out;
+
+  &:hover,
+  &:focus-visible,
+  .group:hover & {
+    color: transparent;
+    animation: var(--animate-wordmark);
+  }
+
+  /* Lit, and still. The colours are the point and they are all there in one
+     frame; it is only the travel that goes. */
+  @media (prefers-reduced-motion: reduce) {
+    &:hover,
+    &:focus-visible,
+    .group:hover & {
+      animation: none;
+    }
+  }
 }
 
 /* A one-pixel top highlight, the thing that keeps a card from reading as flat.
