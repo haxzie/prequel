@@ -1,5 +1,13 @@
 # @prequel/desktop
 
+## 0.12.0
+
+### Minor Changes
+
+- 7047363: <!-- highlight: Point at your recording with a suited arm -->
+
+  A new pointer: a suited arm reaching in from the bottom of the frame, standing upright near the right edge.
+
 ## 0.11.0
 
 ### Minor Changes
