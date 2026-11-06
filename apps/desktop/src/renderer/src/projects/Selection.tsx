@@ -126,10 +126,12 @@ export function SelectionBar({
             the tick on every card already calls itself — see `Checkbox`'s
             label — so this is the app's own word rather than a third one. */}
         <button type="button" onClick={onSelectAll} className={QUIET}>
+          <DoubleTickIcon />
           Select all
         </button>
 
         <button type="button" onClick={onDeselectAll} className={QUIET}>
+          <ClearIcon />
           Deselect all
         </button>
 
@@ -157,8 +159,43 @@ export function SelectionBar({
  * meant to weigh the same.
  */
 const QUIET =
-  "rounded-full px-2.5 py-1 text-[12px] text-editor-fg/70 transition-colors " +
-  "hover:bg-white/10 hover:text-editor-fg";
+  "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-editor-fg/70 " +
+  "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5";
+
+/**
+ * Lucide's geometry for the two verbs, at the weight 14px wants.
+ *
+ * Thinner than `TickIcon` below, which is drawn white inside a filled 18px box
+ * and needs the mass to read against it. These sit beside 12px type at the
+ * same colour, and at 3.5 they were bolder than the word they label.
+ */
+const VERB = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2.25,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+} as const;
+
+/** Lucide `check-check`. Two ticks, which is more than one of them. */
+function DoubleTickIcon() {
+  return (
+    <svg {...VERB}>
+      <path d="M18 6 7 17l-5-5M22 10l-7.5 7.5L13 16" />
+    </svg>
+  );
+}
+
+/** Lucide `x`. The same glyph every dismissal in the app is drawn with. */
+function ClearIcon() {
+  return (
+    <svg {...VERB}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
 
 /** Lucide `check`, at the weight a 18px box wants. */
 function TickIcon() {
