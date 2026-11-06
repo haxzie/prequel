@@ -354,7 +354,7 @@ export function Projects({
             <SelectionBar
               count={selected.size}
               onSelectAll={() => void selectAll()}
-              onClear={clear}
+              onDeselectAll={clear}
               onDelete={removeSelected}
             />
           )}

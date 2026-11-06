@@ -2,4 +2,4 @@
 "@prequel/desktop": minor
 ---
 
-Select all in the library's selection bar ticks every recording, not only the ones already on screen.
+Select all and Deselect all in the library's selection bar, and Select all ticks every recording rather than the ones on screen.

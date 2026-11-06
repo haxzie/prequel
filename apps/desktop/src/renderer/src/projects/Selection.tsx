@@ -78,7 +78,7 @@ export function Checkbox({
 export function SelectionBar({
   count,
   onSelectAll,
-  onClear,
+  onDeselectAll,
   onDelete,
 }: {
   count: number;
@@ -91,7 +91,7 @@ export function SelectionBar({
    * and the count beside it is what says how many that was.
    */
   onSelectAll: () => void;
-  onClear: () => void;
+  onDeselectAll: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -115,14 +115,22 @@ export function SelectionBar({
             is the only filled button on it.
 
             "Select all" first, because it adds to what is already ticked and
-            "Clear" throws it away — the undoable one before the one that is
-            not. */}
+            the other throws it away — the undoable one before the one that is
+            not.
+
+            "Deselect all" and not "Clear", which is what this said while it
+            stood alone and nothing was named "select" beside it. A pair has to
+            read as one: `Clear` next to `Select all` is two different kinds of
+            word for two halves of one question, and the half somebody is
+            looking for is the one they cannot find. "Deselect" is also what
+            the tick on every card already calls itself — see `Checkbox`'s
+            label — so this is the app's own word rather than a third one. */}
         <button type="button" onClick={onSelectAll} className={QUIET}>
           Select all
         </button>
 
-        <button type="button" onClick={onClear} className={QUIET}>
-          Clear
+        <button type="button" onClick={onDeselectAll} className={QUIET}>
+          Deselect all
         </button>
 
         <button
