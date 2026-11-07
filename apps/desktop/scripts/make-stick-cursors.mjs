@@ -138,11 +138,15 @@ const SOLID = 8;
  * How much of a sleeve's far end is taken as the piece that repeats.
  *
  * Generous on purpose. The repeat is a seam every time it comes round, and the
- * longer the piece the fewer seams there are to notice — the arm runs some
- * twelve of these past the edge of the frame. 1200 rows is the straight part
- * of the sleeve and nothing above it: by then the centre has stopped moving
- * (two pixels across the whole slab) and the shading is flat enough that a
- * join lands within a level and a half of luma.
+ * longer the piece the fewer seams there are to notice — the arm runs a dozen
+ * of these past the edge of the frame. On the artwork here it is the straight
+ * part of the sleeve and nothing above it: the centre moves one pixel across
+ * the whole slab and the shading is flat to within half a level of luma a row.
+ *
+ * In rows rather than a fraction, because what it has to clear is the forearm,
+ * which is a length rather than a share of the file. That makes it the one
+ * number here that does not survive a change of resolution on its own — hence
+ * the check in `anatomy`.
  */
 const SLEEVE_SLAB = 1200;
 
@@ -211,6 +215,25 @@ function anatomy({ width, height, rgba }, sleeve) {
   // A sleeve takes its piece off the far end of the file instead. Everything
   // between the cuff and there is a forearm — it tapers, it bends, it is lit
   // across — and a forearm repeated is read as a repeat immediately.
+  //
+  // Refused rather than clamped when the file is too short to hold both. A
+  // slab that reached up into the forearm would still produce a sprite, and
+  // the sprite would carry a wrist down the length of the arm every time the
+  // repeat came round — which is the one failure this whole path exists to
+  // avoid, and the one nothing else would report. A hand's width below the
+  // cuff is where the shaping has run out on every arm measured so far.
+  if (sleeve) {
+    const floor = wrist + (right - left + 1);
+    if (height - SLEEVE_SLAB < floor) {
+      throw new Error(
+        `this arm is ${String(height)} rows and its cuff is at ${String(wrist)}, so the last ` +
+          `${String(SLEEVE_SLAB)} of it reach ${String(floor - (height - SLEEVE_SLAB))} rows into ` +
+          `the forearm — give it a longer straight sleeve, or lower SLEEVE_SLAB past ` +
+          `${String(height - floor)}`,
+      );
+    }
+  }
+
   const slab = sleeve
     ? { from: height - SLEEVE_SLAB, to: height }
     : { from: wrist + 90, to: wrist + 190 };
