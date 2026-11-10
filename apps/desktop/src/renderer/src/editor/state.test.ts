@@ -279,20 +279,54 @@ describe("deleting", () => {
 
 describe("deleting a range", () => {
   const sources = (state: EditorState) => slicesOf(state.project).map((slice) => slice.source);
+  const skips = (state: EditorState) => slicesOf(state.project).map((slice) => slice.skips ?? []);
 
-  it("cuts a hole out of the middle of a clip", () => {
+  it("steps over the middle of a clip rather than cutting it in two", () => {
+    // The property this whole feature exists for: an edit from the transcript
+    // leaves the clip somebody arranged, not a strip of pieces nobody did.
     const state = run(start(), { type: "deleteRange", source: { start: 4 * S, end: 6 * S } });
 
-    expect(sources(state)).toEqual([
-      { start: 0, end: 4 * S },
-      { start: 6 * S, end: 10 * S },
-    ]);
+    expect(slicesOf(state.project)).toHaveLength(1);
+    expect(sources(state)).toEqual([{ start: 0, end: 10 * S }]);
+    expect(skips(state)).toEqual([[{ start: 4 * S, end: 6 * S }]]);
     expect(projectDuration(state.project)).toBe(8 * S);
     // Project time runs straight across the hole.
     expect(toSourceTime(placedSlices(state.project), 4 * S)).toBe(6 * S);
   });
 
-  it("trims both clips when the range crosses a cut that already exists", () => {
+  it("keeps one clip however many holes are cut in it", () => {
+    const state = run(
+      start(),
+      { type: "deleteRange", source: { start: 1 * S, end: 2 * S } },
+      { type: "deleteRange", source: { start: 4 * S, end: 5 * S } },
+      { type: "deleteRange", source: { start: 7 * S, end: 8 * S } },
+    );
+
+    expect(slicesOf(state.project)).toHaveLength(1);
+    expect(skips(state)[0]).toHaveLength(3);
+    expect(projectDuration(state.project)).toBe(7 * S);
+  });
+
+  it("joins holes that meet", () => {
+    const state = run(
+      start(),
+      { type: "deleteRange", source: { start: 4 * S, end: 5 * S } },
+      { type: "deleteRange", source: { start: 5 * S, end: 6 * S } },
+    );
+
+    expect(skips(state)).toEqual([[{ start: 4 * S, end: 6 * S }]]);
+  });
+
+  it("trims the edge rather than holing it", () => {
+    // A hole against an edge is a shorter clip. Kept as a hole it would make
+    // the clip's own range disagree with the footage it starts on.
+    const state = run(start(), { type: "deleteRange", source: { start: 0, end: 3 * S } });
+
+    expect(sources(state)).toEqual([{ start: 3 * S, end: 10 * S }]);
+    expect(skips(state)).toEqual([[]]);
+  });
+
+  it("holes both clips when the range crosses a cut that already exists", () => {
     const state = run(
       start(),
       { type: "split", at: 5 * S },
@@ -335,6 +369,7 @@ describe("deleting a range", () => {
     });
 
     expect(sources(state)).toEqual([{ start: 0, end: 4 * S }]);
+    expect(skips(state)).toEqual([[]]);
   });
 
   it("does nothing for a range that touches no footage", () => {
@@ -348,17 +383,11 @@ describe("deleting a range", () => {
     expect(run(state, { type: "deleteRange", source: { start: 6 * S, end: 6 * S } })).toBe(state);
   });
 
-  it("gives the far half its own overrides", () => {
-    const state = run(
-      start(),
-      { type: "select", sliceId: "take" },
-      { type: "setSetting", section: "audio", key: "gain", value: 0.5 },
-      { type: "deleteRange", source: { start: 4 * S, end: 6 * S } },
+  it("does nothing for a range already stepped over", () => {
+    const state = run(start(), { type: "deleteRange", source: { start: 4 * S, end: 6 * S } });
+    expect(run(state, { type: "deleteRange", source: { start: 4.5 * S, end: 5.5 * S } })).toBe(
+      state,
     );
-    const [near, far] = slicesOf(state.project);
-
-    expect(far!.overrides).toEqual(near!.overrides);
-    expect(far!.overrides).not.toBe(near!.overrides);
   });
 
   it("is one undo step", () => {
@@ -366,6 +395,7 @@ describe("deleting a range", () => {
     const after = run(before, { type: "deleteRange", source: { start: 4 * S, end: 6 * S } });
 
     expect(sources(run(after, { type: "undo" }))).toEqual(sources(before));
+    expect(skips(run(after, { type: "undo" }))).toEqual([[], []]);
   });
 
   it("keeps a selection that survived and moves one that did not", () => {
@@ -399,6 +429,147 @@ describe("deleting a range", () => {
       { type: "deleteRange", source: { start: 4 * S, end: 6 * S } },
     );
     expect(state.selectedSliceId).toBeNull();
+  });
+});
+
+describe("restoring a range", () => {
+  const sources = (state: EditorState) => slicesOf(state.project).map((slice) => slice.source);
+  const skips = (state: EditorState) => slicesOf(state.project).map((slice) => slice.skips ?? []);
+  const cut = (from: number, to: number): EditorAction => ({
+    type: "deleteRange",
+    source: { start: from * S, end: to * S },
+  });
+  const restore = (from: number, to: number): EditorAction => ({
+    type: "restoreRange",
+    source: { start: from * S, end: to * S },
+  });
+
+  it("closes the hole it was cut from", () => {
+    const state = run(start(), cut(4, 6), restore(4, 6));
+
+    expect(sources(state)).toEqual([{ start: 0, end: 10 * S }]);
+    expect(skips(state)).toEqual([[]]);
+    expect(projectDuration(state.project)).toBe(10 * S);
+  });
+
+  it("puts back only the part asked for", () => {
+    // The words selected are a sentence out of the hole, not the hole.
+    const state = run(start(), cut(4, 8), restore(6, 8));
+
+    expect(skips(state)).toEqual([[{ start: 4 * S, end: 6 * S }]]);
+    expect(projectDuration(state.project)).toBe(8 * S);
+  });
+
+  it("reopens the middle of a hole, leaving the hole either side of it", () => {
+    const state = run(start(), cut(2, 8), restore(4, 6));
+
+    expect(slicesOf(state.project)).toHaveLength(1);
+    expect(skips(state)).toEqual([
+      [
+        { start: 2 * S, end: 4 * S },
+        { start: 6 * S, end: 8 * S },
+      ],
+    ]);
+  });
+
+  it("puts back a trimmed start", () => {
+    // A cut against an edge trimmed the clip rather than holing it, so this is
+    // the other way footage comes back: the clip itself has to grow.
+    const state = run(start(), cut(0, 3), restore(0, 3));
+
+    expect(sources(state)).toEqual([{ start: 0, end: 10 * S }]);
+  });
+
+  it("puts back a trimmed end", () => {
+    const state = run(start(), cut(7, 10), restore(7, 10));
+
+    expect(sources(state)).toEqual([{ start: 0, end: 10 * S }]);
+  });
+
+  it("puts back footage no clip holds at all", () => {
+    const state = run(
+      start(),
+      { type: "split", at: 3 * S },
+      { type: "split", at: 6 * S },
+      cut(2, 7),
+      restore(2, 7),
+    );
+
+    expect(sources(state)).toEqual([{ start: 0, end: 10 * S }]);
+  });
+
+  it("fills every hole a range crosses", () => {
+    const state = run(start(), cut(2, 3), cut(5, 6), restore(0, 10));
+
+    expect(sources(state)).toEqual([{ start: 0, end: 10 * S }]);
+    expect(skips(state)).toEqual([[]]);
+  });
+
+  it("leaves clips somebody made separate alone", () => {
+    // Two clips in a row that happen to look the same are two clips: a hole
+    // filled elsewhere is no reason to join them.
+    const state = run(start(), { type: "split", at: 5 * S }, cut(8, 9), restore(8, 9));
+
+    expect(sources(state)).toEqual([
+      { start: 0, end: 5 * S },
+      { start: 5 * S, end: 10 * S },
+    ]);
+  });
+
+  it("will not join two clips that look different", () => {
+    const state = run(
+      start(),
+      { type: "split", at: 5 * S },
+      { type: "select", sliceId: slicesOf(start().project)[0]!.id },
+      { type: "setSetting", section: "audio", key: "gain", value: 0.5 },
+      // Against the first clip's end and the second's start, so both are
+      // trimmed and the restore has to grow one of them back.
+      cut(4, 6),
+      restore(4, 6),
+    );
+
+    expect(sources(state)).toEqual([
+      { start: 0, end: 6 * S },
+      { start: 6 * S, end: 10 * S },
+    ]);
+  });
+
+  it("takes the selection to the clip it merged into", () => {
+    const state = run(start(), { type: "split", at: 5 * S }, cut(4, 6));
+    const far = slicesOf(state.project)[1]!;
+    const back = run({ ...state, selectedSliceId: far.id }, restore(4, 6));
+
+    expect(slicesOf(back.project)).toHaveLength(1);
+    expect(back.selectedSliceId).toBe(slicesOf(back.project)[0]!.id);
+    expect(selectedSlice(back)).toBeDefined();
+  });
+
+  it("does nothing where there is no hole", () => {
+    const state = start();
+    expect(run(state, restore(2, 4))).toBe(state);
+    expect(canUndo(run(state, restore(2, 4)))).toBe(false);
+  });
+
+  it("is one undo step, and not an undo of the cut", () => {
+    const before = run(start(), cut(2, 4), cut(6, 8));
+    const after = run(before, restore(6, 8));
+
+    expect(skips(run(after, { type: "undo" }))).toEqual(skips(before));
+    // The other cut is still cut: this is not stepping back through history.
+    expect(skips(after)).toEqual([[{ start: 2 * S, end: 4 * S }]]);
+  });
+
+  it("keeps the clips in the order they play", () => {
+    // Which footage adjoins which is a fact about the recording; the order on
+    // the timeline is the user's, and restoring must not reshuffle it.
+    const state = run(start(), { type: "split", at: 5 * S }, cut(4, 6));
+    const [near, far] = slicesOf(state.project);
+    const moved = run(state, { type: "moveSlice", sliceId: far!.id, before: near!.id });
+
+    expect(sources(run(moved, restore(4, 6)))).toEqual([
+      { start: 6 * S, end: 10 * S },
+      { start: 0, end: 6 * S },
+    ]);
   });
 });
 

@@ -9,7 +9,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isImageExport, type EditorSession, type ExportProgress } from "../../../shared/contract";
 import type { RenderedCue, RenderedText, Size } from "../../../shared/layout";
-import { outputFrame, type OutputSettings, type Project } from "../../../shared/project";
+import {
+  outputFrame,
+  playedSpan,
+  type OutputSettings,
+  type Project,
+} from "../../../shared/project";
 import { buildMusic, buildSlices } from "./exportSlices";
 import { slicesOf } from "./state";
 import { renderStillPng } from "./stillPng";
@@ -308,10 +313,9 @@ export function useExport(
 
   const durationMs = useMemo(
     () =>
-      slicesOf(project).reduce(
-        (total, slice) => total + (slice.source.end - slice.source.start),
-        0,
-      ) / 1_000_000,
+      // What the clips play, not what they span: a clip that steps over a
+      // sentence is shorter than its range by exactly that sentence.
+      slicesOf(project).reduce((total, slice) => total + playedSpan(slice), 0) / 1_000_000,
     [project],
   );
 

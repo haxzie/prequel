@@ -6,30 +6,56 @@
  * word that is wrong. A field per word would put a box around every one and
  * make adding a missed word impossible.
  *
+ * The words are broken into blocks where the speaking stopped, each headed by
+ * the time it starts, so a moment can be found by eye rather than by reading
+ * from the top. The blocks are the recording's shape, not the caption style's —
+ * see `groupWords`.
+ *
  * The text and the timeline are the same thing seen twice. Selecting words
- * lights the footage they were spoken over, and deleting the selection cuts
- * that footage out — which is what deleting a sentence from a recording
- * means. Retyping over a selection is the other thing, a correction, and does
- * not cut anything.
+ * lights the footage they were spoken over, and cutting the selection takes
+ * that footage out — which is what deleting a sentence from a recording means.
+ * The words stay on screen, struck through, and the selection can be put back.
+ * Retyping over a selection is the other thing, a correction, and does not cut
+ * anything.
  *
  * The words are drawn imperatively. React re-rendering the children of a
  * contenteditable moves the caret to wherever the new nodes happen to leave
  * it, so the spans are rebuilt by hand whenever the words change and the caret
  * is put back where it was by counting characters.
  */
-import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+} from "react";
 
 import { isFiller } from "../../../shared/captions";
 import type { MediaTime } from "../../../shared/manifest";
-import type { TranscriptWord } from "../../../shared/transcript";
 import { cn } from "../lib/cn";
+import { formatElapsed } from "../lib/format";
+import { groupWords, type EditorWord } from "./captionText";
+
+/** A stretch of footage the words point at, and what may be done to it. */
+export interface CaptionSelection {
+  start: MediaTime;
+  end: MediaTime;
+  /** Whether any of it still plays, so there is something to cut. */
+  live: boolean;
+  /** Whether any of it was cut out, so there is something to put back. */
+  cut: boolean;
+}
 
 /** What the editor needs from the words, and everything it can do to them. */
 export interface CaptionEditing {
-  /** The words the edit still plays, in time order. */
-  words: readonly TranscriptWord[];
+  /** The words the clip plays and the cut ones among them, in time order. */
+  words: readonly EditorWord[];
   /** Whether the text differs from the generated transcript, so Reset has something to do. */
   edited: boolean;
+  /** The footage the selected words point at, or null for none. */
+  selection: CaptionSelection | null;
   /** The whole text as it now reads. */
   onEdit: (text: string) => void;
   /** Typing has paused or begun, so what follows is a new step to undo. */
@@ -37,12 +63,16 @@ export interface CaptionEditing {
   /** Back to the generated transcript. */
   onReset: () => void;
   onUndo: () => void;
-  /** The footage the selected words were spoken over, or null for none. */
-  onSelect: (range: { start: MediaTime; end: MediaTime } | null) => void;
+  /** The words selected have changed. */
+  onSelect: (selection: CaptionSelection | null) => void;
   /** Cut that footage out. */
   onCut: (range: { start: MediaTime; end: MediaTime }) => void;
+  /** Put cut footage back. */
+  onRestore: (range: { start: MediaTime; end: MediaTime }) => void;
   /** Move the playhead to where a word was said. */
   onSeek: (source: MediaTime) => void;
+  /** Where a word sits in the edit, or null when its footage was cut. */
+  projectAt: (source: MediaTime) => MediaTime | null;
   /** Where the playhead is in source time, read per frame. */
   sourceAt: (now?: number) => MediaTime | null;
 }
@@ -60,7 +90,8 @@ const PAUSE_MS = 1000;
  *
  * Not a plain offset: the words are rebuilt with exactly one space between
  * them, and the text as typed may have two, or one at the end. Counting only
- * what survives the rebuild puts the caret back beside the same letter.
+ * what survives the rebuild puts the caret back beside the same letter. Cut
+ * words are not counted at all — they are not text the caret moves through.
  */
 interface Caret {
   letters: number;
@@ -76,9 +107,15 @@ export function CaptionEditor({
   onSelect,
   onCut,
   onSeek,
+  projectAt,
   sourceAt,
 }: CaptionEditing) {
   const root = useRef<HTMLDivElement>(null);
+  /**
+   * Bumped to draw the words again when the block has been typed into in a way
+   * the words cannot hold — see `dirty`.
+   */
+  const [sweep, setSweep] = useState(0);
   /** Where to put the caret after the next rebuild, or null to leave it be. */
   const caret = useRef<Caret | null>(null);
   const pause = useRef<number | null>(null);
@@ -94,14 +131,48 @@ export function CaptionEditor({
     if (!element) return;
 
     element.replaceChildren(
-      ...words.flatMap((word, index) => {
-        const span = document.createElement("span");
-        span.dataset.index = String(index);
-        span.textContent = word.text;
-        // Dimmed rather than hidden: the sound was made, and a person reading
-        // the transcript should see why "um" is in the text and not on screen.
-        if (isFiller(word.text)) span.className = "text-editor-muted";
-        return index === 0 ? [span] : [document.createTextNode(" "), span];
+      ...groupWords(words).map((group) => {
+        const block = document.createElement("div");
+        block.dataset.group = "";
+        // The time is drawn by a `::before` off this attribute rather than by
+        // a node of its own: a node would have to be left out of the text read
+        // back and out of the caret's arithmetic, and a non-editable one is
+        // eaten whole by a Backspace beside it — which would lose the heading
+        // with nothing changed for the rebuild to put it back.
+        //
+        // Taken from the first word of the block still in the edit, which is
+        // not always its first word: a block that opens with a cut sentence
+        // has no time of its own until the words that survived it. One that is
+        // cut from end to end has no time at all and goes unheaded.
+        const at = words
+          .slice(group.from, group.to)
+          .reduce<MediaTime | null>((found, word) => found ?? projectAt(word.at), null);
+        if (at !== null) block.dataset.time = formatElapsed(at / 1_000_000);
+
+        block.append(
+          ...words.slice(group.from, group.to).flatMap((word, offset) => {
+            const span = document.createElement("span");
+            span.dataset.index = String(group.from + offset);
+            span.textContent = word.text;
+            if (word.cut) {
+              // Struck through rather than gone. Editable like the rest of the
+              // text on purpose, even though nothing typed into it is kept:
+              // `contentEditable="false"` makes a word an atom the browser
+              // selects whole, so a drag that *starts* on a cut word selects
+              // that word and nothing else — and starting there is how
+              // somebody picks a cut sentence to put back. `sweep` is what
+              // takes any typing in one back out.
+              span.dataset.cut = "";
+            } else if (isFiller(word.text)) {
+              // Dimmed rather than hidden: the sound was made, and a person
+              // reading the transcript should see why "um" is in the text and
+              // not on screen.
+              span.className = "text-editor-muted";
+            }
+            return offset === 0 ? [span] : [document.createTextNode(" "), span];
+          }),
+        );
+        return block;
       }),
     );
 
@@ -109,7 +180,9 @@ export function CaptionEditor({
       placeCaret(element, caret.current);
       caret.current = null;
     }
-  }, [words]);
+    // `sweep` is in here to be bumped, not to be read: it is how an edit the
+    // words did not record asks for the block to be laid out again.
+  }, [words, projectAt, sweep]);
 
   /**
    * The footage under the selection, reported as it changes.
@@ -134,8 +207,7 @@ export function CaptionEditor({
       if (previous && previous[0] === range[0] && previous[1] === range[1]) return;
 
       reported.current = range;
-      const { words: current } = latest.current;
-      latest.current.onSelect({ start: current[range[0]]!.at, end: current[range[1]]!.end });
+      latest.current.onSelect(spanOf(latest.current.words, range));
     };
 
     document.addEventListener("selectionchange", onChange);
@@ -186,7 +258,11 @@ export function CaptionEditor({
     if (!element) return;
 
     caret.current = caretIn(element);
-    onEdit(element.textContent ?? "");
+    onEdit(liveText(element));
+    // A keystroke that landed somewhere the words cannot record it. Nothing
+    // has changed for the rebuild to follow, so it is asked for by hand — and
+    // the letters go back to what was said.
+    if (dirty(element, words)) setSweep((count) => count + 1);
 
     if (pause.current !== null) window.clearTimeout(pause.current);
     pause.current = window.setTimeout(() => {
@@ -206,8 +282,9 @@ export function CaptionEditor({
     }
 
     switch (event.key) {
-      // One block of text. A line break would become a `<div>` the rebuild
-      // cannot represent, and a cue's line breaks are decided by the style.
+      // One block of text per group, and the groups are the recording's.
+      // A line break would become a `<div>` the rebuild cannot represent, and
+      // a cue's line breaks are decided by the style.
       case "Enter":
         event.preventDefault();
         return;
@@ -218,20 +295,25 @@ export function CaptionEditor({
 
       case "Backspace":
       case "Delete": {
-        // A stretch of words is footage; the caret is a letter. Deleting the
-        // one cuts the recording, deleting the other edits a word.
+        // A stretch of words is footage; the caret is a letter. Cutting the
+        // one takes the recording out, deleting the other edits a word.
         const range = selectedWords(event.currentTarget);
         if (range === null) return;
         event.preventDefault();
 
-        const { words: current } = latest.current;
+        const span = spanOf(latest.current.words, range);
+        // Nothing left to cut: the selection is words that were cut already.
+        // Prevented rather than passed on, because the browser would delete
+        // the letters of them and the words would not change to say so.
+        if (!span.live) return;
+
         const selection = document.getSelection();
         if (selection && selection.rangeCount > 0) {
           const before = selection.getRangeAt(0).cloneRange();
           before.collapse(true);
           caret.current = caretAt(event.currentTarget, before);
         }
-        onCut({ start: current[range[0]]!.at, end: current[range[1]]!.end });
+        onCut({ start: span.start, end: span.end });
         return;
       }
     }
@@ -267,6 +349,16 @@ export function CaptionEditor({
           "flex-1 cursor-text px-4 py-3 text-[13px] leading-6 whitespace-pre-wrap outline-none select-text",
           "empty:before:text-editor-muted empty:before:content-[attr(data-placeholder)]",
           "[&_[data-live]]:text-indicator",
+          // The time over each block, drawn from the attribute rather than
+          // from a node of its own — see the rebuild.
+          "[&_[data-time]]:before:mb-0.5 [&_[data-time]]:before:block",
+          "[&_[data-time]]:before:text-[10px] [&_[data-time]]:before:leading-none",
+          "[&_[data-time]]:before:text-editor-muted [&_[data-time]]:before:tabular-nums",
+          "[&_[data-time]]:before:content-[attr(data-time)]",
+          "[&_[data-group]+[data-group]]:mt-3",
+          // Cut, and said anyway. Muted as well as struck: the line alone
+          // reads as emphasis at this size.
+          "[&_[data-cut]]:text-editor-muted [&_[data-cut]]:line-through",
         )}
         onInput={onInput}
         onKeyDown={onKeyDown}
@@ -287,6 +379,18 @@ export function CaptionEditor({
       />
     </div>
   );
+}
+
+/** The footage a range of words points at, and what may be done to it. */
+function spanOf(words: readonly EditorWord[], [first, last]: [number, number]): CaptionSelection {
+  const covered = words.slice(first, last + 1);
+
+  return {
+    start: words[first]!.at,
+    end: words[last]!.end,
+    live: covered.some((word) => !word.cut),
+    cut: covered.some((word) => word.cut),
+  };
 }
 
 /**
@@ -314,9 +418,11 @@ function selectedWords(element: HTMLElement | null): [number, number] | null {
 /**
  * The index of the word a selection boundary belongs to.
  *
- * Inside a word's span it is that word. In the space between two, or on the
- * block itself as a select-all leaves it, it is the nearest word on the side
- * the selection continues towards.
+ * Inside a word's span it is that word. In the space between two, in a block's
+ * own box, or on the editor itself as a select-all leaves it, it is the nearest
+ * word on the side the selection continues towards — found by document
+ * position rather than by walking siblings, because the next word may be the
+ * first of the next block rather than a sibling of this one.
  */
 function wordBeside(
   element: HTMLElement,
@@ -324,49 +430,52 @@ function wordBeside(
   offset: number,
   side: "after" | "before",
 ): number | null {
+  const spans = [...element.querySelectorAll<HTMLElement>("[data-index]")];
   const span = (node instanceof HTMLElement ? node : node.parentElement)?.closest<HTMLElement>(
     "[data-index]",
   );
   if (span && element.contains(span)) {
+    const index = Number(span.dataset.index);
     // The far edge of a word's own text is not in the word: a selection that
     // ends at offset 0 of the next word has not taken any of it.
     const text = node.textContent?.length ?? 0;
-    if (side === "before" && offset === 0) return previousWord(span);
+    if (side === "before" && offset === 0) return index > 0 ? index - 1 : null;
     if (side === "after" && node.nodeType === Node.TEXT_NODE && offset === text) {
-      return nextWord(span);
+      return index + 1 < spans.length ? index + 1 : null;
     }
-    return Number(span.dataset.index);
+    return index;
   }
 
-  // A text node between words, or the block itself.
-  let from: Node | null =
-    node === element ? (element.childNodes[side === "after" ? offset : offset - 1] ?? null) : node;
-  if (from === null) return side === "after" ? null : lastWord(element);
+  const at = document.createRange();
+  at.setStart(node, offset);
+  at.collapse(true);
 
   if (side === "after") {
-    while (from && !(from instanceof HTMLElement && from.dataset.index)) from = from.nextSibling;
-  } else {
-    while (from && !(from instanceof HTMLElement && from.dataset.index)) {
-      from = from.previousSibling;
-    }
+    const found = spans.find((candidate) => at.comparePoint(candidate, 0) >= 0);
+    return found ? Number(found.dataset.index) : null;
   }
-  return from instanceof HTMLElement ? Number(from.dataset.index) : null;
+  const found = spans.findLast(
+    (candidate) => at.comparePoint(candidate, candidate.childNodes.length) <= 0,
+  );
+  return found ? Number(found.dataset.index) : null;
 }
 
-function previousWord(span: HTMLElement): number | null {
-  const index = Number(span.dataset.index);
-  return index > 0 ? index - 1 : null;
-}
-
-function nextWord(span: HTMLElement): number | null {
-  const next = span.nextElementSibling as HTMLElement | null;
-  return next?.dataset.index !== undefined ? Number(next.dataset.index) : null;
-}
-
-function lastWord(element: HTMLElement): number | null {
+/**
+ * Whether the block holds letters the words cannot hold.
+ *
+ * A cut word is text like any other to the browser, so it can be typed into or
+ * backspaced away — and because nothing in it is read back, the words would
+ * not change and nothing would put it back. Counting the spans catches the
+ * second case: a word deleted whole takes its span with it.
+ */
+function dirty(element: HTMLElement, words: readonly EditorWord[]): boolean {
   const spans = element.querySelectorAll<HTMLElement>("[data-index]");
-  const last = spans[spans.length - 1];
-  return last ? Number(last.dataset.index) : null;
+  if (spans.length !== words.length) return true;
+
+  return [...spans].some((span) => {
+    const word = words[Number(span.dataset.index)];
+    return word?.cut === true && span.textContent !== word.text;
+  });
 }
 
 /** Where the caret is now, or null when it is not in the block. */
@@ -381,15 +490,63 @@ function caretIn(element: HTMLElement): Caret | null {
 }
 
 function caretAt(element: HTMLElement, at: Range): Caret {
-  const before = document.createRange();
-  before.selectNodeContents(element);
-  before.setEnd(at.startContainer, at.startOffset);
-  const text = before.toString();
+  const text = liveText(element, at);
 
   return {
     letters: text.replace(/\s/g, "").length,
     afterSpace: /\s$/.test(text),
   };
+}
+
+/**
+ * The text nodes the words are typed into — the cut ones left out.
+ *
+ * `FILTER_REJECT` on a text node is `FILTER_SKIP`: it has no children to
+ * prune, so the two are the same here and the cut word's letters simply never
+ * arrive.
+ */
+function liveNodes(element: HTMLElement): TreeWalker {
+  return document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.parentElement?.closest("[data-cut]")
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  });
+}
+
+/**
+ * The words as one run of text, as the editor now reads them.
+ *
+ * `textContent` would do it if the editor held nothing but the words it plays.
+ * It holds the cut ones too, and those are not text any more — reading them
+ * back would time the cut footage into the edit as a correction. Each block
+ * boundary contributes a space, because the break between two blocks is a word
+ * boundary that no text node holds.
+ *
+ * With `upTo`, only the text before that point — which is how the caret is
+ * counted, against exactly the letters the rebuild will lay back out.
+ */
+function liveText(element: HTMLElement, upTo?: Range): string {
+  const walker = liveNodes(element);
+  let out = "";
+  let block: Element | null = null;
+  let started = false;
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    const group = node.parentElement?.closest("[data-group]") ?? null;
+    if (started && group !== block) out += " ";
+    started = true;
+    block = group;
+
+    if (upTo) {
+      if (node === upTo.startContainer) return out + node.data.slice(0, upTo.startOffset);
+      if (upTo.comparePoint(node, 0) === 1) return out;
+    }
+    out += node.data;
+  }
+
+  return out;
 }
 
 /**
@@ -400,7 +557,7 @@ function caretAt(element: HTMLElement, at: Range): Caret {
  * space, and the next rebuild moves it again.
  */
 function placeCaret(element: HTMLElement, caret: Caret) {
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const walker = liveNodes(element);
   let remaining = caret.letters;
   let node: Text | null = null;
   let offset = 0;
@@ -414,7 +571,9 @@ function placeCaret(element: HTMLElement, caret: Caret) {
       if (!/\s/.test(text[offset]!)) remaining -= 1;
     }
     if (remaining === 0) {
-      // Past the space too, when the caret had gone past one before.
+      // Past the space too, when the caret had gone past one before. A block
+      // boundary has no space to step over — the caret is already at the start
+      // of the next word, which is where it was.
       if (caret.afterSpace && text[offset] === " ") offset += 1;
       else if (caret.afterSpace && offset === text.length) {
         const next = walker.nextNode() as Text | null;
@@ -438,7 +597,7 @@ function placeCaret(element: HTMLElement, caret: Caret) {
 }
 
 /** The index of the word being said at `at`, or -1 between words. */
-function wordUnder(words: readonly TranscriptWord[], at: MediaTime): number {
+function wordUnder(words: readonly EditorWord[], at: MediaTime): number {
   let low = 0;
   let high = words.length - 1;
   while (low <= high) {

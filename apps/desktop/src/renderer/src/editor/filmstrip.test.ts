@@ -9,11 +9,13 @@
 import { describe, expect, it } from "vitest";
 
 import { cadence, frameAt, frameTime, MAX_FRAMES, THUMB_WIDTH, thumbs } from "./filmstrip";
+import { place } from "./timeline";
 
 const S = 1_000_000_000;
 
 /** A clip covering a source span, which is all `thumbs` reads. */
-const clip = (start: number, end: number) => ({ source: { start, end } });
+const clip = (start: number, end: number, skips: { start: number; end: number }[] = []) =>
+  place([{ id: "a", source: { start, end }, speed: 1, skips }])[0]!;
 
 describe("cadence", () => {
   it("takes about one frame a second for a short take", () => {

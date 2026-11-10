@@ -11,6 +11,7 @@
  * element, a canvas or a recording.
  */
 import type { MediaTime } from "../../../shared/manifest";
+import { sourceAtFraction, type PlacedSlice } from "./timeline";
 
 const NS_PER_SECOND = 1_000_000_000;
 
@@ -98,24 +99,20 @@ export interface Thumb {
  * gap at the end of every clip whose width is not a whole multiple of a
  * thumbnail.
  */
-export function thumbs(
-  slice: { source: { start: MediaTime; end: MediaTime } },
-  widthPx: number,
-  cadence: Cadence,
-): Thumb[] {
-  if (widthPx <= 0 || cadence.count <= 0) return [];
-
-  const span = slice.source.end - slice.source.start;
-  if (span <= 0) return [];
+export function thumbs(slice: PlacedSlice, widthPx: number, cadence: Cadence): Thumb[] {
+  if (widthPx <= 0 || cadence.count <= 0 || slice.duration <= 0) return [];
 
   const columns = Math.ceil(widthPx / THUMB_WIDTH);
   const out: Thumb[] = [];
 
   for (let column = 0; column < columns; column += 1) {
     // The middle of this column, so a thumbnail represents what is under it
-    // rather than what is at its left edge.
+    // rather than what is at its left edge — and through `sourceAtFraction`,
+    // so a clip that steps over part of its footage shows the frames it plays
+    // rather than the ones its range happens to span.
     const into = ((column + 0.5) * THUMB_WIDTH) / widthPx;
-    const source = slice.source.start + into * span;
+    const source = sourceAtFraction(slice, into);
+    if (source === null) continue;
 
     out.push({ x: column * THUMB_WIDTH, index: frameAt(source, cadence) });
   }

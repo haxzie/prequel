@@ -14,22 +14,57 @@
  */
 import type { TrackMedia } from "../../../shared/contract";
 import type { MediaTime } from "../../../shared/manifest";
-import { MIN_SPEED, MAX_SPEED } from "../../../shared/project";
+import { MAX_SPEED, MIN_SPEED, runsOf, type Skip } from "../../../shared/project";
 
-/** A contiguous span of the source recording, kept in the edit. */
+/** A span of the source recording kept in the edit, less the holes inside it. */
 export interface Slice {
   id: string;
   /** Half-open range of source time: `start` is included, `end` is not. */
   source: { start: MediaTime; end: MediaTime };
+  /** The stretches of that range this slice steps over — see `Skip` in `project.ts`. */
+  skips?: readonly Skip[];
   /** Playback rate. 1 is unchanged; project time covers `1 / speed` as much source. */
   speed: number;
 }
 
-/** A slice with its position in the edit worked out. */
-export interface PlacedSlice extends Slice {
-  /** Project time at which this slice begins. */
+/**
+ * One contiguous stretch a slice actually plays.
+ *
+ * A slice with no holes is one run. Everything that maps between project time
+ * and source time walks runs rather than slices, because a hole inside a clip
+ * moves project time on exactly the way a cut between two clips does — the
+ * difference is only what is on the strip.
+ */
+export interface SliceRun {
+  /** Half-open range of source time. */
+  source: { start: MediaTime; end: MediaTime };
+  /** Project time at which this run begins. */
   timelineStart: MediaTime;
   duration: MediaTime;
+}
+
+/** Where a slice sits in the edit, and what it plays there. */
+export interface Placement {
+  /** Project time at which this slice begins. */
+  timelineStart: MediaTime;
+  /** How long it runs for, which is its played time and not its whole span. */
+  duration: MediaTime;
+  /** What it plays, in order, with each piece's place in the edit. */
+  runs: SliceRun[];
+}
+
+/**
+ * A slice with its position in the edit worked out.
+ *
+ * Generic over what was passed in, so a caller that laid out *project* slices
+ * gets its overrides back on the other side rather than having to index the
+ * two lists in step — which is a pairing nothing checks and a reorder breaks.
+ */
+export type PlacedSlice<T extends Slice = Slice> = T & Placement;
+
+/** A slice's speed, held inside the bounds the rest of the app assumes. */
+function rateOf(slice: Slice): number {
+  return Math.min(Math.max(slice.speed, MIN_SPEED), MAX_SPEED);
 }
 
 /**
@@ -39,16 +74,25 @@ export interface PlacedSlice extends Slice {
  * range and its project position could disagree with itself, and the
  * disagreement would be invisible in the saved file.
  */
-export function place(slices: readonly Slice[]): PlacedSlice[] {
+export function place<T extends Slice>(slices: readonly T[]): PlacedSlice<T>[] {
   let at = 0;
   return slices.map((slice) => {
-    const sourceDuration = Math.max(0, slice.source.end - slice.source.start);
+    const rate = rateOf(slice);
+    const timelineStart = at;
+
     // Output duration shrinks as speed rises: twice the rate covers the same
     // source span in half the project time.
-    const duration = sourceDuration / Math.min(Math.max(slice.speed, MIN_SPEED), MAX_SPEED);
-    const placed = { ...slice, timelineStart: at, duration };
-    at += duration;
-    return placed;
+    const runs = runsOf(slice).map((source) => {
+      const run = {
+        source,
+        timelineStart: at,
+        duration: Math.max(0, source.end - source.start) / rate,
+      };
+      at += run.duration;
+      return run;
+    });
+
+    return { ...slice, timelineStart, duration: at - timelineStart, runs };
   });
 }
 
@@ -78,15 +122,43 @@ export function sliceAt(placed: readonly PlacedSlice[], time: MediaTime): Placed
   return time >= last.timelineStart + last.duration ? last : placed[0];
 }
 
-/** Project time → source time. Null when the edit is empty. */
+/**
+ * Project time → source time. Null when the edit is empty.
+ *
+ * Resolved against the run the moment falls in, not the slice: a clip with a
+ * hole in it plays two stretches of footage that are seconds apart, and
+ * measuring from the clip's own start would put everything after the hole as
+ * far out as the hole is long.
+ */
 export function toSourceTime(placed: readonly PlacedSlice[], time: MediaTime): MediaTime | null {
   const slice = sliceAt(placed, time);
   if (!slice) return null;
 
-  const into = Math.min(Math.max(0, time - slice.timelineStart), slice.duration);
+  const run = runAt(slice, time);
+  if (!run) return slice.source.start;
+
+  const into = Math.min(Math.max(0, time - run.timelineStart), run.duration);
   // Project time advances at `speed`x the rate source time does, so the offset
-  // into the slice covers that much more source ground than it looks like.
-  return slice.source.start + into * slice.speed;
+  // into the run covers that much more source ground than it looks like.
+  return run.source.start + into * slice.speed;
+}
+
+/**
+ * The run of a slice a project time falls in.
+ *
+ * Half-open like everything else, and clamped to the ends: a moment at the
+ * very end of the last run belongs to it rather than to nothing, which is what
+ * lets the edit stop on its final frame.
+ */
+function runAt(slice: Placement, time: MediaTime): SliceRun | undefined {
+  const found = slice.runs.find(
+    (run) => time >= run.timelineStart && time < run.timelineStart + run.duration,
+  );
+  if (found) return found;
+
+  const last = slice.runs.at(-1);
+  if (!last) return undefined;
+  return time >= last.timelineStart + last.duration ? last : slice.runs[0];
 }
 
 /**
@@ -113,26 +185,35 @@ export function spanInProject(
   let end: MediaTime | null = null;
 
   for (const slice of placed) {
-    const from = Math.max(source.start, slice.source.start);
-    const to = Math.min(source.end, slice.source.end);
-    // This clip keeps none of the span. An empty overlap is not a zero-length
-    // one: `to === from` is a clip that merely touches the span at a boundary.
-    if (to <= from) continue;
+    for (const run of slice.runs) {
+      const from = Math.max(source.start, run.source.start);
+      const to = Math.min(source.end, run.source.end);
+      // This run keeps none of the span. An empty overlap is not a zero-length
+      // one: `to === from` is a run that merely touches the span at a boundary.
+      if (to <= from) continue;
 
-    // Inverse of `toSourceTime`'s scaling: a source-time span covers `1 / speed`
-    // as much project time.
-    start ??= slice.timelineStart + (from - slice.source.start) / slice.speed;
-    end = slice.timelineStart + (to - slice.source.start) / slice.speed;
+      // Inverse of `toSourceTime`'s scaling: a source-time span covers
+      // `1 / speed` as much project time.
+      start ??= run.timelineStart + (from - run.source.start) / slice.speed;
+      end = run.timelineStart + (to - run.source.start) / slice.speed;
+    }
   }
 
   return start === null || end === null ? null : { start, end };
 }
 
-/** Source time → project time, or null when that moment was cut out. */
+/**
+ * Source time → project time, or null when that moment was cut out.
+ *
+ * Cut out covers both ways footage leaves an edit: a stretch no clip holds,
+ * and a hole inside one.
+ */
 export function toProjectTime(placed: readonly PlacedSlice[], source: MediaTime): MediaTime | null {
   for (const slice of placed) {
-    if (source >= slice.source.start && source < slice.source.end) {
-      return slice.timelineStart + (source - slice.source.start) / slice.speed;
+    for (const run of slice.runs) {
+      if (source >= run.source.start && source < run.source.end) {
+        return run.timelineStart + (source - run.source.start) / slice.speed;
+      }
     }
   }
   return null;
@@ -151,8 +232,10 @@ export function toProjectTimeThrough(
   source: MediaTime,
 ): MediaTime | null {
   for (const slice of placed) {
-    if (source >= slice.source.start && source <= slice.source.end) {
-      return slice.timelineStart + (source - slice.source.start) / slice.speed;
+    for (const run of slice.runs) {
+      if (source >= run.source.start && source <= run.source.end) {
+        return run.timelineStart + (source - run.source.start) / slice.speed;
+      }
     }
   }
   return null;
@@ -176,9 +259,11 @@ export function toSourceTimeThrough(
   time: MediaTime,
 ): MediaTime | null {
   for (const slice of placed) {
-    const end = slice.timelineStart + slice.duration;
-    if (time > slice.timelineStart && time <= end) {
-      return slice.source.start + (time - slice.timelineStart) * slice.speed;
+    for (const run of slice.runs) {
+      const end = run.timelineStart + run.duration;
+      if (time > run.timelineStart && time <= end) {
+        return run.source.start + (time - run.timelineStart) * slice.speed;
+      }
     }
   }
 
@@ -276,26 +361,39 @@ export function splitAt(slices: readonly Slice[], time: MediaTime, id: () => str
   );
   if (!slice) return [...slices];
 
-  // Same scaling as `toSourceTime`: the cut lands `time - timelineStart` into
-  // the slice's *project* time, which covers that much times `speed` of source.
-  const source = slice.source.start + (time - slice.timelineStart) * slice.speed;
+  // The run the blade landed in, and the same scaling `toSourceTime` uses: the
+  // cut lands `time - timelineStart` into that run's *project* time, which
+  // covers that much times `speed` of source. A cut on a hole's edge lands at
+  // the edge of the run beside it, which is where the picture changes anyway.
+  const run =
+    slice.runs.find((candidate) => time < candidate.timelineStart + candidate.duration) ??
+    slice.runs.at(-1);
+  if (!run) return [...slices];
+  const source = run.source.start + (time - run.timelineStart) * slice.speed;
 
+  // Each half keeps the holes that fall in it. `skipsWithin` clamps them, so a
+  // hole the blade passes through is simply shorter on each side.
   return placed.flatMap((candidate): Slice[] =>
     candidate.id === slice.id
       ? [
-          {
-            id: candidate.id,
-            source: { start: candidate.source.start, end: source },
-            speed: candidate.speed,
-          },
-          {
-            id: id(),
-            source: { start: source, end: candidate.source.end },
-            speed: candidate.speed,
-          },
+          cut(candidate, candidate.id, candidate.source.start, source),
+          cut(candidate, id(), source, candidate.source.end),
         ]
-      : [{ id: candidate.id, source: { ...candidate.source }, speed: candidate.speed }],
+      : [cut(candidate, candidate.id, candidate.source.start, candidate.source.end)],
   );
+}
+
+/** One slice's range narrowed to `start`–`end`, carrying the holes inside it. */
+function cut(slice: Slice, id: string, start: MediaTime, end: MediaTime): Slice {
+  const skips = skipsWithin(slice, start, end);
+  return { id, source: { start, end }, speed: slice.speed, ...(skips.length > 0 ? { skips } : {}) };
+}
+
+/** A slice's holes, clipped to a narrower range and dropped where they fall outside it. */
+export function skipsWithin(slice: Slice, start: MediaTime, end: MediaTime): Skip[] {
+  return (slice.skips ?? [])
+    .map((skip) => ({ start: Math.max(skip.start, start), end: Math.min(skip.end, end) }))
+    .filter((skip) => skip.end > skip.start);
 }
 
 /**
@@ -358,12 +456,11 @@ export function trimmedTo(grab: TrimGrab, clientX: number): MediaTime {
  */
 export function clickMarks(
   clicks: readonly MediaTime[],
-  slice: Slice,
+  slice: PlacedSlice,
   width: number,
   gap: number,
 ): number[] {
-  const span = slice.source.end - slice.source.start;
-  if (width <= 0 || span <= 0) return [];
+  if (width <= 0 || slice.duration <= 0) return [];
 
   const marks: number[] = [];
   let last = -Infinity;
@@ -371,7 +468,12 @@ export function clickMarks(
   for (const at of clicks) {
     if (at < slice.source.start || at >= slice.source.end) continue;
 
-    const fraction = (at - slice.source.start) / span;
+    // Along the clip as drawn, which is what it plays: a press inside a hole
+    // is not on screen at all, and one after a hole sits where the footage
+    // after the hole sits rather than where the recording would put it.
+    const fraction = fractionOf(slice, at);
+    if (fraction === null) continue;
+
     const x = fraction * width;
     if (x - last < gap) continue;
 
@@ -380,4 +482,37 @@ export function clickMarks(
   }
 
   return marks;
+}
+
+/**
+ * How far along a clip's drawn width a source moment sits, 0 to 1.
+ *
+ * Null for a moment the clip does not play. The one place the strip turns
+ * source time into a position inside a clip — thumbnails, click dots and the
+ * waveform all go through it, so a clip with a hole cannot draw one of them
+ * against a different ruler than the other two.
+ */
+export function fractionOf(slice: PlacedSlice, source: MediaTime): number | null {
+  if (slice.duration <= 0) return null;
+
+  for (const run of slice.runs) {
+    if (source < run.source.start || source >= run.source.end) continue;
+    const into =
+      run.timelineStart - slice.timelineStart + (source - run.source.start) / slice.speed;
+    return into / slice.duration;
+  }
+  return null;
+}
+
+/** The source moment a fraction of a clip's drawn width lands on. */
+export function sourceAtFraction(slice: PlacedSlice, fraction: number): MediaTime | null {
+  if (slice.duration <= 0) return null;
+
+  const into = Math.min(Math.max(fraction, 0), 1) * slice.duration;
+  for (const run of slice.runs) {
+    const from = run.timelineStart - slice.timelineStart;
+    if (into < from || into > from + run.duration) continue;
+    return run.source.start + (into - from) * slice.speed;
+  }
+  return slice.runs.at(-1)?.source.end ?? null;
 }

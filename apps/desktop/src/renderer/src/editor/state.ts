@@ -21,7 +21,9 @@ import {
   FALLBACK_BACKGROUND,
   MAX_SPEED,
   MAX_TEXT_TRACKS,
+  MIN_SLICE_NS,
   MIN_SPEED,
+  withSkips,
   resolveSettings,
   setOverride,
   type Background,
@@ -71,9 +73,6 @@ import {
   totalDuration,
   type PlacedSlice,
 } from "./timeline";
-
-/** Shortest slice a cut may leave behind. Below this it cannot be grabbed. */
-const MIN_SLICE_NS = 100_000_000;
 
 /**
  * Shortest zoom worth having.
@@ -269,6 +268,17 @@ export type EditorAction =
    * the middle": every clip loses whatever part of it the stretch covers.
    */
   | { type: "deleteRange"; source: { start: MediaTime; end: MediaTime } }
+  /**
+   * Puts a cut stretch of the recording back, wherever it was taken from.
+   *
+   * `deleteRange`'s opposite, and the other half of striking a sentence
+   * through in the captions editor rather than deleting it: the words stay on
+   * screen, so putting them back has to be something that can be pointed at.
+   *
+   * Not an undo. The cut may be several edits back, and only the stretch asked
+   * for comes back — everything done since stays.
+   */
+  | { type: "restoreRange"; source: { start: MediaTime; end: MediaTime } }
   | { type: "trimSlice"; sliceId: string; edge: "start" | "end"; source: MediaTime }
   | { type: "setSliceSpeed"; sliceId: string; speed: number }
   /**
@@ -680,6 +690,7 @@ function undoStep(action: EditorAction): { coalesce: string | null } | null {
     // clip is let go, so there is no stream of them to bury the history under.
     case "moveSlice":
     case "deleteRange":
+    case "restoreRange":
     case "addZoom":
     case "addZoomNear":
     case "deleteZoom":
@@ -1033,6 +1044,9 @@ function apply(
 
     case "deleteRange":
       return deleteRange(state, action.source);
+
+    case "restoreRange":
+      return restoreRange(state, action.source);
 
     case "trimSlice":
       return trimSlice(state, action);
@@ -2568,12 +2582,19 @@ export function splitPointAt(
   );
   if (!slice) return null;
 
-  // Scaled by `speed`, as `toSourceTime` does: a second of project time covers
-  // `speed` seconds of footage, so on a sped-up clip the unscaled offset lands
-  // short and the cut appears somewhere other than the playhead.
-  const source = slice.source.start + (at - slice.timelineStart) * slice.speed;
-  if (source - slice.source.start < MIN_SLICE_NS) return null;
-  if (slice.source.end - source < MIN_SLICE_NS) return null;
+  // Through the run the playhead is in, and scaled by `speed` as
+  // `toSourceTime` does: a second of project time covers `speed` seconds of
+  // footage, so on a sped-up clip the unscaled offset lands short and the cut
+  // appears somewhere other than the playhead — and on a clip with a hole in
+  // it, measuring from the clip's own start lands as far out as the hole.
+  const source = toSourceTime([slice], at);
+  if (source === null) return null;
+  // Measured in played time, not in source: the halves a cut here would leave
+  // are what is on the strip, and a clip that steps over most of its range can
+  // be plenty long enough either side of the blade while its source spans are
+  // not.
+  if (at - slice.timelineStart < MIN_SLICE_NS) return null;
+  if (slice.timelineStart + slice.duration - at < MIN_SLICE_NS) return null;
 
   return { slice, source };
 }
@@ -2997,25 +3018,33 @@ function splitSlices(state: EditorState, at: MediaTime): EditorState {
 
   const { slice: target, source } = point;
   const created = `${target.id}-${state.revision + 1}`;
+  const skips = target.skips ?? [];
 
   const next = edit(state, (project) =>
     withSlices(
       project,
-      slicesOf(project).flatMap((slice) =>
-        slice.id === target.id
-          ? [
-              { ...slice, source: { start: slice.source.start, end: source } },
-              {
-                id: created,
-                source: { start: source, end: slice.source.end },
-                speed: slice.speed,
-                // Structurally cloned: sharing the object would make editing
-                // one half silently edit the other.
-                overrides: structuredClone(slice.overrides),
-              },
-            ]
-          : [slice],
-      ),
+      slicesOf(project).flatMap((slice) => {
+        if (slice.id !== target.id) return [slice];
+        // Each half keeps the holes that fall in it, through `withSkips` for
+        // the reason the trim does: a hole outside a clip's range is a clip
+        // whose numbers disagree with what it plays. Neither half can come
+        // back empty — the blade only lands inside footage that plays.
+        const halves = [
+          withSkips({ ...slice, source: { start: slice.source.start, end: source } }, skips),
+          withSkips(
+            {
+              ...slice,
+              id: created,
+              source: { start: source, end: slice.source.end },
+              // Structurally cloned: sharing the object would make editing
+              // one half silently edit the other.
+              overrides: structuredClone(slice.overrides),
+            },
+            skips,
+          ),
+        ];
+        return halves.filter((half): half is Slice => half !== null);
+      }),
     ),
   );
 
@@ -3146,11 +3175,17 @@ function deleteSlice(state: EditorState, sliceId: string): EditorState {
 /**
  * Takes a stretch of source time out of every slice it touches.
  *
- * A slice the stretch runs through the middle of is cut in two; one it
- * overlaps at an end is trimmed; one it covers is removed. What is left of a
- * slice on either side is kept only if it is at least `MIN_SLICE_NS` — a
- * shorter remainder cannot be grabbed and could only be fixed by deleting it,
- * which is what the user was doing, so it goes with the cut.
+ * The stretch becomes a *hole* in each slice it runs through, not a cut: the
+ * clip keeps its identity, its settings and its place on the strip, and simply
+ * steps over the footage. Cutting a dozen sentences out of a transcript would
+ * otherwise leave a dozen clips nobody arranged, each with its own settings to
+ * keep in step — which is the whole reason `Skip` exists.
+ *
+ * A slice the stretch overlaps at an end is trimmed instead, and one it covers
+ * entirely is removed. What is left of a slice is kept only when it is at
+ * least `MIN_SLICE_NS` — a shorter remainder cannot be grabbed and could only
+ * be fixed by deleting the clip, which is what the user was doing, so it goes
+ * with the cut. All three rules live in `withSkips`.
  *
  * Refuses to empty the edit, for the reason `deleteSlice` does, and declines
  * when nothing changes so no undo step is banked for it.
@@ -3172,28 +3207,18 @@ function deleteRange(
       kept.push(slice);
       continue;
     }
-    changed = true;
 
-    const head = from - slice.source.start >= MIN_SLICE_NS;
-    const tail = slice.source.end - to >= MIN_SLICE_NS;
-
-    if (head) kept.push({ ...slice, source: { start: slice.source.start, end: from } });
-    if (tail) {
-      kept.push(
-        head
-          ? {
-              // The same name `split` would give it, and the same reason for
-              // the clone: shared overrides would make editing one half
-              // silently edit the other.
-              id: `${slice.id}-${state.revision + 1}`,
-              source: { start: to, end: slice.source.end },
-              speed: slice.speed,
-              overrides: structuredClone(slice.overrides),
-            }
-          : // A slice that only lost its front is still that slice.
-            { ...slice, source: { start: to, end: slice.source.end } },
-      );
+    const next = withSkips(slice, [...(slice.skips ?? []), { start: from, end: to }]);
+    // Unchanged where the stretch only covered footage this clip already
+    // stepped over — two overlapping cuts from the captions editor, which is
+    // not an edit and must not bank an undo step.
+    if (next !== null && sameSpans(next, slice)) {
+      kept.push(slice);
+      continue;
     }
+
+    changed = true;
+    if (next !== null) kept.push(next);
   }
 
   if (!changed || kept.length === 0) return state;
@@ -3211,6 +3236,199 @@ function deleteRange(
       : (kept.find((slice) => slice.source.start >= source.end) ?? kept.at(-1))!.id;
 
   return { ...next, selectedSliceId };
+}
+
+/** Whether two slices play exactly the same footage — same edges, same holes. */
+function sameSpans(a: Slice, b: Slice): boolean {
+  const skips = (slice: Slice) =>
+    (slice.skips ?? []).map((skip) => `${String(skip.start)}-${String(skip.end)}`).join(",");
+
+  return (
+    a.source.start === b.source.start && a.source.end === b.source.end && skips(a) === skips(b)
+  );
+}
+
+/**
+ * Puts a cut stretch of source time back into the edit.
+ *
+ * `deleteRange`'s opposite, and not an undo of it: the stretch comes back
+ * wherever it was taken from, however many edits ago, and whatever has
+ * happened since stays.
+ *
+ * Footage leaves an edit two ways, so this puts it back two ways. A hole
+ * inside a clip is simply reopened — the clip is already there and already
+ * covers that source time. A stretch no clip covers at all, left by a trim or
+ * by deleting a clip outright, has to be given back to a clip: the holes
+ * between clips are read in source order and not in the timeline's, because a
+ * clip can be dragged anywhere and which footage adjoins which is a fact about
+ * the recording. One filled right up to a neighbour grows that neighbour; one
+ * restored out of the middle becomes a clip of its own, placed beside the
+ * footage it ran on from.
+ *
+ * Clips that end up touching are merged when nothing tells them apart, so
+ * restoring a cut leaves the one clip it was made from rather than two with an
+ * invisible join down the middle.
+ */
+function restoreRange(
+  state: EditorState,
+  source: { start: MediaTime; end: MediaTime },
+): EditorState {
+  if (source.end <= source.start) return state;
+
+  const slices = slicesOf(state.project).map((slice) => {
+    if ((slice.skips ?? []).length === 0) return slice;
+    // Only the parts of each hole the stretch does not cover survive. Never
+    // null: taking holes away only ever leaves a clip playing more.
+    const left = (slice.skips ?? []).flatMap((skip) => [
+      { start: skip.start, end: Math.min(skip.end, source.start) },
+      { start: Math.max(skip.start, source.end), end: skip.end },
+    ]);
+    return (
+      withSkips(
+        slice,
+        left.filter((skip) => skip.end > skip.start),
+      ) ?? slice
+    );
+  });
+  if (slices.length === 0) return state;
+
+  /** Whether reopening a hole was itself the edit, before any gap is filled. */
+  const reopened = slices.some(
+    (slice, index) => !sameSpans(slice, slicesOf(state.project)[index]!),
+  );
+
+  /** Where each clip's source range has moved to, for the ones that grew. */
+  const grown = new Map<string, { start: MediaTime; end: MediaTime }>();
+  /** A restored piece and the clip it is to be placed after, or null for the front. */
+  const added: { after: string | null; source: { start: MediaTime; end: MediaTime } }[] = [];
+  /** Where footage came back, which are the only joins this restore may close. */
+  const joined = new Set<MediaTime>();
+
+  const fill = (
+    start: MediaTime,
+    end: MediaTime,
+    earlier: Slice | null,
+    later: Slice | null,
+  ): void => {
+    const from = Math.max(source.start, start);
+    const to = Math.min(source.end, end);
+    if (to <= from) return;
+    joined.add(from).add(to);
+
+    // Grown rather than inserted wherever the restored piece reaches a clip,
+    // which is every cut made from one stretch of footage. A piece that
+    // touches neither end was cut out of the middle of a longer hole and has
+    // no clip to grow — it comes back as its own, unless it is too short to
+    // grab, which `deleteRange` would have taken with the cut anyway.
+    // Read back through `grown`, because a clip with a hole on each side grows
+    // at both ends and the second write must not drop the first.
+    if (earlier !== null && from <= start) {
+      grown.set(earlier.id, { start: (grown.get(earlier.id) ?? earlier.source).start, end: to });
+      return;
+    }
+    if (later !== null && to >= end) {
+      grown.set(later.id, { start: from, end: (grown.get(later.id) ?? later.source).end });
+      return;
+    }
+    if (to - from < MIN_SLICE_NS) return;
+    added.push({ after: earlier?.id ?? null, source: { start: from, end: to } });
+  };
+
+  // `reach` is how far the footage is covered so far, so overlapping clips —
+  // the same stretch used twice — do not read as a hole between them.
+  let reach = 0;
+  let behind: Slice | null = null;
+
+  for (const slice of [...slices].sort((a, b) => a.source.start - b.source.start)) {
+    if (slice.source.start > reach) fill(reach, slice.source.start, behind, slice);
+    if (slice.source.end > reach) {
+      reach = slice.source.end;
+      behind = slice;
+    }
+  }
+  // The tail of the recording, which no clip bounds on the far side.
+  if (source.end > reach) fill(reach, source.end, behind, null);
+
+  if (!reopened && grown.size === 0 && added.length === 0) return state;
+
+  const kept: Slice[] = [];
+  const insertAfter = (after: string | null) => {
+    for (const piece of added.filter((candidate) => candidate.after === after)) {
+      const base = after === null ? slices[0]! : slices.find((slice) => slice.id === after)!;
+      kept.push({
+        id: `${base.id}-${state.revision + 1}`,
+        // The same shape of id and the same clone `deleteRange` gives the half
+        // it makes: shared overrides would make editing one clip silently edit
+        // the other.
+        source: piece.source,
+        speed: base.speed,
+        overrides: structuredClone(base.overrides),
+      });
+    }
+  };
+
+  insertAfter(null);
+  for (const slice of slices) {
+    const moved = grown.get(slice.id);
+    kept.push(moved ? { ...slice, source: moved } : slice);
+    insertAfter(slice.id);
+  }
+
+  // Only the joins this restore closed. Two clips that were already next to
+  // each other and already looked the same are two clips somebody made two
+  // clips — filling a hole elsewhere is no reason to join them.
+  const merged = mergeTouching(kept, joined);
+  const next = edit(state, (project) => withSlices(project, merged.slices));
+
+  // A clip that was merged away takes the selection to the clip it merged
+  // into, which is the same footage under a different id.
+  const selectedSliceId =
+    state.selectedSliceId === null
+      ? null
+      : (merged.became.get(state.selectedSliceId) ?? state.selectedSliceId);
+
+  return { ...next, selectedSliceId };
+}
+
+/**
+ * Joins neighbours that have become one piece of footage again.
+ *
+ * Only where the join is invisible: at a point `joined` names, contiguous in
+ * source, next to each other in the timeline, and nothing about how they look
+ * or how fast they run to tell them apart. Anything else is two clips somebody
+ * made two clips, and merging them would quietly throw one's settings away.
+ *
+ * `became` maps the id of each clip that was absorbed to the one it is now
+ * part of, for whatever was pointing at it.
+ */
+function mergeTouching(
+  slices: readonly Slice[],
+  joined: ReadonlySet<MediaTime>,
+): { slices: Slice[]; became: Map<string, string> } {
+  const out: Slice[] = [];
+  const became = new Map<string, string>();
+
+  for (const slice of slices) {
+    const last = out.at(-1);
+    const joins =
+      last !== undefined &&
+      joined.has(slice.source.start) &&
+      last.source.end === slice.source.start &&
+      last.speed === slice.speed &&
+      JSON.stringify(last.overrides) === JSON.stringify(slice.overrides);
+
+    if (!joins) {
+      out.push(slice);
+      continue;
+    }
+    out[out.length - 1] = {
+      ...last,
+      source: { start: last.source.start, end: slice.source.end },
+    };
+    became.set(slice.id, last.id);
+  }
+
+  return { slices: out, became };
 }
 
 /**
@@ -3250,11 +3468,17 @@ function trimSlice(
   return edit(state, (project) =>
     withSlices(
       project,
-      slicesOf(project).map((candidate) =>
-        candidate.id === action.sliceId
-          ? { ...candidate, source: { ...candidate.source, [action.edge]: bounded } }
-          : candidate,
-      ),
+      slicesOf(project).flatMap((candidate) => {
+        if (candidate.id !== action.sliceId) return [candidate];
+        // Through `withSkips`, because an edge dragged over a hole has to take
+        // it with it: a hole left hanging outside the clip's range would be a
+        // clip whose own numbers say it plays footage it does not.
+        const trimmed = withSkips(
+          { ...candidate, source: { ...candidate.source, [action.edge]: bounded } },
+          candidate.skips ?? [],
+        );
+        return trimmed ? [trimmed] : [candidate];
+      }),
     ),
   );
 }

@@ -81,8 +81,9 @@ function project(): Project {
   ]);
 }
 
-function built() {
+function built(edit: (project: Project) => Project = (project) => project) {
   const opened = session();
+  opened.project = edit(opened.project);
   return buildSlices(
     opened,
     opened.project,
@@ -124,6 +125,34 @@ describe("buildSlices", () => {
 
     expect(screenSource(first!.plan)?.width).toBe(1920);
     expect(screenSource(second!.plan)?.width).toBe(1280);
+  });
+
+  it("sends a clip that steps over footage as the pieces it plays", () => {
+    // The exporter renders a flat list of kept spans, so a hole inside a clip
+    // has to arrive as two spans exactly the way a cut between two clips does.
+    // Rendered from the clip's own range it would put the cut sentence back in
+    // the file, with the preview showing it gone.
+    const slices = built((project) => ({
+      ...project,
+      tracks: [
+        {
+          ...project.tracks[0]!,
+          slices: project.tracks[0]!.slices.map((slice, index) =>
+            index === 0 ? { ...slice, skips: [{ start: 3 * S, end: 6 * S }] } : slice,
+          ),
+        },
+      ],
+    }));
+
+    expect(slices.map((slice) => [slice.start, slice.end])).toEqual([
+      [0, 3 * S],
+      [6 * S, 10 * S],
+      [10 * S, 16 * S],
+    ]);
+    // Both pieces are the same clip, so they play the same file and look the
+    // same: nothing about a hole is a change of composition.
+    expect(slices[1]!.media.screen).toEqual(slices[0]!.media.screen);
+    expect(slices[1]!.plan).toEqual(slices[0]!.plan);
   });
 
   it("leaves out a kind no take recorded over the clip", () => {

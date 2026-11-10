@@ -188,7 +188,14 @@ export function useCaptions(
    * slices rather than the project.
    */
   const cuts = slicesOf(project)
-    .map((slice) => `${slice.source.start}-${slice.source.end}`)
+    .map(
+      (slice) =>
+        // The holes as well as the edges. A sentence stepped over inside a clip
+        // moves every cue after it, and keyed on the edges alone the whole set
+        // would keep the timings it had before the cut.
+        `${slice.source.start}-${slice.source.end}` +
+        (slice.skips ?? []).map((skip) => `/${skip.start}-${skip.end}`).join(""),
+    )
     .join(",");
 
   const spoken = useMemo(

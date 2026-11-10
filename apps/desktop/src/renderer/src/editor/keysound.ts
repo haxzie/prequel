@@ -95,10 +95,11 @@ function lowerBound(cues: readonly SoundCue[], time: MediaTime): number {
  * The cues whose moment falls in a window of *project* time, `from` included
  * and `to` not.
  *
- * Walks the clips the window overlaps and searches each clip's stretch of the
- * source. A cue in the gap between two clips is in no clip's stretch and is
- * never returned — a cut is a cut — and a cue near the end of a clip carries
- * the clip's end as its `stopAt`, so its voice is cut where the picture is.
+ * Walks the stretches of footage the window overlaps and searches each one.
+ * A cue in the gap between two clips, or in a hole inside one, is in no
+ * stretch and is never returned — a cut is a cut, whichever shape it has — and
+ * a cue near the end of a clip carries the clip's end as its `stopAt`, so its
+ * voice is cut where the picture is.
  */
 export function cuesBetween(
   placed: readonly PlacedSlice[],
@@ -113,26 +114,32 @@ export function cuesBetween(
     const sliceEnd = slice.timelineStart + slice.duration;
     if (sliceEnd <= from || slice.timelineStart >= to) continue;
 
-    // The window's overlap with this clip, in source time. Project time runs
-    // at `speed`x source time, as in `toSourceTime`; mapping one to the other
-    // unscaled puts a press on a 2x clip twice as late as its frame, and drops
-    // the presses in the second half of the clip altogether.
-    const sourceFrom =
-      slice.source.start +
-      (Math.max(from, slice.timelineStart) - slice.timelineStart) * slice.speed;
-    const sourceTo =
-      slice.source.start + (Math.min(to, sliceEnd) - slice.timelineStart) * slice.speed;
+    for (const run of slice.runs) {
+      const runEnd = run.timelineStart + run.duration;
+      if (runEnd <= from || run.timelineStart >= to) continue;
 
-    for (let i = lowerBound(cues, sourceFrom); i < cues.length; i++) {
-      const cue = cues[i];
-      if (!cue || cue.at >= sourceTo) break;
-      const projectAt = slice.timelineStart + (cue.at - slice.source.start) / slice.speed;
-      out.push({
-        cue,
-        sliceId: slice.id,
-        projectAt,
-        stopAt: sliceEnd - projectAt < VOICE_REACH ? sliceEnd : null,
-      });
+      // The window's overlap with this stretch, in source time. Project time
+      // runs at `speed`x source time, as in `toSourceTime`; mapping one to the
+      // other unscaled puts a press on a 2x clip twice as late as its frame,
+      // and drops the presses in the second half of the clip altogether.
+      const sourceFrom =
+        run.source.start + (Math.max(from, run.timelineStart) - run.timelineStart) * slice.speed;
+      const sourceTo = run.source.start + (Math.min(to, runEnd) - run.timelineStart) * slice.speed;
+
+      for (let i = lowerBound(cues, sourceFrom); i < cues.length; i++) {
+        const cue = cues[i];
+        if (!cue || cue.at >= sourceTo) break;
+        const projectAt = run.timelineStart + (cue.at - run.source.start) / slice.speed;
+        out.push({
+          cue,
+          sliceId: slice.id,
+          projectAt,
+          // Against the clip's end and not the run's: a voice that is still
+          // sounding when the picture steps over a hole was made by a press
+          // in footage that is still on screen either side of it.
+          stopAt: sliceEnd - projectAt < VOICE_REACH ? sliceEnd : null,
+        });
+      }
     }
   }
 

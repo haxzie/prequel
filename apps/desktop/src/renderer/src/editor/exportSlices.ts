@@ -87,13 +87,22 @@ export function buildSlices(
   const all = slicesOf(project);
   const laid = place(all);
 
-  return all.map((slice, index) => {
-    // Every text resolved onto *this* clip, the way the preview resolves them
-    // onto the one under the playhead. A text is pinned to the recording and
+  // One request slice per *run*, not per clip. A clip that steps over part of
+  // its footage plays two stretches that are seconds apart in the recording,
+  // and the exporter renders a flat list of kept spans — so a hole arrives
+  // here as two spans the way a cut does, and nothing in Rust has to know
+  // there was ever one clip. See `Skip`.
+  const pieces = laid.flatMap((slice) =>
+    slice.runs.map((run, which) => ({ slice, run, opens: which === 0 })),
+  );
+
+  return pieces.map(({ slice, run, opens }, index) => {
+    // Every text resolved onto *this* piece, the way the preview resolves them
+    // onto the clip under the playhead. A text is pinned to the recording and
     // measured in the finished video, and the exporter samples a plan on the
-    // recording's clock — so the crossing happens here, per clip. See
+    // recording's clock — so the crossing happens here, per piece. See
     // `PlacedText`.
-    const clip = laid[index]!;
+    const clip = { timelineStart: run.timelineStart, source: run.source, speed: slice.speed };
     const rows = project.texts.map((row) =>
       row.slices.flatMap((text) => {
         const from = toProjectTime(laid, text.at);
@@ -113,10 +122,15 @@ export function buildSlices(
       camera: sizeOf(media.camera),
     };
     const settings = resolveSettings(project.defaults, slice.overrides);
-    // The slice before this one, so the camera arrives rather than teleports.
+    // The clip before this one, so the camera arrives rather than teleports.
     // The first slice has nothing behind it and gets no transition, which is
     // what makes an export open on its composition rather than assembling it.
-    const previous = index > 0 ? all[index - 1] : undefined;
+    //
+    // Nothing across a hole either: the preview does not re-enter a clip it
+    // never left — the playhead crossing a hole does not change which clip is
+    // on screen — and a transition here would be a camera that slid back into
+    // place in the file and not on screen.
+    const previous = opens && index > 0 ? pieces[index - 1]!.slice : undefined;
 
     return {
       // Whole nanoseconds. A slice's times are written by the timeline, where
@@ -125,8 +139,8 @@ export function buildSlices(
       // exporter reads these as `i64`, and a fraction fails the whole export
       // with `invalid type: floating point, expected i64` — nothing renders,
       // and the message names a number rather than a field.
-      start: Math.round(slice.source.start),
-      end: Math.round(slice.source.end),
+      start: Math.round(run.source.start),
+      end: Math.round(run.source.end),
       media: refsFor(media),
       // The same function the preview draws from, so the two cannot disagree
       // about where anything sits — with every time in it rounded to a whole
@@ -155,7 +169,7 @@ export function buildSlices(
           previous
             ? {
                 from: resolveSettings(project.defaults, previous.overrides),
-                source: slice.source,
+                source: run.source,
               }
             : null,
           // This clip's own look. Caption settings are per clip, so a clip that

@@ -2250,9 +2250,37 @@ function Clip({
   // that gives it a new range. Zooming and scrolling do not touch it: the path
   // is drawn in a unit box and the SVG stretches it, so the work of resizing
   // stays in the compositor rather than coming back through React.
-  const wave = useMemo(
-    () => (peaks === null ? "" : wavePath(peaks, slice.source.start, slice.source.end)),
-    [peaks, slice.source.start, slice.source.end],
+  // One path per stretch the clip plays, each laid over its own share of the
+  // width. A single path across the whole range would draw the sound of
+  // footage the clip steps over, and put every peak after a hole to the right
+  // of the picture it belongs to.
+  const waves = useMemo(
+    () =>
+      peaks === null || slice.duration <= 0
+        ? []
+        : slice.runs.map((run) => ({
+            key: run.source.start,
+            left: ((run.timelineStart - slice.timelineStart) / slice.duration) * 100,
+            width: (run.duration / slice.duration) * 100,
+            path: wavePath(peaks, run.source.start, run.source.end),
+          })),
+    [peaks, slice],
+  );
+
+  // Where the clip steps over its own footage, as a share of its width. The
+  // join between two runs, which is one mark per hole however long the hole
+  // is — a hole takes up no room, so there is nothing to draw across.
+  const seams = useMemo(
+    () =>
+      slice.duration <= 0
+        ? []
+        : slice.runs
+            .slice(0, -1)
+            .map(
+              (run) =>
+                ((run.timelineStart + run.duration - slice.timelineStart) / slice.duration) * 100,
+            ),
+    [slice],
   );
 
   // The clip's width in real pixels, which is the only thing the zoom changes
@@ -2439,27 +2467,54 @@ function Clip({
           zoom has given the clip, so scrubbing the zoom does not rebuild a
           path per clip per frame. `vectorEffect` is deliberately absent — this
           is a fill, and nothing here is stroked. */}
-      {wave && (
-        <svg
-          // `w-full` rather than `inset-x-0`: an SVG is a replaced element with
-          // an intrinsic aspect ratio, and an absolutely positioned replaced
-          // element with `left`/`right` but no width does not stretch between
-          // them — CSS resolves the width from the ratio and anchors it left.
-          // The wave then draws into a box as wide as it is tall, bunched in
-          // the corner, with `preserveAspectRatio` never getting a say.
-          className="pointer-events-none absolute bottom-0 left-0 w-full text-wave opacity-40"
-          // As tall as the volume line is high. The line is the ceiling of the
-          // sound, so the wave under it has to be drawn against that ceiling —
-          // a clip pulled down to a quarter whose wave kept its full height
-          // would be a bar saying two different things about the same number.
-          style={{ height: `${String(waveHeight(Math.max(audio.mic, audio.system)))}%` }}
-          viewBox="0 0 1 1"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path d={wave} fill="currentColor" />
-        </svg>
+      {waves.map(
+        (wave) =>
+          wave.path && (
+            <svg
+              key={wave.key}
+              // An explicit width rather than `inset-x-0`: an SVG is a replaced
+              // element with an intrinsic aspect ratio, and an absolutely
+              // positioned replaced element with `left`/`right` but no width
+              // does not stretch between them — CSS resolves the width from the
+              // ratio and anchors it left. The wave then draws into a box as
+              // wide as it is tall, bunched in the corner, with
+              // `preserveAspectRatio` never getting a say.
+              className="pointer-events-none absolute bottom-0 text-wave opacity-40"
+              // As tall as the volume line is high. The line is the ceiling of
+              // the sound, so the wave under it has to be drawn against that
+              // ceiling — a clip pulled down to a quarter whose wave kept its
+              // full height would be a bar saying two different things about
+              // the same number.
+              style={{
+                left: `${String(wave.left)}%`,
+                width: `${String(wave.width)}%`,
+                height: `${String(waveHeight(Math.max(audio.mic, audio.system)))}%`,
+              }}
+              viewBox="0 0 1 1"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path d={wave.path} fill="currentColor" />
+            </svg>
+          ),
       )}
+
+      {/* Where the clip steps over footage cut from the transcript.
+
+          A line and not a gap: the footage takes up no time, so there is no
+          room to leave — but a cut that left nothing on the clip would make a
+          sentence disappear from the edit with the strip looking untouched.
+          Drawn in the clip's own ring colour, the way the edges of a clip are,
+          so it reads as an edge inside the bar rather than as something on the
+          footage. */}
+      {seams.map((at) => (
+        <span
+          key={at}
+          className="pointer-events-none absolute inset-y-0 w-px -translate-x-1/2 bg-slice-ring/70"
+          style={{ left: `${String(at)}%` }}
+          aria-hidden="true"
+        />
+      ))}
 
       {/* A dot for every press the recording saw, along the top of the footage.
 

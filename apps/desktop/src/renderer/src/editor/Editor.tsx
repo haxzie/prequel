@@ -50,8 +50,15 @@ import { RenameField } from "../components/RenameField";
 import { ANNOTATE_BAR, FRAME_BAR, TITLE_BAR } from "./surfaces";
 import { BugIcon, FolderIcon, TrashIcon } from "./icons";
 import type { Images } from "./webgl";
-import type { CaptionEditing } from "./CaptionEditor";
-import { mergeWords, realignWords, survivingWords, wordsWithin } from "./captionText";
+import type { CaptionEditing, CaptionSelection } from "./CaptionEditor";
+import {
+  cutBeside,
+  editorWords,
+  mergeWords,
+  realignWords,
+  survivingWords,
+  wordsWithin,
+} from "./captionText";
 import { ExportButton } from "./ExportButton";
 import { ExportDialog } from "./ExportDialog";
 import { FeedbackDialog } from "./FeedbackDialog";
@@ -1357,16 +1364,26 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     const { visible, hidden } = survivingWords(transcript.words, placed);
     const clip = slices.find((slice) => slice.id === state.selectedSliceId);
     const { shown, rest } = wordsWithin(visible, clip?.source ?? null);
+    // The cut words of the holes on either side of this clip, shown struck
+    // through among its own: a cut is a thing to read and put back, not a hole
+    // in the text. They are in `rest` as well — every hidden word is — because
+    // that is what carries them through an edit.
+    const cut = cutBeside(
+      hidden,
+      clip?.source ?? null,
+      slices.map((slice) => slice.source),
+    );
 
-    return { shown, rest: [...hidden, ...rest] };
+    return { shown, words: editorWords(shown, cut), rest: [...hidden, ...rest] };
   }, [transcript, placed, slices, state.selectedSliceId]);
   /** The footage under the words selected in the captions editor. */
-  const [captionRange, setCaptionRange] = useState<{ start: MediaTime; end: MediaTime } | null>(
-    null,
-  );
+  const [captionRange, setCaptionRange] = useState<CaptionSelection | null>(null);
+  /** Where a word sits in the edit, for the times over the captions editor's blocks. */
+  const projectAt = useCallback((source: MediaTime) => toProjectTime(placed, source), [placed]);
 
   const editing: CaptionEditing = {
-    words: spoken?.shown ?? [],
+    words: spoken?.words ?? [],
+    selection: captionRange,
     edited: state.project.transcript !== null,
     onEdit: (text) => {
       if (!spoken) return;
@@ -1395,12 +1412,21 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
       media.onInteract();
       media.playback.seek(at);
     },
+    onRestore: (range) => {
+      dispatch({ type: "restoreRange", source: range });
+      setCaptionRange(null);
+      // No seek, unlike the cut. Where the restored footage lands in project
+      // time is only known once the slices hold it, and nothing has gone
+      // missing from under the playhead — a cut has to move it because the
+      // frame it was on is no longer in the edit.
+    },
     onSeek: (source) => {
       const at = toProjectTime(placed, source);
       if (at === null) return;
       media.onInteract();
       media.playback.seek(at);
     },
+    projectAt,
     sourceAt: media.sourceAt,
   };
 

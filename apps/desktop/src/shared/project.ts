@@ -950,10 +950,39 @@ export type SliceOverrides = {
 export const MIN_SPEED = 0.25;
 export const MAX_SPEED = 4;
 
+/** Shortest stretch of footage a cut may leave behind. Below this it cannot be grabbed. */
+export const MIN_SLICE_NS: Ns = 100_000_000;
+
+/**
+ * A stretch inside a clip that it does not play.
+ *
+ * Half-open, in the same source time the clip's own range is in, and always
+ * strictly inside it: a hole against either edge is a shorter clip, not a hole.
+ */
+export interface Skip {
+  start: Ns;
+  end: Ns;
+}
+
 export interface Slice {
   id: string;
   /** Half-open range of source time, on the manifest's clock. */
   source: { start: Ns; end: Ns };
+  /**
+   * The stretches of that range this clip steps over, in order.
+   *
+   * Taking a sentence out of the middle of a clip is a hole in that clip, not
+   * two clips. Cutting from the transcript is how most footage leaves an edit,
+   * and a cut per deleted sentence would turn one recording into twenty clips
+   * on the strip — none of which anybody arranged, all of which have to be
+   * selected, styled and dragged one at a time.
+   *
+   * Absent when there are none, so a project nobody has cut this way reads and
+   * saves exactly as it did before. Normalised by `withSkips`: sorted, never
+   * touching, never against an edge, and never leaving a sliver too short to
+   * grab.
+   */
+  skips?: Skip[];
   /**
    * Playback rate. 1 is unchanged. Not a `SliceOverrides` section: every
    * section there is cosmetic and can change without moving anything else on
@@ -962,6 +991,106 @@ export interface Slice {
    */
   speed: number;
   overrides: SliceOverrides;
+}
+
+/**
+ * The clip's edges and holes, tidied into the one shape every reader expects.
+ *
+ * One function for both the reducer and the file on disk, because the
+ * invariants are the same either way and a project hand-edited into a shape
+ * the arithmetic does not expect would be a clip that plays something nobody
+ * can see on the strip.
+ *
+ * What it guarantees: holes sorted, clamped inside the clip, merged where they
+ * meet, never against an edge — a hole on an edge is a trim, and keeping it as
+ * a hole would make the clip's own range disagree with what it plays. A played
+ * stretch shorter than `MIN_SLICE_NS` goes with the hole beside it, for the
+ * reason a cut's remainder does: a sliver nobody can grab can only be fixed by
+ * deleting the whole clip.
+ *
+ * Null when there is nothing left to play, which is a clip the caller drops.
+ */
+export function withSkips<T extends { source: { start: Ns; end: Ns }; skips?: Skip[] }>(
+  slice: T,
+  skips: readonly Skip[],
+): T | null {
+  const { start, end } = slice.source;
+
+  const inside = skips
+    .map((skip) => ({ start: Math.max(skip.start, start), end: Math.min(skip.end, end) }))
+    .filter((skip) => skip.end > skip.start)
+    .sort((a, b) => a.start - b.start);
+
+  const merged: Skip[] = [];
+  for (const skip of inside) {
+    const last = merged.at(-1);
+    // Touching counts as overlapping: two holes with nothing played between
+    // them are one hole, and leaving them apart would put a zero-length run
+    // between them for every reader to trip over.
+    if (last && skip.start <= last.end) last.end = Math.max(last.end, skip.end);
+    else merged.push({ ...skip });
+  }
+
+  // Swallow the slivers, from the front. A run too short to grab is given to
+  // the hole in front of it — or, for the first run, to the one behind it,
+  // which is the same thing said from the other end.
+  let from = start;
+  for (let index = 0; index < merged.length; index += 1) {
+    const skip = merged[index]!;
+    if (skip.start - from < MIN_SLICE_NS) {
+      skip.start = from;
+      const previous = merged[index - 1];
+      if (previous && previous.end >= skip.start) {
+        previous.end = skip.end;
+        merged.splice(index, 1);
+        index -= 1;
+        continue;
+      }
+    }
+    from = skip.end;
+  }
+  if (merged.length > 0 && end - from < MIN_SLICE_NS) merged.at(-1)!.end = end;
+
+  // A hole against an edge is the edge, moved.
+  const head = merged[0]?.start === start ? merged.shift()!.end : start;
+  const tail = merged.at(-1)?.end === end ? merged.pop()!.start : end;
+  if (tail - head < MIN_SLICE_NS) return null;
+
+  const next = { ...slice, source: { start: head, end: tail } };
+  if (merged.length > 0) next.skips = merged;
+  else delete next.skips;
+  return next;
+}
+
+/**
+ * The source stretches a clip plays, in order.
+ *
+ * Holes are assumed sorted, inside the range and clear of its edges — which is
+ * what `withSkips` guarantees of everything that writes one. Here rather than
+ * in `timeline.ts` because the three apps' worth of code that reads a project
+ * without laying it out on a strip — the still's poster frame, a headless
+ * render — needs the same answer.
+ */
+export function runsOf(slice: { source: { start: Ns; end: Ns }; skips?: readonly Skip[] }): {
+  start: Ns;
+  end: Ns;
+}[] {
+  const runs: { start: Ns; end: Ns }[] = [];
+  let from = slice.source.start;
+
+  for (const skip of slice.skips ?? []) {
+    if (skip.start > from) runs.push({ start: from, end: skip.start });
+    from = Math.max(from, skip.end);
+  }
+  if (slice.source.end > from) runs.push({ start: from, end: slice.source.end });
+
+  return runs;
+}
+
+/** What a clip actually plays: its range with its holes taken out. */
+export function playedSpan(slice: { source: { start: Ns; end: Ns }; skips?: readonly Skip[] }): Ns {
+  const whole = Math.max(0, slice.source.end - slice.source.start);
+  return (slice.skips ?? []).reduce((left, skip) => left - (skip.end - skip.start), whole);
 }
 
 /** Room for independent audio and overlay tracks later; only one kind today. */
@@ -2549,19 +2678,32 @@ export function sanitiseProject(
 
   const slices = (stored.tracks?.[0]?.slices ?? [])
     .filter((slice): slice is Slice => typeof slice?.id === "string")
-    .map((slice) => ({
-      id: slice.id,
-      source: {
-        start: clamp(number(slice.source?.start, 0), 0, duration),
-        end: clamp(number(slice.source?.end, duration), 0, duration),
-      },
-      // Absent on every project saved before speed existed, which must read
-      // back at the rate it was recorded rather than silently sped up.
-      speed: clamp(number(slice.speed, 1), MIN_SPEED, MAX_SPEED),
-      overrides: migrateOverrides((slice.overrides ?? {}) as SliceOverrides),
-    }))
+    .map((slice) =>
+      // Through `withSkips` rather than taken as written: the holes come off
+      // the disk, and every reader downstream — the strip, the player, the
+      // exporter — assumes them sorted, inside the clip and clear of its
+      // edges. Null is a clip with nothing left to play, which is dropped
+      // below along with one that clamped to nothing.
+      withSkips(
+        {
+          id: slice.id,
+          source: {
+            start: clamp(number(slice.source?.start, 0), 0, duration),
+            end: clamp(number(slice.source?.end, duration), 0, duration),
+          },
+          // Absent on every project saved before speed existed, which must read
+          // back at the rate it was recorded rather than silently sped up.
+          speed: clamp(number(slice.speed, 1), MIN_SPEED, MAX_SPEED),
+          overrides: migrateOverrides((slice.overrides ?? {}) as SliceOverrides),
+        },
+        (Array.isArray(slice.skips) ? slice.skips : []).map((skip) => ({
+          start: clamp(number((skip as Skip | undefined)?.start, 0), 0, duration),
+          end: clamp(number((skip as Skip | undefined)?.end, 0), 0, duration),
+        })),
+      ),
+    )
     // A slice that survived clamping as empty cannot be drawn or rendered.
-    .filter((slice) => slice.source.end > slice.source.start);
+    .filter((slice): slice is Slice => slice !== null && slice.source.end > slice.source.start);
 
   // Cut at every seam the recording was extended at. A slice must resolve to
   // exactly one file per kind, so one spanning a seam would have to play two —
@@ -2665,11 +2807,20 @@ export function cutAtSeams(slices: readonly Slice[], seams: readonly Ns[]): Slic
     if (inside.length === 0) return [{ ...slice }];
 
     const edges = [slice.source.start, ...inside, slice.source.end];
-    return edges.slice(0, -1).map((start, index) => ({
-      ...slice,
-      id: index === 0 ? slice.id : `${slice.id}-t${String(index)}`,
-      source: { start, end: edges[index + 1]! },
-    }));
+    return edges.slice(0, -1).flatMap((start, index) => {
+      // Each piece keeps the holes that fall in it. A hole across the seam is
+      // clamped into both pieces by `withSkips`, which is right: the footage
+      // either side of it is skipped either side of the seam too.
+      const piece = withSkips(
+        {
+          ...slice,
+          id: index === 0 ? slice.id : `${slice.id}-t${String(index)}`,
+          source: { start, end: edges[index + 1]! },
+        },
+        slice.skips ?? [],
+      );
+      return piece ? [piece] : [];
+    });
   });
 }
 

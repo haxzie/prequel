@@ -29,10 +29,15 @@ const S = 1_000_000_000;
 /** One 10-second take, uncut. */
 const WHOLE: Slice[] = [{ id: "a", source: { start: 0, end: 10 * S }, speed: 1 }];
 
-/** The same take with 2s–4s removed. */
+/** The same take with 2s–4s removed, as two clips. */
 const CUT: Slice[] = [
   { id: "a", source: { start: 0, end: 2 * S }, speed: 1 },
   { id: "b", source: { start: 4 * S, end: 10 * S }, speed: 1 },
+];
+
+/** The same take with 2s–4s stepped over, as one clip with a hole in it. */
+const HOLED: Slice[] = [
+  { id: "a", source: { start: 0, end: 10 * S }, speed: 1, skips: [{ start: 2 * S, end: 4 * S }] },
 ];
 
 function track(overrides: Partial<TrackMedia> = {}): TrackMedia {
@@ -346,7 +351,7 @@ describe("trimmedTo", () => {
 
 describe("clickMarks", () => {
   /** A hundred pixels of clip, and a dot every four at the most. */
-  const marks = (clicks: number[], slices = WHOLE) => clickMarks(clicks, slices[0]!, 100, 4);
+  const marks = (clicks: number[], slices = WHOLE) => clickMarks(clicks, place(slices)[0]!, 100, 4);
 
   it("places a press at its share of the clip", () => {
     expect(marks([2.5 * S, 5 * S])).toEqual([0.25, 0.5]);
@@ -360,7 +365,7 @@ describe("clickMarks", () => {
   });
 
   it("gives a press on a cut one dot and not two", () => {
-    const halves = splitAt(WHOLE, 5 * S, () => "b");
+    const halves = place(splitAt(WHOLE, 5 * S, () => "b"));
     const first = clickMarks([5 * S], halves[0]!, 100, 4);
     const second = clickMarks([5 * S], halves[1]!, 100, 4);
     expect([first.length, second.length]).toEqual([0, 1]);
@@ -379,13 +384,89 @@ describe("clickMarks", () => {
   });
 
   it("draws nothing for a clip with no width yet", () => {
-    expect(clickMarks([5 * S], WHOLE[0]!, 0, 4)).toEqual([]);
+    expect(clickMarks([5 * S], place(WHOLE)[0]!, 0, 4)).toEqual([]);
   });
 
   it("marks a sped-up clip by where the press is in the footage", () => {
     // The clip plays its ten seconds in five, so half the source is still half
     // the bar: speed changes how wide the clip is, not what is inside it.
     const fast: Slice = { id: "a", source: { start: 0, end: 10 * S }, speed: 2 };
-    expect(clickMarks([5 * S], fast, 100, 4)).toEqual([0.5]);
+    expect(clickMarks([5 * S], place([fast])[0]!, 100, 4)).toEqual([0.5]);
+  });
+});
+
+describe("a clip with a hole in it", () => {
+  it("is as long as what it plays", () => {
+    const [clip] = place(HOLED);
+
+    expect(clip!.duration).toBe(8 * S);
+    expect(totalDuration(place(HOLED))).toBe(8 * S);
+    expect(clip!.runs.map((run) => [run.source.start, run.source.end])).toEqual([
+      [0, 2 * S],
+      [4 * S, 10 * S],
+    ]);
+  });
+
+  it("maps time exactly as the same cut made of two clips does", () => {
+    // The property the whole change rests on: a hole and a cut are the same
+    // edit, and only the strip can tell them apart. Any disagreement here is a
+    // preview and an export that disagree about which frame is playing.
+    const holed = place(HOLED);
+    const cut = place(CUT);
+
+    for (let at = 0; at < 8 * S; at += S / 4) {
+      expect(toSourceTime(holed, at)).toBe(toSourceTime(cut, at));
+    }
+    for (let source = 0; source < 10 * S; source += S / 4) {
+      expect(toProjectTime(holed, source)).toBe(toProjectTime(cut, source));
+    }
+    expect(spanInProject(holed, { start: S, end: 6 * S })).toEqual(
+      spanInProject(cut, { start: S, end: 6 * S }),
+    );
+  });
+
+  it("says nowhere for a moment inside the hole", () => {
+    const holed = place(HOLED);
+
+    expect(toProjectTime(holed, 3 * S)).toBeNull();
+    // The far edge of a hole is the footage that follows it, half-open like
+    // every other boundary here.
+    expect(toProjectTime(holed, 4 * S)).toBe(2 * S);
+  });
+
+  it("plays the footage after the hole where the hole was", () => {
+    expect(toSourceTime(place(HOLED), 2 * S)).toBe(4 * S);
+  });
+
+  it("scales a hole by speed like everything else", () => {
+    const fast = place([{ ...HOLED[0]!, speed: 2 }]);
+
+    expect(fast[0]!.duration).toBe(4 * S);
+    expect(toSourceTime(fast, S)).toBe(4 * S);
+  });
+
+  it("gives each half of a split the holes that fall in it", () => {
+    const halves = splitAt(HOLED, 5 * S, () => "b");
+
+    expect(halves.map((half) => half.source)).toEqual([
+      { start: 0, end: 7 * S },
+      { start: 7 * S, end: 10 * S },
+    ]);
+    expect(halves[0]!.skips).toEqual([{ start: 2 * S, end: 4 * S }]);
+    expect(halves[1]!.skips).toBeUndefined();
+    // And the edit is the same length as before it was cut in two.
+    expect(totalDuration(place(halves))).toBe(8 * S);
+  });
+
+  it("draws presses along what it plays", () => {
+    const clip = place(HOLED)[0]!;
+
+    // 1s is a quarter of the way through the first two seconds, which is an
+    // eighth of the eight seconds the clip runs.
+    expect(clickMarks([S], clip, 100, 4)).toEqual([0.125]);
+    // 3s is inside the hole: no dot at all, rather than one on the wrong frame.
+    expect(clickMarks([3 * S], clip, 100, 4)).toEqual([]);
+    // 4s is where the footage picks up again, a quarter of the way along.
+    expect(clickMarks([4 * S], clip, 100, 4)).toEqual([0.25]);
   });
 });

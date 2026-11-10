@@ -142,6 +142,7 @@ import {
   ReturnIcon,
   WatermarkIcon,
   RoundedIcon,
+  ScissorsIcon,
   ScreenIcon,
   ShadowIcon,
   ShadowOffsetIcon,
@@ -152,6 +153,7 @@ import {
   SquircleIcon,
   BlobIcon,
   TrashIcon,
+  UndoIcon,
   StrengthIcon,
   TiltIcon,
   TypingIcon,
@@ -1113,6 +1115,48 @@ function InspectorPanels(props: InspectorProps) {
                 title="Edit captions"
                 icon={<CaptionsIcon />}
                 onBack={() => setCaptionView("options")}
+                // The two things that happen to footage rather than to words,
+                // up here because they act on what is selected in the text
+                // below and not on a setting — and because Backspace, which
+                // cuts, is not a thing anybody finds by trying it.
+                action={
+                  <>
+                    {/* The label says what to do when there is nothing to act
+                        on yet. "Cut the selected words" over a button that
+                        will not press answers the wrong question — the one
+                        being asked is why not. */}
+                    <HeaderButton
+                      label={
+                        props.editing.selection?.live === true
+                          ? "Cut the selected words out of the recording"
+                          : "Select words in the text to cut them out"
+                      }
+                      inert={props.editing.selection?.live !== true}
+                      keepSelection
+                      onClick={() => {
+                        const span = props.editing.selection;
+                        if (span) props.editing.onCut(span);
+                      }}
+                    >
+                      <ScissorsIcon />
+                    </HeaderButton>
+                    <HeaderButton
+                      label={
+                        props.editing.selection?.cut === true
+                          ? "Put the selected words back into the recording"
+                          : "Select struck-through words to put them back"
+                      }
+                      inert={props.editing.selection?.cut !== true}
+                      keepSelection
+                      onClick={() => {
+                        const span = props.editing.selection;
+                        if (span) props.editing.onRestore(span);
+                      }}
+                    >
+                      <UndoIcon />
+                    </HeaderButton>
+                  </>
+                }
                 // The same button in the same place as every other panel's, and
                 // absent for the same reason: nothing edited is nothing to put
                 // back. It was a word here while the panels had words of their
@@ -4895,6 +4939,75 @@ function PushedPanel({
   );
 }
 
+/**
+ * One of the panel header's icon buttons.
+ *
+ * The app's own bubble rather than `title`, for the reason the rail and the
+ * dock use it: a row of unlabelled glyphs has to explain itself in the same
+ * voice and at the same speed as every other icon in the window, and
+ * Chromium's own tooltip is neither — it waits a second and a half and then
+ * draws a system label over the panel.
+ *
+ * `inert` rather than `disabled`, and it is not a style preference: Chromium
+ * fires no pointer events on a disabled button, so neither its `title` nor
+ * this bubble ever appears. A control whose whole job is to teach you that
+ * selecting words cuts the recording would be silent at exactly the moment
+ * somebody asks what it is.
+ */
+function HeaderButton({
+  label,
+  onClick,
+  active = false,
+  inert = false,
+  expanded,
+  keepSelection = false,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  /** Held open, as the apply-to-all button is while it is asking. */
+  active?: boolean;
+  /** There is nothing for it to act on, so it is drawn back and does nothing. */
+  inert?: boolean;
+  expanded?: boolean;
+  /**
+   * Swallow the mousedown, so pressing the button does not move focus.
+   *
+   * For the two that act on what is selected in the text below: focus leaving
+   * the editor collapses the selection and clears it before the click lands,
+   * so the control would act on nothing, every time.
+   */
+  keepSelection?: boolean;
+  children: React.ReactNode;
+}) {
+  const tooltip = useTooltip(label, "left");
+
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-disabled={inert || undefined}
+      aria-expanded={expanded}
+      className={cn(
+        "grid size-6 flex-none place-items-center rounded-full",
+        "transition-colors [&_svg]:size-3.5",
+        inert
+          ? "text-editor-muted opacity-35"
+          : active
+            ? "bg-white/10 text-editor-fg"
+            : "text-editor-muted hover:bg-white/10 hover:text-editor-fg",
+      )}
+      {...tooltip}
+      onMouseDown={keepSelection ? (event) => event.preventDefault() : undefined}
+      onClick={() => {
+        if (!inert) onClick();
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function PanelHeader({
   title,
   icon,
@@ -4954,18 +5067,13 @@ function PanelHeader({
     // same line — so the edge has to be drawn rather than implied.
     <header className="relative flex flex-none items-center gap-2.5 border-b border-editor-line px-3 py-2.5">
       {onBack && (
-        <button
-          type="button"
-          title="Back"
-          aria-label="Back to caption options"
-          className={cn(
-            "-ml-1 grid size-6 flex-none place-items-center rounded-full text-editor-muted",
-            "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
-          )}
-          onClick={onBack}
-        >
-          <BackIcon />
-        </button>
+        // The one button with a nudge of its own: it sits against the panel's
+        // edge rather than in the row of controls in the corner.
+        <span className="-ml-1 flex-none">
+          <HeaderButton label="Back to caption options" onClick={onBack}>
+            <BackIcon />
+          </HeaderButton>
+        </span>
       )}
 
       {/* Bare, at the text's own colour. It used to be a chip tinted from the
@@ -4988,18 +5096,9 @@ function PanelHeader({
           the title — moving it up here took that row out and put every control
           that acts on the panel in one place. */}
       {onReset && (
-        <button
-          type="button"
-          title="Reset to the project defaults"
-          aria-label="Reset to the project defaults"
-          className={cn(
-            "grid size-6 flex-none place-items-center rounded-full text-editor-muted",
-            "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
-          )}
-          onClick={onReset}
-        >
+        <HeaderButton label="Reset to the project defaults" onClick={onReset}>
           <ResetIcon />
-        </button>
+        </HeaderButton>
       )}
 
       {/* Where the delete button used to be, and deliberately not another
@@ -5007,20 +5106,14 @@ function PanelHeader({
           gesture now, on the clip itself, rather than a button in a panel that
           is otherwise entirely about how one looks. */}
       {onApplyToAll && (
-        <button
-          type="button"
-          title="Apply these settings to every clip"
-          aria-label="Apply these settings to every clip"
-          aria-expanded={confirming}
-          className={cn(
-            "grid size-6 flex-none place-items-center rounded-full",
-            "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
-            confirming ? "bg-white/10 text-editor-fg" : "text-editor-muted",
-          )}
+        <HeaderButton
+          label="Apply these settings to every clip"
+          active={confirming}
+          expanded={confirming}
           onClick={() => setConfirming((was) => !was)}
         >
           <ApplyAllIcon />
-        </button>
+        </HeaderButton>
       )}
 
       {confirming && onApplyToAll && (
@@ -5061,18 +5154,9 @@ function PanelHeader({
         </>
       )}
 
-      <button
-        type="button"
-        title="Close the panel"
-        aria-label="Close the panel"
-        className={cn(
-          "grid size-6 flex-none place-items-center rounded-full text-editor-muted",
-          "transition-colors hover:bg-white/10 hover:text-editor-fg [&_svg]:size-3.5",
-        )}
-        onClick={onClose}
-      >
+      <HeaderButton label="Close the panel" onClick={onClose}>
         <CloseIcon />
-      </button>
+      </HeaderButton>
     </header>
   );
 }

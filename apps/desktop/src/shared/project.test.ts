@@ -26,6 +26,8 @@ import {
   resolveSettings,
   sanitiseProject,
   setOverride,
+  withSkips,
+  MIN_SLICE_NS,
   type SliceOverrides,
   type TextSlice,
   type TextTrack,
@@ -34,6 +36,12 @@ import { placement } from "./layout.js";
 import { AUTO_PRESET_ID } from "./presets.js";
 
 const S = 1_000_000_000;
+
+/** A half-open range of source time, which is what a clip and a hole both are. */
+interface Span {
+  start: number;
+  end: number;
+}
 const RECORDING = "2026-08-11T12-00-00";
 
 describe("resolveSettings", () => {
@@ -269,6 +277,99 @@ describe("newProject", () => {
       cursorShadowBlur: 0.01,
       cursorShadowY: 0.01,
     });
+  });
+});
+
+describe("the holes inside a clip", () => {
+  const clip = (skips: { start: number; end: number }[]) =>
+    withSkips({ source: { start: 0, end: 10 * S } } as { source: Span; skips?: Span[] }, skips);
+
+  it("sorts and merges what it is given", () => {
+    // Holes arrive from two cuts in either order and from a file somebody may
+    // have edited; every reader downstream walks them expecting one shape.
+    expect(
+      clip([
+        { start: 6 * S, end: 7 * S },
+        { start: 2 * S, end: 3 * S },
+        { start: 2.5 * S, end: 4 * S },
+      ])?.skips,
+    ).toEqual([
+      { start: 2 * S, end: 4 * S },
+      { start: 6 * S, end: 7 * S },
+    ]);
+  });
+
+  it("joins two holes that meet", () => {
+    // Nothing is played between them, so they are one hole. Left apart they
+    // would put a run of no length between them for everything to trip over.
+    expect(
+      clip([
+        { start: 2 * S, end: 3 * S },
+        { start: 3 * S, end: 4 * S },
+      ])?.skips,
+    ).toEqual([{ start: 2 * S, end: 4 * S }]);
+  });
+
+  it("turns a hole against an edge into the edge", () => {
+    expect(clip([{ start: 0, end: 2 * S }])).toEqual({ source: { start: 2 * S, end: 10 * S } });
+    expect(clip([{ start: 8 * S, end: 10 * S }])).toEqual({ source: { start: 0, end: 8 * S } });
+  });
+
+  it("swallows a sliver too short to grab", () => {
+    // The same rule a cut's remainder follows: what is left has to be big
+    // enough to see and to grab, or it can only be fixed by deleting the clip.
+    const sliver = clip([
+      { start: 2 * S, end: 4 * S },
+      { start: 4 * S + MIN_SLICE_NS / 2, end: 6 * S },
+    ]);
+
+    expect(sliver?.skips).toEqual([{ start: 2 * S, end: 6 * S }]);
+  });
+
+  it("clamps a hole to the clip and drops one outside it", () => {
+    expect(clip([{ start: -5 * S, end: 2 * S }])).toEqual({
+      source: { start: 2 * S, end: 10 * S },
+    });
+    expect(clip([{ start: 20 * S, end: 30 * S }])).toEqual({
+      source: { start: 0, end: 10 * S },
+    });
+  });
+
+  it("is nothing at all when the holes leave nothing to play", () => {
+    expect(clip([{ start: 0, end: 10 * S }])).toBeNull();
+  });
+
+  it("leaves a clip with no holes exactly as it was", () => {
+    const whole = { source: { start: 0, end: 10 * S } };
+    expect(withSkips(whole, [])).toEqual(whole);
+    expect(withSkips(whole, [])).not.toHaveProperty("skips");
+  });
+
+  it("reads back the holes it saved", () => {
+    const project = JSON.parse(
+      JSON.stringify({
+        ...newProject(RECORDING, 10 * S),
+        tracks: [
+          {
+            id: "composite",
+            kind: "composite",
+            slices: [
+              {
+                id: "take",
+                source: { start: 0, end: 10 * S },
+                skips: [{ start: 4 * S, end: 6 * S }],
+                speed: 1,
+                overrides: {},
+              },
+            ],
+          },
+        ],
+      }),
+    ) as unknown;
+
+    expect(sanitiseProject(project, RECORDING, 10 * S)!.tracks[0]!.slices[0]!.skips).toEqual([
+      { start: 4 * S, end: 6 * S },
+    ]);
   });
 });
 

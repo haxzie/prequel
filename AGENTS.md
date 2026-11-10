@@ -134,6 +134,19 @@ tag check in `build.yml`.
 These are the ones that cost real debugging time. Breaking any of them produces
 output that looks plausible and is wrong.
 
+**A clip's source range is not what it plays.** A cut from the transcript is a
+`Skip` — a hole inside the clip — and not a split, so deleting twenty sentences
+leaves one clip rather than twenty. Everything that maps between project and
+source time walks `PlacedSlice.runs`, never `source.start`/`source.end`:
+`place` is the only thing that builds them, `withSkips` the only thing that
+writes one, and `playedSpan`/`runsOf` answer the question without a strip. The
+export sends one `ExportSlice` per run, so Rust still sees a flat list of kept
+spans. Arithmetic that reads a clip's own range instead lands as far out as the
+holes before it are long — in the filmstrip, the click dots, the key sounds and
+the exported file, all of which look plausible and are wrong. Pinned by
+`a clip with a hole in it` in `timeline.test.ts`, which asserts a hole and the
+same cut made of two clips map identically.
+
 **Session media files are zero-based.** `VideoWriter` opens its session at the
 first sample's PTS, so that sample becomes the origin. A track's late start —
 the camera opens a few hundred ms after the screen — exists **only** in

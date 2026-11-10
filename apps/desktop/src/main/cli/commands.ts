@@ -743,6 +743,16 @@ export function cliHandlers(context: CliContext): Record<string, Handler> {
           id: slice.id,
           startMs: millis(slice.source.start),
           endMs: millis(slice.source.end),
+          // What the clip steps over inside that range, so the numbers above
+          // cannot be read as the footage it plays.
+          ...((slice.skips ?? []).length > 0
+            ? {
+                skipped: slice.skips!.map((skip) => ({
+                  startMs: millis(skip.start),
+                  endMs: millis(skip.end),
+                })),
+              }
+            : {}),
           speed: slice.speed,
         })),
         zooms: project.zooms.length,

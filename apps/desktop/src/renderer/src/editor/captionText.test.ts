@@ -10,7 +10,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { TranscriptWord } from "../../../shared/transcript";
-import { mergeWords, realignWords, survivingWords, tokens, wordsWithin } from "./captionText";
+import {
+  cutBeside,
+  editorWords,
+  groupWords,
+  mergeWords,
+  realignWords,
+  survivingWords,
+  tokens,
+  wordsWithin,
+} from "./captionText";
 import { place } from "./timeline";
 
 const S = 1_000_000_000;
@@ -259,5 +268,117 @@ describe("mergeWords", () => {
     const merged = mergeWords([all[1]!, all[2]!], [all[0]!, { ...all[3]!, text: "for" }]);
 
     expect(texts(merged)).toEqual(["one", "two", "three", "for"]);
+  });
+});
+
+describe("cutBeside", () => {
+  const words = spoken("one two three four five six");
+
+  it("shows the words a clip steps over inside itself", () => {
+    // The ordinary shape of a cut now: one clip with a hole in it.
+    const clip = { start: 0, end: 6 * S };
+
+    expect(texts(cutBeside([words[2]!, words[3]!], clip, [clip]))).toEqual(["three", "four"]);
+  });
+
+  it("shows a hole between two clips with the clips on either side of it", () => {
+    const sources = [
+      { start: 0, end: 2 * S },
+      { start: 4 * S, end: 6 * S },
+    ];
+    const hidden = [words[2]!, words[3]!];
+
+    expect(texts(cutBeside(hidden, sources[0]!, sources))).toEqual(["three", "four"]);
+    expect(texts(cutBeside(hidden, sources[1]!, sources))).toEqual(["three", "four"]);
+  });
+
+  it("shows only the holes a clip touches", () => {
+    const sources = [
+      { start: 0, end: S },
+      { start: 2 * S, end: 3 * S },
+      { start: 4 * S, end: 6 * S },
+    ];
+    const hidden = [words[1]!, words[3]!];
+
+    // The middle clip has a hole at each end; the first has only the one
+    // behind it, and never the far hole beyond its neighbour.
+    expect(texts(cutBeside(hidden, sources[1]!, sources))).toEqual(["two", "four"]);
+    expect(texts(cutBeside(hidden, sources[0]!, sources))).toEqual(["two"]);
+    expect(texts(cutBeside(hidden, sources[2]!, sources))).toEqual(["four"]);
+  });
+
+  it("shows the start of the recording with the clip that opens it", () => {
+    const sources = [{ start: 2 * S, end: 6 * S }];
+
+    expect(texts(cutBeside([words[0]!, words[1]!], sources[0]!, sources))).toEqual(["one", "two"]);
+  });
+
+  it("shows every cut word when no clip is selected", () => {
+    expect(texts(cutBeside([words[1]!, words[4]!], null, []))).toEqual(["two", "five"]);
+  });
+});
+
+describe("editorWords", () => {
+  it("puts the cut words back among the spoken ones, marked", () => {
+    const words = spoken("one two three four");
+    const shown = [words[0]!, words[3]!];
+    const cut = [words[1]!, words[2]!];
+
+    expect(editorWords(shown, cut).map((word) => [word.text, word.cut])).toEqual([
+      ["one", false],
+      ["two", true],
+      ["three", true],
+      ["four", false],
+    ]);
+  });
+});
+
+describe("groupWords", () => {
+  /** Words from `text`, each a quarter of a second long, `gaps` seconds apart. */
+  function said(text: string, gaps: Record<number, number> = {}): TranscriptWord[] {
+    let at = 0;
+    return tokens(text).map((word, index) => {
+      at += (gaps[index] ?? 0) * S;
+      const spoken = { at, end: at + S / 4, text: word, confidence: 0.9 };
+      at += S / 4;
+      return spoken;
+    });
+  }
+
+  it("covers every word exactly once, in order", () => {
+    const words = said("one two three four five six seven", { 3: 1 });
+    const groups = groupWords(words);
+
+    expect(groups.flatMap((group) => words.slice(group.from, group.to))).toEqual(words);
+  });
+
+  it("breaks where the speaking stopped", () => {
+    const words = said("one two three four five six", { 3: 1 });
+
+    expect(groupWords(words).map((group) => [group.from, group.to])).toEqual([
+      [0, 3],
+      [3, 6],
+    ]);
+  });
+
+  it("keeps a hesitation inside the block it is in", () => {
+    // A breath after one word is not a paragraph: breaking there would make a
+    // block of a single word and turn the panel into a list.
+    const words = said("one two three four five six", { 1: 1 });
+
+    expect(groupWords(words)).toHaveLength(1);
+  });
+
+  it("breaks after a word on its own when the pause is long enough to hear", () => {
+    const words = said("one two three four", { 1: 3 });
+
+    expect(groupWords(words).map((group) => [group.from, group.to])).toEqual([
+      [0, 1],
+      [1, 4],
+    ]);
+  });
+
+  it("is empty for no words", () => {
+    expect(groupWords([])).toEqual([]);
   });
 });

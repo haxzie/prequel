@@ -318,3 +318,138 @@ export function mergeWords(
 ): TranscriptWord[] {
   return [...hidden, ...edited].sort((a, b) => a.at - b.at);
 }
+
+/**
+ * A word as the editor shows it: the recogniser's, plus whether it still plays.
+ *
+ * A cut word is not taken out of the text. It stays where it was said, struck
+ * through, because a transcript with the deleted sentences simply missing is a
+ * transcript that cannot be read against the recording — and putting one back
+ * means pointing at it.
+ */
+export interface EditorWord extends TranscriptWord {
+  cut: boolean;
+}
+
+/** The words of a clip and the cut ones beside them, in the order they were said. */
+export function editorWords(
+  shown: readonly TranscriptWord[],
+  cut: readonly TranscriptWord[],
+): EditorWord[] {
+  return [
+    ...shown.map((word) => ({ ...word, cut: false })),
+    ...cut.map((word) => ({ ...word, cut: true })),
+  ].sort((a, b) => a.at - b.at);
+}
+
+/**
+ * The cut-out words shown with one clip.
+ *
+ * Everything the clip reaches: the words it steps over inside itself, and the
+ * words in the holes on either side of it. Both, because footage leaves an
+ * edit two ways — a hole inside a clip and a stretch no clip holds — and the
+ * panel shows one clip at a time, so a cut that belonged to neither would
+ * never be on screen to be put back.
+ *
+ * A hole between two clips is therefore shown with each of them. They are
+ * never on screen at once, and putting the footage back is the same edit from
+ * either side.
+ *
+ * `sources` is every clip's source range, in any order: how far a cut reaches
+ * is bounded by where the footage next starts, which the timeline's order says
+ * nothing about.
+ */
+export function cutBeside(
+  hidden: readonly TranscriptWord[],
+  clip: { start: MediaTime; end: MediaTime } | null,
+  sources: readonly { start: MediaTime; end: MediaTime }[],
+): TranscriptWord[] {
+  if (clip === null) return [...hidden];
+
+  const opens = Math.max(
+    0,
+    ...sources.map((source) => source.end).filter((end) => end <= clip.start),
+  );
+  const closes = Math.min(
+    Infinity,
+    ...sources.map((source) => source.start).filter((start) => start >= clip.end),
+  );
+
+  return hidden.filter((word) => word.at >= opens && word.at < closes);
+}
+
+/**
+ * How long a silence ends a group.
+ *
+ * A breath between sentences, not the gap between two words of one. Under this
+ * the words belong to the same thought and the eye should not have to jump a
+ * block to follow them.
+ */
+const GROUP_GAP_NS = 700_000_000;
+
+/** A silence this long ends a group whatever else is true: it is a pause anybody can hear. */
+const GROUP_HARD_GAP_NS = 2_000_000_000;
+
+/**
+ * How few words a group may be broken after.
+ *
+ * Without it every hesitation makes a block of two words and the panel becomes
+ * a list rather than a transcript. A long enough silence overrides it.
+ */
+const GROUP_MIN_WORDS = 3;
+
+/** Past this a group is broken at the next word, so no block runs on unreadably. */
+const GROUP_MAX_NS = 12_000_000_000;
+
+/** A full stop, which is a group boundary once the block has run long enough. */
+const ENDS_SENTENCE = /[.!?]["')\]]?$/;
+
+/** How long a block has to have run for a full stop to end it. */
+const GROUP_SENTENCE_NS = 2_500_000_000;
+
+/** A run of words shown as one block, as indices into the words it covers. */
+export interface CaptionGroup {
+  from: number;
+  /** One past the last, so `words.slice(from, to)` is the block. */
+  to: number;
+}
+
+/**
+ * The words split into the blocks the editor draws.
+ *
+ * Grouped by the recording rather than by the caption style: a block is where
+ * the speaking stopped, so the text on screen has the shape of the take and a
+ * moment can be found in it by eye. The cues that are drawn over the video are
+ * a different division of the same words — `captions.ts` decides those — and
+ * matching the two would make the panel unreadable in any style that puts two
+ * words on screen at a time.
+ *
+ * Indices rather than the words themselves, because every word keeps the
+ * position the editor addresses it by.
+ */
+export function groupWords(words: readonly TranscriptWord[]): CaptionGroup[] {
+  const groups: CaptionGroup[] = [];
+  let from = 0;
+
+  for (let index = 1; index < words.length; index += 1) {
+    const previous = words[index - 1]!;
+    const word = words[index]!;
+    const silence = word.at - previous.end;
+    const open = word.at - words[from]!.at;
+
+    const ends =
+      silence >= GROUP_HARD_GAP_NS ||
+      open >= GROUP_MAX_NS ||
+      ((silence >= GROUP_GAP_NS ||
+        (ENDS_SENTENCE.test(previous.text) && open >= GROUP_SENTENCE_NS)) &&
+        index - from >= GROUP_MIN_WORDS);
+    if (!ends) continue;
+
+    groups.push({ from, to: index });
+    from = index;
+  }
+
+  if (words.length > 0) groups.push({ from, to: words.length });
+
+  return groups;
+}

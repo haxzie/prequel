@@ -19,7 +19,7 @@ import type { Manifest, MediaTime, Segment } from "./manifest.js";
 import { findTrack, isStill } from "./manifest.js";
 import { AUTO_PRESET_ID } from "./presets.js";
 import type { Project, Slice, SliceOverrides, SliceSettings } from "./project.js";
-import { resolveSettings } from "./project.js";
+import { playedSpan, resolveSettings, runsOf } from "./project.js";
 
 /**
  * How far into the *kept* material the still is taken from.
@@ -90,23 +90,28 @@ function momentOf(
   slices: readonly Slice[],
   duration: MediaTime,
 ): { at: MediaTime; end: MediaTime; overrides: SliceOverrides | undefined } {
-  const kept = slices.reduce((total, slice) => total + (slice.source.end - slice.source.start), 0);
+  const kept = slices.reduce((total, slice) => total + playedSpan(slice), 0);
   if (kept <= 0) return { at: duration * AT, end: duration, overrides: undefined };
 
   let remaining = kept * AT;
   for (const slice of slices) {
-    const length = slice.source.end - slice.source.start;
-    if (remaining < length) {
-      return {
-        at: slice.source.start + remaining,
-        // The clip's own end, which is what the preview loops back from. Not
-        // the take's: a recording cut down to its middle would otherwise play
-        // on through footage the video no longer contains.
-        end: slice.source.end,
-        overrides: slice.overrides,
-      };
+    // Walked by what the clip plays, not by its range: a quarter of the way
+    // through the kept material must not land in footage the clip steps over,
+    // which would picture the recording with a frame the video never shows.
+    for (const run of runsOf(slice)) {
+      const length = run.end - run.start;
+      if (remaining < length) {
+        return {
+          at: run.start + remaining,
+          // The clip's own end, which is what the preview loops back from. Not
+          // the take's: a recording cut down to its middle would otherwise play
+          // on through footage the video no longer contains.
+          end: slice.source.end,
+          overrides: slice.overrides,
+        };
+      }
+      remaining -= length;
     }
-    remaining -= length;
   }
 
   // Only reachable on a rounding edge, where `remaining` lands exactly on the
