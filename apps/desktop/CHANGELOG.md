@@ -1,5 +1,30 @@
 # @prequel/desktop
 
+## 0.13.0
+
+### Minor Changes
+
+- 3f799d2: <!-- highlight: Cutting from the transcript keeps one clip -->
+
+  Cutting words from the transcript now leaves one clip with the footage stepped
+  over, instead of splitting the timeline into pieces.
+
+- 3f799d2: <!-- highlight: Cut words stay in the transcript -->
+
+  Edit captions now groups the transcript by time, and words you cut stay struck
+  through so you can put them back.
+
+### Patch Changes
+
+- 9d7928e: <!-- highlight: A clearer hand on the pointing arm -->
+
+  The pointing arm has a new hand, with the finger straight up and easier to read.
+
+- 3f799d2: <!-- highlight: The panel header's buttons say what they are -->
+
+  The buttons along the top of a panel now name themselves when you hover them,
+  including the ones waiting for a selection.
+
 ## 0.12.0
 
 ### Minor Changes
