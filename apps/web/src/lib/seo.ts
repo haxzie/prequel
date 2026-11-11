@@ -36,7 +36,12 @@ export const OG_CONTENT_TYPE = "image/png";
  * small square thumbnail rather than the wide card.
  */
 export const OG_IMAGE = {
-  url: "/og.png",
+  // The version is in the filename on purpose. Every scraper caches a card
+  // against its URL — X, Slack and iMessage for days, Facebook until it is
+  // asked again — so a new picture at the old path leaves every link already
+  // shared, and every one shared for a while yet, showing the card before it.
+  // Changing the card means changing this name.
+  url: "/og-v2.png",
   ...OG_SIZE,
   type: OG_CONTENT_TYPE,
   alt: `${SITE.name} — ${SITE.tagline}`,
