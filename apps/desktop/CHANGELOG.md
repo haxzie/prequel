@@ -1,5 +1,24 @@
 # @prequel/desktop
 
+## 0.14.0
+
+### Minor Changes
+
+- 98cc666: A clip can now run up to 10×, with a new stop for it and a slider that keeps the everyday speeds within reach.
+- b0f7917: <!-- highlight: Camera frames, and the keys you pressed -->
+
+  Five new camera shapes that frame you: a polaroid, a Mac window, a stamp, an old television and a Macintosh.
+
+- b0f7917: Show the shortcuts you pressed while recording, as rows of key caps, with a Keyboard panel to style them.
+
+### Patch Changes
+
+- b0f7917: Open a recording by double-clicking it in the library, and find an icon on the Edit recording button.
+- b0f7917: A pointer with a name tag arrives reading You, so there is something on it before you type.
+- 98cc666: Pointer styles and click marks open in a list of their own now, and hovering a pointer puts it on the recording.
+- b0f7917: The loupe rests flatter now, with a quieter reflection, and its size sits with the rest of the glass.
+- 98cc666: The click sound now sits with the click mark under Cursor, and the typing sound under Keyboard.
+
 ## 0.13.0
 
 ### Minor Changes
