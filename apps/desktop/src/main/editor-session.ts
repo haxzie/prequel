@@ -88,6 +88,10 @@ export async function readEditorSession(dir: string): Promise<EditorSession> {
     // Every press, whether or not the pointer is a layer: a click mark goes on
     // the picture, so a recording with the pointer baked in still gets one.
     clicks: manifest.clicks ?? [],
+    // Every chord the recording kept. Empty covers the switch being off, a
+    // recording made before chords were recorded, and nobody having used one
+    // — the editor treats the three alike, because from its side they are.
+    shortcuts: manifest.shortcuts ?? [],
     blobs: blobTrack(manifest),
     // Unrepaired. Whether its background's picture is actually beside the
     // recording is `readSessionDetails`'s answer, and the editor's own

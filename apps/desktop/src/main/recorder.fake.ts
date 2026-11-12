@@ -13,7 +13,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import type { CursorSample, KeyPress, Manifest, Track } from "../shared/manifest.js";
+import type { CursorSample, KeyPress, Manifest, Shortcut, Track } from "../shared/manifest.js";
 import {
   CAMERA_MATTE_FILE_NAME,
   MANIFEST_FILE_NAME,
@@ -223,6 +223,7 @@ function writeManifest(
     // Omitted when the switch was off, exactly as the addon omits them.
     clicks: [{ at: Math.round(summary.durationMs * 0.2) * NS_PER_MS, x: 0.3, y: 0.3 }],
     ...(request.captureKeys === false ? {} : { key_presses: fakeTyping(summary.durationMs) }),
+    ...(request.captureShortcuts === false ? {} : { shortcuts: fakeShortcuts(summary.durationMs) }),
   };
 
   writeFileSync(join(request.outputPath, MANIFEST_FILE_NAME), JSON.stringify(manifest, null, 2));
@@ -274,6 +275,28 @@ function fakeTyping(durationMs: number): KeyPress[] {
     at += 90 + (index % 3) * 25;
     return press;
   });
+}
+
+/**
+ * A handful of shortcuts, spread across the take.
+ *
+ * Enough shapes that the Keyboard section can be seen doing its work without a
+ * real capture: a two-cap chord, a three, and one whose key is a symbol rather
+ * than a letter.
+ */
+function fakeShortcuts(durationMs: number): Shortcut[] {
+  const chords = [
+    ["⌘", "C"],
+    ["⌘", "V"],
+    ["⇧", "⌘", "P"],
+    ["⌘", "⇥"],
+    ["⌃", "⌥", "⌘", "4"],
+  ];
+
+  return chords.map((keys, index) => ({
+    at: Math.round(durationMs * (0.15 + index * 0.17)) * NS_PER_MS,
+    keys,
+  }));
 }
 
 export function createFakeRecorder(): Recorder {

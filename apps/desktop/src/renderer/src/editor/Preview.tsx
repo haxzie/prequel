@@ -18,21 +18,23 @@ import {
   arrivingAt,
   type BlobTrack,
   buildRenderPlan,
+  cameraFollows,
   captionAt,
   type EnterTransition,
   pictureDrawn,
-  restingForDrawn,
   placement,
+  type PlacedText,
   type PlanSource,
   type Rect,
+  type RenderedChord,
   type RenderedCue,
-  type PlacedText,
   type RenderedText,
   type RenderPlan,
+  restingForDrawn,
   type Size,
   type SourceSizes,
-  textBlockRect,
   watermarkRect,
+  textBlockRect,
 } from "../../../shared/layout";
 import {
   angleFrom,
@@ -66,7 +68,7 @@ import { boxPatch, seededBoxes, type Grabbable, type RestingBoxes } from "./boxe
 import { ambientColours, ambientGradient } from "./ambience";
 import { isReady, WebGlCompositor, type Images, type Sources } from "./webgl";
 import { fitInside } from "./fit";
-import { grabbed } from "./grab";
+import { apertureOf, grabbed, plateFor, type Grabbed } from "./grab";
 import type { EditorPlayback } from "./useEditorPlayback";
 
 /**
@@ -153,6 +155,7 @@ export function Preview({
   images,
   cursor,
   clicks,
+  chords,
   blobs,
   zooms,
   cues,
@@ -274,6 +277,12 @@ export function Preview({
    * press is recorded whether or not the pointer was kept out of the frames.
    */
   clicks: readonly ClickSample[];
+  /**
+   * The shortcut chords, already drawn. Empty where the row is switched off,
+   * where the recording kept none, or while the bitmaps are still being made
+   * — all three draw nothing, which is what each of them should look like.
+   */
+  chords: readonly RenderedChord[];
   /**
    * The camera's fitted outline, or null when this recording has none.
    *
@@ -567,6 +576,7 @@ export function Preview({
     selected,
     cursor,
     clicks,
+    chords,
     blobs,
     zooms,
     cues,
@@ -588,6 +598,7 @@ export function Preview({
     selected,
     cursor,
     clicks,
+    chords,
     blobs,
     zooms,
     cues,
@@ -647,6 +658,7 @@ export function Preview({
         selected: ringed,
         cursor: pointer,
         clicks: presses,
+        chords: drawnChords,
         blobs: blobTrack,
         zooms: shots,
         cues: drawn,
@@ -726,6 +738,7 @@ export function Preview({
         current,
         pointer,
         presses,
+        drawnChords,
         shots,
         arriving,
         shown,
@@ -771,6 +784,9 @@ export function Preview({
               // past the frame's edge.
               frozen ? { at: STILL_AT, masks: hidden } : undefined,
               presses,
+              // Every chord, gated inside the plan on this clip's own setting
+              // — see `buildRenderPlan`.
+              drawnChords,
             );
 
       if (plan !== previous?.plan) cached.current = { key, plan };
@@ -1033,11 +1049,14 @@ export function Preview({
    * and placed in the frame's own pixels, so it would stay upright around a
    * picture that did not — see the note on `turn` in `buildRenderPlan`. The
    * turn zone is withheld rather than offered and ignored.
+   *
+   * `cameraFollows` rather than the three tests written out here, which is how
+   * this came to say yes to a camera wearing a frame: the shape leaf stays
+   * "blob" underneath a plate, so the test that only read *it* withheld the
+   * turn zone from a television and drew its ring upright while the plan
+   * turned it.
    */
-  const followsSomebody = () =>
-    !settings.layout.cameraCutout &&
-    settings.layout.cameraShape === "blob" &&
-    (blobs?.samples.length ?? 0) > 0;
+  const followsSomebody = () => cameraFollows(settings.layout, (blobs?.samples.length ?? 0) > 0);
 
   /**
    * How far a picture is turned, in degrees clockwise about its own middle.
@@ -1269,9 +1288,7 @@ export function Preview({
     // drag has anything to write. See `grabbed`, and the same answer feeds the
     // ring, so what can be grabbed and what shows handles cannot disagree.
     const logo = watermarkBox();
-    const grabbable = (
-      target: Grabbable,
-    ): { box: Rect; rest: Rect; scale: number; drag: boolean } | null => {
+    const grabbable = (target: Grabbable): Grabbed | null => {
       // The logo is placed by its own four numbers in every composition and no
       // plan moves it, so it is always itself.
       if (target === "watermark")
@@ -1284,12 +1301,11 @@ export function Preview({
       return grabbed(plan, target, at, resting, arrivingAt(enter, at));
     };
 
-    const boxes: Record<Grabbable, { box: Rect; rest: Rect; scale: number; drag: boolean } | null> =
-      {
-        watermark: grabbable("watermark"),
-        camera: grabbable("camera"),
-        screen: grabbable("screen"),
-      };
+    const boxes: Record<Grabbable, Grabbed | null> = {
+      watermark: grabbable("watermark"),
+      camera: grabbable("camera"),
+      screen: grabbable("screen"),
+    };
 
     // The ringed picture's corners first, whatever is stacked over them. The
     // ring is drawn above every picture, so its handles sit on top of a bubble
@@ -1322,6 +1338,7 @@ export function Preview({
           rest: grip.rest,
           scale: grip.scale,
           from: point,
+          ...(grip.aperture ? { aperture: grip.aperture } : {}),
         };
 
       // Then the radius dots, which sit inside the corners the handles are on.
@@ -1365,7 +1382,15 @@ export function Preview({
       // nothing more: there is no box to write — see `grabbed` — and a move
       // that the next frame undid would read as the picture fighting back.
       return grip.drag
-        ? { kind: "move", target, box: grip.box, rest: grip.rest, scale: grip.scale, from: point }
+        ? {
+            kind: "move",
+            target,
+            box: grip.box,
+            rest: grip.rest,
+            scale: grip.scale,
+            from: point,
+            ...(grip.aperture ? { aperture: grip.aperture } : {}),
+          }
         : { kind: "pick", target };
     }
 
@@ -1578,6 +1603,15 @@ export function Preview({
     // a corner onto a line would change the *other* edge to get there — the
     // picture would grow as you tried to place it.
     const scale = grip.scale > 0 ? grip.scale : 1;
+
+    // A framed camera is grabbed by its plate and written as its picture — see
+    // `grabbed`. These two are the whole of the difference: everything between
+    // them is the gesture as it always was, in the box the pointer is actually
+    // aimed at, and `grip.aperture` being absent makes both the identity.
+    const hole = grip.aperture;
+    const toPicture = (box: Rect) => (hole ? apertureOf(box, hole) : box);
+    const toOutline = (box: Rect) => (hole ? plateFor(box, hole) : box);
+
     const dragged =
       grip.kind === "resize"
         ? {
@@ -1590,20 +1624,46 @@ export function Preview({
                 frame,
                 { width: want.width / scale, height: want.height / scale },
                 want,
-              ))(pulled(grip.box, grip.handle, point, keepsAspect(grip.handle, shift))),
+              ))(
+              toPicture(
+                pulled(
+                  grip.box,
+                  grip.handle,
+                  point,
+                  // A framed camera resizes proportionally whichever handle is
+                  // pulled. The plate is a picture, not a shape anything here
+                  // draws: stretched on one axis a stamp's teeth become ovals
+                  // and a television's knobs ellipses, which is not a wider
+                  // television — it is a broken one. The edge handles stay,
+                  // because the gesture still means something; under a frame
+                  // they scale the whole object.
+                  keepsAspect(grip.handle, shift) || hole !== undefined,
+                ),
+              ),
+            ),
             hitX: null,
             hitY: null,
           }
         : // The drawn picture follows the pointer exactly, and the resting box
           // is whatever puts it there. One for one wherever nothing is shrunk,
           // which is every drag that is not under a zoom.
-          pullToGuides(
-            restingForDrawn(frame, grip.rest, {
-              ...grip.box,
-              x: grip.box.x + (point.x - grip.from.x),
-              y: grip.box.y + (point.y - grip.from.y),
-            }),
-            grip.target,
+          //
+          // Snapped by the outline rather than by the picture, which on a
+          // framed camera are two different boxes: the guides are there to
+          // park an object against a line by eye, and the object is the plate.
+          ((rest) => {
+            const snapped = pullToGuides(toOutline(rest), grip.target);
+            return { ...snapped, box: toPicture(snapped.box) };
+          })(
+            restingForDrawn(
+              frame,
+              grip.rest,
+              toPicture({
+                ...grip.box,
+                x: grip.box.x + (point.x - grip.from.x),
+                y: grip.box.y + (point.y - grip.from.y),
+              }),
+            ),
           );
 
     caught.current = { x: dragged.hitX, y: dragged.hitY };
@@ -2205,6 +2265,11 @@ function pictureRadius(
   }
 
   if (settings.layout.cameraShape === "blob") return null;
+  // And none under a frame: the hole in the art is the shape there, the
+  // Roundness slider is greyed to say so, and the box this is handed is the
+  // plate — so a dot would be in the paper's corner writing the picture's
+  // radius, which nothing would then draw.
+  if (settings.layout.cameraFrame !== "none") return null;
   return settings.layout.cameraCornerRadius * Math.min(box.width, box.height);
 }
 
@@ -2373,7 +2438,18 @@ type Grip =
   // shrunk — there the gesture is aimed at what is on screen and written to
   // what the settings hold, and `scale` is the ratio between them. See
   // `grabbed`.
-  | { kind: "move"; target: Grabbable; box: Rect; rest: Rect; scale: number; from: Point }
+  // `aperture` is the one thing a framed camera adds: `box` is then the plate
+  // and these are where the hole sits in it, so the leaves a drag writes — all
+  // of which describe the hole — can be worked back out. See `grabbed`.
+  | {
+      kind: "move";
+      target: Grabbable;
+      box: Rect;
+      rest: Rect;
+      scale: number;
+      from: Point;
+      aperture?: Grabbed["aperture"];
+    }
   | {
       kind: "resize";
       target: Grabbable;
@@ -2382,6 +2458,7 @@ type Grip =
       rest: Rect;
       scale: number;
       from: Point;
+      aperture?: Grabbed["aperture"];
     }
   // Selected and nothing else: a picture whose position the shot owns. Its own
   // kind rather than a `move` that writes nothing, so `patchFor` never has to

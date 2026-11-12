@@ -9,40 +9,44 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  arrivingAt,
   blobAt,
-  movedBlob,
   type BlobTrack,
   buildRenderPlan,
-  withWholeTimes,
+  cameraFloats,
+  cameraFollows,
   captionAt,
+  type CaptionWord,
   cropToFrame,
   cursorAt,
-  cameraFloats,
+  type CursorTrack,
   fillsTheFrame,
   layoutBoxes,
-  maskReach,
-  loupeAt,
   LOUPE_HASTE,
+  LOUPE_REACH,
+  loupeAt,
+  maskReach,
+  movedBlob,
   pictureDrawn,
   pictureMoved,
   placement,
-  restingForDrawn,
-  presetFitsFrame,
-  screenYawFor,
-  LOUPE_REACH,
-  arrivingAt,
-  rectAt,
-  shapeAspect,
-  SHADOW_SPREAD,
-  zoomEnvelope,
-  type CaptionWord,
-  type CursorTrack,
   type PlanItem,
+  presetFitsFrame,
   type Rect,
+  rectAt,
+  type RenderedChord,
   type RenderedCue,
   type RenderPlan,
+  restingForDrawn,
+  screenYawFor,
+  SHADOW_SPREAD,
+  shapeAspect,
   type Size,
+  withWholeTimes,
+  zoomEnvelope,
 } from "./layout.js";
+import { CAMERA_FRAMES } from "./camera-frames.js";
+import { KEY_BLEED, KEY_HOLD_NS, KEY_MARGIN, keyStyleId } from "./keystrokes.js";
 import { FILTER_SCALE_MAX } from "./filters.js";
 import {
   STILL_AT,
@@ -107,6 +111,133 @@ function image(plan: RenderPlan, source: "screen" | "camera") {
       item.kind === "image" && item.source === source,
   );
 }
+
+describe("the shortcuts a recording shows", () => {
+  /** A second, which is the clock every time in here is on. */
+  const S = 1_000_000_000;
+
+  const CHORD = { path: "keys/a.png", bitmap: { width: 300, height: 180 } };
+  /** Drawn in the look the default settings resolve to. */
+  const look = keyStyleId(DEFAULT_SETTINGS.layout);
+  const chord = (at: number) => ({ at, style: look, ...CHORD });
+
+  const plan = (chords: RenderedChord[], over = {}) =>
+    buildRenderPlan(
+      LANDSCAPE,
+      { screen: SCREEN, camera: CAMERA },
+      settings({
+        layout: { ...DEFAULT_SETTINGS.layout, keysVisible: true, ...over },
+      }),
+      null,
+      [],
+      null,
+      [],
+      [],
+      undefined,
+      null,
+      undefined,
+      null,
+      chords,
+    );
+
+  const rows = (built: RenderPlan) =>
+    built.items.filter(
+      (item): item is Extract<PlanItem, { kind: "overlay" }> => item.kind === "overlay",
+    );
+
+  it("draws nothing at all when the row is switched off", () => {
+    // The common case by far: a recording keeps its chords whether or not
+    // anybody wants them drawn, and the plan is what decides.
+    expect(rows(plan([chord(S)], { keysVisible: false }))).toHaveLength(0);
+  });
+
+  it("holds a chord for a moment and takes it away again", () => {
+    const [row] = rows(plan([chord(S)]));
+
+    expect(row!.span.start).toBe(S);
+    expect(row!.span.end).toBe(S + KEY_HOLD_NS);
+    // In, hold, out. Nothing is on screen at either end of the span, which is
+    // what stops a chord appearing on the frame before it was pressed.
+    expect(row!.keys[0]!.opacity).toBe(0);
+    expect(row!.keys.at(-1)!.opacity).toBe(0);
+    expect(Math.max(...row!.keys.map((key) => key.opacity))).toBe(1);
+  });
+
+  it("cuts a chord short when the next one lands on it", () => {
+    // ⌘C then ⌘V half a second apart is one gesture to whoever is watching,
+    // and two plates in the same place at once is unreadable.
+    const [first, second] = rows(plan([chord(S), chord(S + S / 2)]));
+
+    expect(first!.span.end).toBeLessThanOrEqual(second!.span.start);
+    expect(second!.span.end).toBe(S + S / 2 + KEY_HOLD_NS);
+  });
+
+  it("sizes the row by the cap rather than by the bitmap", () => {
+    // The slider is in cap heights — the side of one key — and the bitmap
+    // carries bleed around it for the shadow. A row placed at the bitmap's
+    // own height would be visibly bigger than the number says.
+    const unit = Math.min(LANDSCAPE.width, LANDSCAPE.height);
+    const [row] = rows(plan([chord(S)], { keysSize: 0.05 }));
+    const cap = row!.keys[0]!.height / (1 + KEY_BLEED * 2);
+
+    expect(cap).toBeCloseTo(0.05 * unit, 6);
+    // And the picture keeps its proportions, or the caps come out stretched.
+    expect(row!.keys[0]!.width / row!.keys[0]!.height).toBeCloseTo(300 / 180, 6);
+  });
+
+  it("parks the row against the edge it was asked for", () => {
+    const top = rows(plan([chord(S)], { keysPosition: "top" }))[0]!.keys[0]!;
+    const bottom = rows(plan([chord(S)], { keysPosition: "bottom" }))[0]!.keys[0]!;
+    const margin = KEY_MARGIN * Math.min(LANDSCAPE.width, LANDSCAPE.height);
+
+    expect(top.y).toBeCloseTo(margin, 6);
+    expect(bottom.y + bottom.height).toBeCloseTo(LANDSCAPE.height - margin, 6);
+    // Centred across the frame either way.
+    expect(top.x + top.width / 2).toBeCloseTo(LANDSCAPE.width / 2, 6);
+  });
+
+  it("draws only the copy that matches this clip's own look", () => {
+    // The row is a per-clip setting and the bitmaps are shared, so a recording
+    // can hold two looks at once. A clip that drew every copy would stack two
+    // plates in the same place; one that drew the wrong copy would wear
+    // somebody else's styling and say nothing about it.
+    const other = { ...chord(S), style: "another|look", path: "keys/b.png" };
+    const built = rows(plan([chord(S), other]));
+
+    expect(built).toHaveLength(1);
+    expect(built[0]!.path).toBe("keys/a.png");
+  });
+
+  it("coalesces against its own look rather than another clip's", () => {
+    // Two copies of the same press are one press. Cutting the first short
+    // against the second would make a chord flash and vanish on a recording
+    // that had been styled twice.
+    const twice = [chord(S), { ...chord(S), style: "another|look" }];
+
+    expect(rows(plan(twice))[0]!.span.end).toBe(S + KEY_HOLD_NS);
+  });
+
+  it("draws nothing for a look no chord was drawn in", () => {
+    // The matching rule, stated from the other side. It is strict on purpose
+    // — a clip must not wear another clip's styling — and that strictness is
+    // what makes the editor's job to keep a drawn row in hand while a restyle
+    // is being rasterised. Without that, touching the colour or the plate
+    // emptied this list and the row vanished off the picture mid-drag.
+    expect(rows(plan([{ ...chord(S), style: "a|look|nobody|asked.for" }]))).toHaveLength(0);
+  });
+
+  it("puts the row under the captions and over everything else", () => {
+    // A chord over a caption costs a sentence to save a glance; one the camera
+    // bubble covered is a shortcut nobody saw.
+    const built = plan([chord(S)]);
+    const row = built.items.findIndex((item) => item.kind === "overlay");
+    const camera = built.items.findIndex(
+      (item) => item.kind === "image" && item.source === "camera",
+    );
+
+    expect(row).toBeGreaterThan(camera);
+  });
+});
 
 describe("the camera shaped by the person in it", () => {
   /** A fitted outline: leaning right, with a lobe out that way. */
@@ -980,6 +1111,236 @@ describe("the camera", () => {
     // square, and still placed rather than sent off somewhere unreachable.
     expect(camera.dstRect.width).toBe(camera.dstRect.height);
     expect(Number.isFinite(camera.dstRect.x)).toBe(true);
+  });
+
+  describe("dressed in a frame", () => {
+    /**
+     * How far the picture reaches in under the paper — `underPaper`, at
+     * whatever size these tests draw the camera.
+     *
+     * Restated here rather than imported, so the assertions below say what the
+     * overlap *is*: a fraction of a per cent of each edge, which is a hair
+     * under the paper and not a repositioning.
+     */
+    const OVERLAP = 0.008;
+
+    const dressed = (layout: Partial<LayoutSettings>) =>
+      buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: CAMERA },
+        settings({
+          layout: {
+            ...DEFAULT_SETTINGS.layout,
+            cameraFrame: "polaroid",
+            cameraWidth: 0.3,
+            cameraHeight: 0.3,
+            ...layout,
+          },
+        }),
+      );
+
+    const plate = (plan: RenderPlan) =>
+      plan.items.find(
+        (item): item is Extract<PlanItem, { kind: "frame" }> => item.kind === "frame",
+      );
+
+    /** Mid-frame, where no frame has to be slid in off an edge. */
+    const MIDDLE = { cameraX: 0.5, cameraY: 0.5 };
+
+    it("hangs the art so its hole lands on the picture", () => {
+      // The whole of the arithmetic: the catalogue says where the hole is as
+      // fractions of the artwork, and the plate is whatever size and place
+      // puts that hole on the camera. Measured back out of the plan, because
+      // getting it wrong is a plate sitting beside the photograph rather than
+      // round it — and a plate is large and obvious enough that the mistake
+      // reads as the camera having moved.
+      const framed = dressed(MIDDLE);
+      const picture = image(framed, "camera")!.dstRect;
+      const paper = plate(framed)!;
+      const hole = CAMERA_FRAMES.polaroid.aperture;
+      // The picture reaches in under the paper, so the hole is inside it by
+      // exactly that much on every side — see `frameOverlap`.
+      const grown = 1 + OVERLAP * 2;
+      const aperture = {
+        x: picture.x + (picture.width * OVERLAP) / grown,
+        y: picture.y + (picture.height * OVERLAP) / grown,
+        width: picture.width / grown,
+        height: picture.height / grown,
+      };
+
+      expect(paper.path).toBe("@library/frames/polaroid.png");
+      expect(paper.rect.x + hole.x * paper.rect.width).toBeCloseTo(aperture.x, 6);
+      expect(paper.rect.y + hole.y * paper.rect.height).toBeCloseTo(aperture.y, 6);
+      expect(hole.width * paper.rect.width).toBeCloseTo(aperture.width, 6);
+      expect(hole.height * paper.rect.height).toBeCloseTo(aperture.height, 6);
+    });
+
+    it("leaves the camera exactly where it was", () => {
+      // A frame is a look, not a framing decision. The picture reaches a
+      // little way in under the paper — see `frameOverlap` — and nothing else
+      // about where the person sits changes.
+      const bare = image(dressed({ ...MIDDLE, cameraFrame: "none" }), "camera")!.dstRect;
+      const framed = image(dressed(MIDDLE), "camera")!.dstRect;
+
+      expect(framed.x).toBeCloseTo(bare.x - bare.width * OVERLAP, 6);
+      expect(framed.width).toBeCloseTo(bare.width * (1 + OVERLAP * 2), 6);
+      // And a hair is all it is: the person is the same size on the frame.
+      expect(OVERLAP).toBeLessThan(0.02);
+    });
+
+    it("slides the whole thing in off an edge it would hang over", () => {
+      // The bubble is kept clear of the frame's edges and the plate stands
+      // outside the bubble, so the default corner position has a quarter of a
+      // polaroid drawn off the picture — which reads as the frame being broken
+      // rather than as the camera being where it was put.
+      const framed = dressed({});
+      const paper = plate(framed)!;
+
+      expect(paper.rect.x).toBeGreaterThanOrEqual(-0.01);
+      expect(paper.rect.y).toBeGreaterThanOrEqual(-0.01);
+      expect(paper.rect.x + paper.rect.width).toBeLessThanOrEqual(LANDSCAPE.width + 0.01);
+      expect(paper.rect.y + paper.rect.height).toBeLessThanOrEqual(LANDSCAPE.height + 0.01);
+
+      // A slide, not a resize: the person is the size they were.
+      const loose = image(dressed(MIDDLE), "camera")!.dstRect;
+      expect(image(framed, "camera")!.dstRect.width).toBeCloseTo(loose.width, 6);
+    });
+
+    it("draws the picture square, because the hole is the shape", () => {
+      // The art cuts the corners off — a television's bezel rounds them, a
+      // polaroid's window does not — so a radius underneath could only
+      // disagree with it. The stored roundness is untouched, which is what
+      // lets taking the frame off put it back.
+      const round = { cameraShape: "circle" as const, cameraCornerRadius: 0.5 };
+      expect(image(dressed(round), "camera")!.shape.radius).toBe(0);
+      expect(
+        image(dressed({ ...round, cameraFrame: "none" }), "camera")!.shape.radius,
+      ).toBeGreaterThan(0);
+    });
+
+    it("draws no ring, because the plate is the edge", () => {
+      // A stroke between the picture and the paper reads as a mount somebody
+      // fitted badly rather than as a border. Counted against the same plan
+      // without a frame rather than against none at all, because the screen
+      // beside it is wearing a border of its own.
+      const ring = { cameraBorderWidth: 0.01, cameraBorderOpacity: 1 };
+      const strokes = (plan: RenderPlan) =>
+        plan.items.filter((item) => item.kind === "stroke").length;
+
+      expect(strokes(dressed(ring))).toBe(strokes(dressed({ ...ring, cameraFrame: "none" })) - 1);
+    });
+
+    it("casts the plate's shadow rather than the bubble's", () => {
+      // The plate is the object once there is one, so it is what is lying on
+      // the wallpaper. A shadow the size of the aperture under a polaroid is a
+      // photograph printed on the background rather than resting on it.
+      //
+      // The last shadow before the camera, which is the camera's: the screen
+      // casts one of its own earlier in the list.
+      const framed = dressed({});
+      const paper = plate(framed)!;
+      const under = framed.items.findIndex(
+        (item) => item.kind === "image" && item.source === "camera",
+      );
+      const shadow = framed.items
+        .slice(0, under)
+        .reverse()
+        .find((item): item is Extract<PlanItem, { kind: "shadow" }> => item.kind === "shadow")!;
+
+      // Larger than the plate by the blur's bleed, and not much larger — a
+      // shadow cast by the aperture would be smaller than the plate instead.
+      expect(shadow.rect.height).toBeGreaterThan(paper.rect.height);
+      expect(shadow.rect.width).toBeLessThan(paper.rect.width * 1.5);
+    });
+
+    it("turns the plate and the picture about one point", () => {
+      // The failure this pins is the one a frame makes possible and nothing
+      // else does. Every other thing that turns with a picture — its border,
+      // its shadow — is concentric with it, so "about its own middle" is one
+      // point for all of them. A plate is not: a polaroid's paper hangs below
+      // the photograph in it. Turned about their own middles the two drift
+      // apart, by further the further they are turned, and the face slides out
+      // of the window.
+      //
+      // Asserted as the thing anybody would actually look at: where the hole
+      // in the turned plate lands, against where the turned picture is.
+      const framed = dressed({ ...MIDDLE, cameraRotation: 20 });
+      const picture = image(framed, "camera")!;
+      const paper = plate(framed)!;
+      const hole = CAMERA_FRAMES.polaroid.aperture;
+
+      const quadOf = (item: { motion?: { quad?: number[] }[] }) => item.motion?.[0]?.quad;
+      const pictureQuad = quadOf(picture)!;
+      const paperQuad = quadOf(paper)!;
+      expect(pictureQuad).toBeDefined();
+      expect(paperQuad).toBeDefined();
+
+      /** A point inside a turned quad, by its uv. Corners run TL, TR, BL, BR. */
+      const at = (quad: number[], u: number, v: number) => {
+        const corner = (index: number) => ({ x: quad[index * 3]!, y: quad[index * 3 + 1]! });
+        const [tl, tr, bl, br] = [corner(0), corner(1), corner(2), corner(3)];
+        return {
+          x: tl.x + (tr.x - tl.x) * u + (bl.x - tl.x) * v + (tl.x - tr.x - bl.x + br.x) * u * v,
+          y: tl.y + (tr.y - tl.y) * u + (bl.y - tl.y) * v + (tl.y - tr.y - bl.y + br.y) * u * v,
+        };
+      };
+
+      // The hole's own corners in each quad's uv: the plate carries them from
+      // the catalogue, and the picture is the aperture grown by the overlap.
+      const grown = 1 + OVERLAP * 2;
+      const inside = OVERLAP / grown;
+      for (const [u, v] of [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ] as const) {
+        const onPaper = at(paperQuad, hole.x + hole.width * u, hole.y + hole.height * v);
+        const onPicture = at(
+          pictureQuad,
+          inside + (1 - inside * 2) * u,
+          inside + (1 - inside * 2) * v,
+        );
+        expect(onPaper.x, `corner ${u},${v} x`).toBeCloseTo(onPicture.x, 4);
+        expect(onPaper.y, `corner ${u},${v} y`).toBeCloseTo(onPicture.y, 4);
+      }
+    });
+
+    it("hangs nothing on a camera with no edge to hang it on", () => {
+      // A cutout replaces the camera's edge with the person's own, which is
+      // the same rule the shadow, the ring and the glass all follow: a
+      // polaroid round a silhouette frames nothing.
+      expect(plate(dressed({ cameraCutout: true }))).toBeUndefined();
+    });
+
+    it("beats the shape fitted to somebody", () => {
+      // The shape leaf stays where it was under a plate — that is what lets
+      // taking the frame off put it back — so a project can hold "blob" and a
+      // frame at once, and the frame is what was picked last. Three places
+      // need that answer and `cameraFollows` is all three of them: written out
+      // separately, the preview withheld the turn zone from a television and
+      // drew its selection ring straight while the plan turned it.
+      const settings = {
+        ...DEFAULT_SETTINGS.layout,
+        cameraShape: "blob" as const,
+        cameraFrame: "polaroid" as const,
+      };
+
+      expect(cameraFollows(settings, true)).toBe(false);
+      expect(cameraFollows({ ...settings, cameraFrame: "none" }, true)).toBe(true);
+      // And the cutout wins over both, as it always did.
+      expect(cameraFollows({ ...settings, cameraFrame: "none", cameraCutout: true }, true)).toBe(
+        false,
+      );
+      // A recording the fitter never saw has nothing to follow.
+      expect(cameraFollows({ ...settings, cameraFrame: "none" }, false)).toBe(false);
+    });
+
+    it("hangs nothing it has never heard of", () => {
+      // A project written by a newer build. No plate rather than a guess,
+      // which is the camera as it was before frames existed.
+      expect(plate(dressed({ cameraFrame: "lightbox" as never }))).toBeUndefined();
+    });
   });
 
   describe("wearing a glass edge", () => {

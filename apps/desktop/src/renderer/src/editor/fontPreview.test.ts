@@ -20,7 +20,7 @@ import {
   type TextSlice,
   type TextTrack,
 } from "../../../shared/project";
-import { withFontPreview } from "./fontPreview";
+import { withCameraShapePreview, withFontPreview } from "./fontPreview";
 
 const S = 1_000_000_000;
 
@@ -142,5 +142,62 @@ describe("withFontPreview", () => {
       weight: 400,
     });
     for (const [index, row] of after.texts.entries()) expect(row).toBe(before.texts[index]);
+  });
+});
+
+describe("withCameraShapePreview", () => {
+  it("hands back the project itself when nothing is hovered", () => {
+    // Identity, not a copy: everything downstream is keyed on it, and a copy
+    // made per render is a preview that costs a frame to show nothing.
+    const edit = project();
+    expect(withCameraShapePreview(edit, null)).toBe(edit);
+  });
+
+  it("puts the hovered shape on the defaults", () => {
+    const shown = withCameraShapePreview(project(), { cameraFrame: "crt", cameraWidth: 0.4 });
+
+    expect(shown.defaults.layout.cameraFrame).toBe("crt");
+    expect(shown.defaults.layout.cameraWidth).toBe(0.4);
+  });
+
+  it("reaches a clip that sets a shape of its own", () => {
+    // Without this, hovering the list does nothing on exactly the clip whose
+    // shape you opened the list to change.
+    const edit = project();
+    const first = edit.tracks[0]!.slices[0]!;
+    const scoped: Project = {
+      ...edit,
+      tracks: [
+        {
+          ...edit.tracks[0]!,
+          slices: [{ ...first, overrides: { layout: { cameraShape: "wide" } } }],
+        },
+      ],
+    };
+
+    const shown = withCameraShapePreview(scoped, { cameraShape: "circle" });
+
+    expect(shown.tracks[0]!.slices[0]!.overrides.layout?.cameraShape).toBe("circle");
+  });
+
+  it("leaves a clip that overrides none of the patched leaves alone", () => {
+    // By identity, because that is what the compositor and the bitmap caches
+    // read: a slice copied for a leaf nobody is previewing is work done to
+    // show nothing.
+    const edit = project();
+    const first = edit.tracks[0]!.slices[0]!;
+    const scoped: Project = {
+      ...edit,
+      tracks: [
+        {
+          ...edit.tracks[0]!,
+          slices: [{ ...first, overrides: { layout: { cameraZoom: 1.4 } } }],
+        },
+      ],
+    };
+
+    const shown = withCameraShapePreview(scoped, { cameraShape: "circle" });
+
+    expect(shown.tracks[0]!.slices[0]).toBe(scoped.tracks[0]!.slices[0]);
   });
 });

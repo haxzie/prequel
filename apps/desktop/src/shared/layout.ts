@@ -15,6 +15,7 @@
  * Pure, and free of any `electron`, Node or DOM import, so the arithmetic is
  * testable on its own.
  */
+import { cameraFrame, type CameraFrameSpec } from "./camera-frames.js";
 import { resolveGrade, type CameraGrade } from "./camera-looks.js";
 import { captionStyle } from "./captions.js";
 import { clickEffect } from "./click-effects.js";
@@ -26,6 +27,17 @@ import {
   variantIndex,
   type FilterId,
 } from "./filters.js";
+import {
+  KEY_BLEED,
+  KEY_COALESCE_NS,
+  KEY_FADE_NS,
+  KEY_HOLD_NS,
+  KEY_MARGIN,
+  KEY_SIZE_MAX,
+  KEY_SIZE_MIN,
+  keyStyleId,
+} from "./keystrokes.js";
+import { libraryRef } from "./library.js";
 import type { CursorKind } from "./manifest.js";
 import type {
   Background,
@@ -523,6 +535,36 @@ export type PlanItem =
   | { kind: "stroke"; rect: Rect; shape: Shape; width: number; color: string; motion?: RectKey[] }
   | {
       /**
+       * The plate the camera is dressed in — a picture with a hole in it,
+       * hung round the bubble. See `CAMERA_FRAMES`.
+       *
+       * Drawn *over* the camera rather than under it: the hole is transparent,
+       * so the picture shows through it, and everything the plate covers is
+       * the part of the camera that was never meant to be seen — the corners a
+       * television's bezel rounds off, the strip a polaroid's paper takes.
+       *
+       * Its own kind rather than a `watermark`, which is the other item that
+       * draws a file: a watermark is placed where somebody put it, and this is
+       * placed by the camera, moves with the camera across a cut and leans
+       * with the camera. None of that is a logo.
+       *
+       * No `shape`, like a mask: the art carries its own outline in its alpha,
+       * scallops and knobs and all, so there is nothing for a radius to say.
+       * The shadow it casts is a separate item wearing the rounded rectangle
+       * that stands in for that outline.
+       */
+      kind: "frame";
+      /** The artwork, resolved like a wallpaper: `@library/frames/crt.png`. */
+      path: string;
+      /**
+       * Where the whole picture lands, in output pixels — the hole placed over
+       * the camera and the rest worked outwards from it.
+       */
+      rect: Rect;
+      motion?: RectKey[];
+    }
+  | {
+      /**
        * A glass lens lying on the finished frame, magnifying what is under it.
        *
        * The one item that draws no source of its own: it reads what has already
@@ -940,6 +982,33 @@ export interface OverlayKey {
 }
 
 /**
+ * One shortcut chord, drawn and ready to place.
+ *
+ * The bitmap is the whole row — caps, plate and all — so placing it is one
+ * rectangle. Its shape comes from `chordExtent`, which `layout.ts` and the
+ * rasteriser share: a row drawn to one set of numbers and placed to another
+ * is a row drawn stretched.
+ */
+export interface RenderedChord {
+  /** When it was pressed, in the recording's own clock. */
+  at: number;
+  /**
+   * Which look this copy was drawn in — `keyStyleId`'s.
+   *
+   * The row is a per-clip setting, so a recording can hold two looks at once:
+   * the editor draws one copy per look in use and this says which, and the
+   * clip being built takes the one matching its own settings. Without it a
+   * clip styled differently from the defaults would draw the defaults' pixels
+   * — or, before the tag existed, nothing at all.
+   */
+  style: string;
+  /** The bitmap, relative to the session directory. */
+  path: string;
+  /** The bitmap's own size in pixels. */
+  bitmap: Size;
+}
+
+/**
  * A text's fields as bitmaps, ready to place.
  *
  * Like `RenderedCue`, this is what the rasteriser hands back and what
@@ -1276,6 +1345,19 @@ export function buildRenderPlan(
    * still gets its marks.
    */
   clicks?: readonly ClickEvent[] | null,
+  /**
+   * The shortcut chords the recording saw, already drawn.
+   *
+   * Beside `clicks` and for the same reason: a chord is a point in the
+   * recording rather than a layer, and the picture it is drawn as is the
+   * editor's — the exporter has no font engine. See `RenderedChord`.
+   *
+   * Handed over whole and gated here, on this clip's own `keysVisible`, so
+   * the rule is in one place: the row is a per-clip setting and the bitmaps
+   * are not, and a caller that filtered would be a second answer to which
+   * clips draw it.
+   */
+  chords?: readonly RenderedChord[] | null,
 ): RenderPlan {
   const items: PlanItem[] = [];
   const { layout, background } = settings;
@@ -1757,13 +1839,27 @@ export function buildRenderPlan(
 
   if (sources.camera && boxes.camera) {
     const slot = boxes.camera;
-    const { dstRect, srcRect } = place(
+    const placed = place(
       sources.camera,
       slot.area,
       slot.fit,
       layout.cameraZoom,
       layout.cameraOffsetX,
       layout.cameraOffsetY,
+    );
+    const srcRect = placed.srcRect;
+    // Nudged in off the edge where a frame would otherwise hang over it.
+    //
+    // The bubble is already kept clear of the frame's edges, but the plate
+    // stands outside the bubble — so a camera parked in the corner at the
+    // default position has a quarter of its polaroid drawn off the picture,
+    // which reads as the frame being broken rather than as the camera being
+    // where it was put. The whole assembly slides in instead, by the overhang
+    // and no further; a frame that was never going to fit is left alone.
+    const dstRect = tucked(
+      placed.dstRect,
+      frame,
+      layout.cameraCutout ? null : cameraFrame(layout.cameraFrame),
     );
 
     /**
@@ -1864,20 +1960,50 @@ export function buildRenderPlan(
      * to be — so the background being cut away wins and this is ignored while it
      * is on.
      */
-    const outline =
-      !cutout && layout.cameraShape === "blob" && blobs && blobs.samples.length > 0 ? blobs : null;
+    const outline = blobs && cameraFollows(layout, blobs.samples.length > 0) ? blobs : null;
 
     // The whole picture, for both. The outline roams over all of it — that is the
     // point of it, and a hand raised out of the bubble's box has to have
     // somewhere to be drawn — so the box sets where and at what size the person
     // appears and no longer where the picture stops.
     const spilling = cutout || outline !== null;
-    const shown = spilling ? uncropped(dstRect, srcRect, camera) : dstRect;
+
+    /**
+     * The plate the bubble is dressed in, or none.
+     *
+     * Not on a camera that is spilling, which is the same rule the shadow, the
+     * ring and the glass all follow: a cutout and a fitted outline both replace
+     * the camera's edge with the person's own, and a polaroid hung round a
+     * silhouette frames nothing.
+     */
+    const dressing = spilling ? null : cameraFrame(layout.cameraFrame);
+
+    // Where the picture is actually drawn. Its own box, except under a frame,
+    // where it reaches a little way in under the paper — see `underPaper`.
+    const seen = dressing ? underPaper(dstRect) : dstRect;
+    const shown = spilling ? uncropped(dstRect, srcRect, camera) : seen;
+
+    /**
+     * How round the picture's own corners are, at a given size.
+     *
+     * Nothing at all under a frame, and that is not a shortcut: the hole is
+     * part of the picture of the object — a television's bezel rounds the
+     * corners off, a polaroid's window does not — so the art is already the
+     * answer and a second one underneath it could only disagree. The picture
+     * is drawn square and the plate on top cuts it to whatever shape the hole
+     * has.
+     *
+     * One function rather than two call sites, because the radius is wanted
+     * twice — once for the bubble at rest and once per key of its track — and
+     * the two disagreeing is a camera that changes shape as it moves.
+     */
+    const roundness = (edge: number): number => (dressing ? 0 : radiusFor(layout, edge));
+
     const shape: Shape = spilling
       ? { radius: 0, exponent: 2 }
       : {
-          radius: radiusFor(layout, Math.min(dstRect.width, dstRect.height)),
-          exponent: SHAPE_EXPONENT[layout.cameraShape],
+          radius: roundness(Math.min(dstRect.width, dstRect.height)),
+          exponent: dressing ? 2 : SHAPE_EXPONENT[layout.cameraShape],
         };
 
     // A shadow measured against the camera itself rather than against the
@@ -1887,7 +2013,16 @@ export function buildRenderPlan(
     // screen would put the shadow out from under it entirely. A small object
     // casts a small tight shadow. A card is large enough to take the frame's
     // own numbers.
-    const against = slot.card ? unit : Math.min(dstRect.width, dstRect.height);
+    // Under a frame it is the plate that is the object, so the shadow is sized
+    // off that instead: a polaroid is half as big again as the picture in it,
+    // and a blur measured off the aperture would be a tight shadow under a
+    // large flat thing — which reads as the paper being printed on the
+    // wallpaper rather than lying on it.
+    const against = slot.card
+      ? unit
+      : dressing
+        ? Math.min(plated(dstRect, dressing).width, plated(dstRect, dressing).height)
+        : Math.min(dstRect.width, dstRect.height);
     const blur = background.shadowBlur * against;
     const spread = spilling ? 0 : (blur / 2) * SHADOW_SPREAD;
 
@@ -1903,8 +2038,12 @@ export function buildRenderPlan(
      * That is the width at rest. How far it stands off a bubble that is shrinking
      * out of a zoom's way is `cameraKeys`' business, and it is not this number —
      * see the note on the ring's own track.
+     *
+     * And none at all under a frame. The plate *is* the camera's edge while
+     * one is on, and a ring drawn between the picture and the paper reads as a
+     * mount somebody fitted badly rather than as a border.
      */
-    const border = spilling ? 0 : layout.cameraBorderWidth * unit;
+    const border = spilling || dressing ? 0 : layout.cameraBorderWidth * unit;
     const outer = grow(dstRect, border);
     const outerShape: Shape = { radius: shape.radius + border, exponent: shape.exponent };
 
@@ -1948,7 +2087,7 @@ export function buildRenderPlan(
           rect: spilling ? uncropped(box, srcRect, camera) : box,
           // Measured off the box it is on, not off the resting one: a bubble
           // whose corners stayed put as it shrank would change shape on the way.
-          radius: spilling ? 0 : radiusFor(layout, Math.min(box.width, box.height)),
+          radius: spilling ? 0 : roundness(Math.min(box.width, box.height)),
         };
       },
       spread,
@@ -1992,9 +2131,7 @@ export function buildRenderPlan(
     const wasFollowing =
       enter !== null &&
       enter !== undefined &&
-      !enter.from.layout.cameraCutout &&
-      enter.from.layout.cameraShape === "blob" &&
-      (blobs?.samples.length ?? 0) > 0;
+      cameraFollows(enter.from.layout, (blobs?.samples.length ?? 0) > 0);
 
     const turn: Turn = {
       to: outline ? 0 : layout.cameraRotation,
@@ -2010,7 +2147,18 @@ export function buildRenderPlan(
           : null,
     };
 
-    const moving = turned(motion, shown, shape.radius, turn);
+    // The picture's own track. The camera's, except under a frame, where every
+    // key reaches in under the paper exactly as the resting box does — a
+    // bubble that grew into the hole at rest and not on the way there would
+    // show the hairline `underPaper` exists to hide for the length of a move.
+    const pictureMotion = dressing ? motion.map((key) => ({ ...key, ...underPaper(key) })) : motion;
+
+    // What a framed camera turns about, which is its plate's middle rather
+    // than its own — see `framePivot`. Every other picture in the composition
+    // turns about its own, which is what an absent pivot means.
+    const spin = dressing ? framePivot(dressing) : undefined;
+
+    const moving = turned(pictureMotion, shown, shape.radius, turn, spin);
     // And the bubble goes soft under a fisheye with everything else outside the
     // glass. Its own call rather than the picture's track reused: the two items
     // are at different places on different grids, and `withGlassFocus` reads
@@ -2021,27 +2169,70 @@ export function buildRenderPlan(
     // reads a depth of field for a stroke or a shadow — a ring and a shadow are
     // the bubble's silhouette and sample nothing.
     const softly = glass.some((key) => key.shade > 0)
-      ? turned(withGlassFocus(motion, glass, shown, shape.radius, unit), shown, shape.radius, turn)
+      ? turned(
+          withGlassFocus(pictureMotion, glass, shown, shape.radius, unit),
+          shown,
+          shape.radius,
+          turn,
+          spin,
+        )
       : moving;
 
+    /**
+     * The plate, where a frame is on, and the track it follows.
+     *
+     * Derived from the camera's own track key for key rather than asked of
+     * `cameraKeys`, which grows a rectangle by one number on all four sides: a
+     * plate is deeper along one edge than the other three, and that asymmetry
+     * is most of what makes each frame recognisable.
+     */
+    const plate = dressing ? plated(dstRect, dressing) : null;
+    const plateShape: Shape | null =
+      dressing && plate
+        ? { radius: plateRadius(plate, dressing), exponent: dressing.plate.exponent }
+        : null;
+    // Off the aperture's track rather than the picture's: the plate is placed
+    // by where the hole has to land, and the picture's own keys have already
+    // been grown in under the paper.
+    const plateMotion = dressing ? plateKeys(motion, dressing) : [];
+    // The plate's own shadow track. The bleed scales with the picture for the
+    // reason the ring's outset does — see `cameraKeys` — so a camera shrinking
+    // away on a cut does not leave a blur standing where it was.
+    const full = Math.min(dstRect.width, dstRect.height);
+    const plateShadowMotion = dressing
+      ? motion.map((key, index) => {
+          const plateKey = plateMotion[index]!;
+          const out = spread * (full > 0 ? Math.min(key.width, key.height) / full : 0);
+          return { at: key.at, ...grow(plateKey, out), radius: plateKey.radius };
+        })
+      : [];
+
     if (!spilling && background.shadowOpacity > 0) {
+      // Cast by the plate where there is one, and by the bubble and its ring
+      // where there is not — the same rule the screen follows: a shadow that
+      // stopped at the picture would leave whatever is round it reading as
+      // something painted on the wallpaper rather than as an edge of the thing
+      // standing off it.
+      const caster = plate ?? outer;
+      const casterShape = plateShape ?? outerShape;
       items.push({
         kind: "shadow",
-        // Cast by the bubble *and* its ring, the same rule the screen follows:
-        // a shadow that stopped at the picture would leave the ring reading as
-        // a circle painted on the wallpaper rather than as an edge of the thing
-        // standing off it.
-        rect: grow(outer, spread),
+        rect: grow(caster, spread),
         // The silhouette's own radius, not the grown rectangle's — the bleed is
         // only somewhere for the blur to fall off in.
-        shape: outerShape,
+        shape: casterShape,
         blur,
         dy: background.shadowY * against,
         color: rgba("#000000", background.shadowOpacity * (slot.card ? 1 : CAMERA_SHADOW)),
         // Turned with the bubble, about the same middle. The drop is applied
         // to the corners by each rasteriser rather than here, so the shadow
         // falls straight down off a picture that is leaning.
-        ...turned(shadowMotion, grow(outer, spread), outerShape.radius, turn),
+        ...turned(
+          plate ? plateShadowMotion : shadowMotion,
+          grow(caster, spread),
+          casterShape.radius,
+          turn,
+        ),
       });
     }
 
@@ -2073,6 +2264,17 @@ export function buildRenderPlan(
           }
         : {}),
     });
+
+    if (dressing && plate) {
+      // The plate, over the picture it frames. See the note on `kind: "frame"`
+      // for why it is over rather than under.
+      items.push({
+        kind: "frame",
+        path: libraryRef("frames", dressing.file),
+        rect: plate,
+        ...turned(plateMotion, plate, 0, turn),
+      });
+    }
 
     if (border > 0) {
       // The camera's own ring, from the camera's own settings.
@@ -2127,7 +2329,10 @@ export function buildRenderPlan(
     // The ring the departing camera was wearing, from the settings it was drawn
     // under — `enter.from`, not this slice's. This arrangement has no camera at
     // all, so its own border width says nothing about the bubble on its way out.
-    const border = wasCutout ? 0 : enter.from.layout.cameraBorderWidth * unit;
+    // The plate it was wearing, for the same reason — and it is also what
+    // suppresses that ring, exactly as it does on a camera that is staying.
+    const leavingFrame = wasCutout ? null : cameraFrame(enter.from.layout.cameraFrame);
+    const border = wasCutout || leavingFrame ? 0 : enter.from.layout.cameraBorderWidth * unit;
 
     // The rim it was wearing, from the settings it was drawn under, for the
     // reason the ring and the look above are: this arrangement has no camera,
@@ -2152,14 +2357,23 @@ export function buildRenderPlan(
     if (motion.length > 0) {
       const shape: Shape = {
         radius,
-        exponent: SHAPE_EXPONENT[enter.from.layout.cameraShape],
+        exponent: leavingFrame ? 2 : SHAPE_EXPONENT[enter.from.layout.cameraShape],
       };
+      // The plate goes with it, like the ring below. A frame left behind would
+      // be a polaroid of nothing hanging on the wallpaper for the rest of the
+      // clip. It shrinks into the same point the picture does, so the hole
+      // keeps its place in it the whole way — see `plateKeys`.
+      const leavingPlate = leavingFrame ? plated(gone, leavingFrame) : null;
 
       // At the angle it was being drawn at, like the look and the ring above:
       // this bubble belongs to the clip that is ending, and standing it
       // upright on the cut would be the last thing it did. Held rather than
       // eased for the same reason — there is nothing here for it to turn into.
       const turn: Turn = { to: enter.from.layout.cameraRotation, from: null };
+      // About the plate it was wearing, like a camera that is staying — see
+      // `framePivot`. It shrinks to nothing either way, but a bubble leaving
+      // at an angle would slide out of its own window on the way.
+      const spin = leavingFrame ? framePivot(leavingFrame) : undefined;
 
       if (!wasCutout && enter.from.background.shadowOpacity > 0) {
         items.push({
@@ -2185,7 +2399,7 @@ export function buildRenderPlan(
         dstRect: gone,
         shape,
         mirror: enter.from.layout.cameraMirror,
-        ...turned(motion, gone, radius, turn),
+        ...turned(motion, gone, radius, turn, spin),
         ...(wasCutout ? { matte: true } : {}),
         ...(rim > 0 ? { rim, fringe } : {}),
         // The look the camera was wearing on the far side of the cut, not the
@@ -2194,6 +2408,15 @@ export function buildRenderPlan(
         // would change its colour as it left.
         ...(leavingGrade ? { grade: leavingGrade } : {}),
       });
+
+      if (leavingFrame && leavingPlate) {
+        items.push({
+          kind: "frame",
+          path: libraryRef("frames", leavingFrame.file),
+          rect: leavingPlate,
+          ...turned(plateKeys(motion, leavingFrame), leavingPlate, 0, turn),
+        });
+      }
 
       if (border > 0) {
         // The ring goes with it. Left out, the bubble shrinks away and its
@@ -2292,6 +2515,14 @@ export function buildRenderPlan(
   // purpose and reads over anything, and the captions still have to be last
   // for the backdrop they measure themselves against.
   if (texts && rendered) items.push(...textItems(frame, texts, rendered));
+
+  // Under the captions, for the reason the titles are: a caption is the thing
+  // on screen being *read*, and a chord over one costs a sentence. Over
+  // everything else, because a shortcut that the camera bubble covered would
+  // be a shortcut nobody saw.
+  if (chords && chords.length > 0 && layout.keysVisible) {
+    items.push(...keystrokeItems(frame, layout, chords));
+  }
 
   // Last, so captions sit over everything. A caption behind the camera bubble
   // is a caption nobody can read, and the bubble is the thing that moves.
@@ -2660,6 +2891,11 @@ function cameraRadius(rect: Rect, settings: SliceSettings): number {
   // A cutout has no corners: the matte is the outline, and a radius would
   // clip the person's head at the top of a tall frame.
   if (settings.layout.cameraCutout) return 0;
+  // Square under a frame, for the reason the picture is drawn square under
+  // one: the hole in the art is the shape, and the corner radius leaf is
+  // deliberately left alone underneath so None can put it back. A bubble
+  // arriving from a slice that wore a plate starts square too.
+  if (cameraFrame(settings.layout.cameraFrame)) return 0;
   return radiusFor(settings.layout, Math.min(rect.width, rect.height));
 }
 
@@ -5198,12 +5434,17 @@ function rotatedQuad(
  * The order is `RectKey.quad`'s: top-left, top-right, bottom-left, bottom-right,
  * each as `x, y, w`.
  */
-function turnedCorners(key: RectKey, degrees: number): number[] {
+function turnedCorners(
+  key: RectKey,
+  degrees: number,
+  /** Offset from the key's middle, as a fraction of its size. See `turned`. */
+  pivot: { x: number; y: number } = { x: 0, y: 0 },
+): number[] {
   const radians = (degrees * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
-  const middleX = key.x + key.width / 2;
-  const middleY = key.y + key.height / 2;
+  const middleX = key.x + key.width * (0.5 + pivot.x);
+  const middleY = key.y + key.height * (0.5 + pivot.y);
   const corners = cornersOf(key);
 
   const out: number[] = [];
@@ -5276,7 +5517,31 @@ function spinning(turn: Turn): boolean {
  * everything that reads a track honest — `pictureMoved` compares boxes, and a
  * turn does not move the box the editor's handles are drawn around.
  */
-function turned(keys: RectKey[], rest: Rect, radius: number, turn: Turn): { motion?: RectKey[] } {
+function turned(
+  keys: RectKey[],
+  rest: Rect,
+  radius: number,
+  turn: Turn,
+  /**
+   * Where the spin's centre is, as a fraction of each key's own size away from
+   * that key's middle. Omitted is the middle, which is every picture in the
+   * composition but one.
+   *
+   * The exception is a camera wearing a frame. Everything else that turns with
+   * a picture — its border, its shadow — is concentric with it, so "about its
+   * own middle" means the same point for all of them; a plate is not. A
+   * polaroid's paper hangs below the photograph in it, so the two middles are
+   * a tenth of the picture apart, and spinning each about its own put the face
+   * further out of the window the further it was turned. Both are handed this
+   * instead, and it resolves to one point.
+   *
+   * A fraction rather than a point, because the same number has to hold at
+   * every key of a track: a bubble shrinking out of a zoom's way takes its
+   * plate with it, and a pivot in pixels would stay where the full-size plate's
+   * middle was.
+   */
+  pivot: { x: number; y: number } = { x: 0, y: 0 },
+): { motion?: RectKey[] } {
   const moving = spinning(turn);
   if (turn.to === 0 && !moving) return keys.length > 0 ? { motion: keys } : {};
 
@@ -5287,7 +5552,10 @@ function turned(keys: RectKey[], rest: Rect, radius: number, turn: Turn): { moti
       : [{ at: 0, ...rest, radius }];
 
   return {
-    motion: track.map((key) => ({ ...key, quad: turnedCorners(key, angleAt(turn, key.at)) })),
+    motion: track.map((key) => ({
+      ...key,
+      quad: turnedCorners(key, angleAt(turn, key.at), pivot),
+    })),
   };
 }
 
@@ -6242,6 +6510,103 @@ const SEED_PRIME = 997;
  * Drawn *under* the pointer by the caller, so the pointer stays on top of its
  * own mark — a ripple over the arrow reads as the arrow being behind glass.
  */
+/**
+ * The chords, as overlays.
+ *
+ * An `overlay` rather than a kind of its own, and that is the whole reason
+ * this feature needs no rasteriser work: a chord is a bitmap, at a rectangle,
+ * for a span, with an opacity that moves — which is exactly what an overlay
+ * already is. Two implementations of "fade a picture in and out" would be two
+ * chances for the preview and the export to disagree about one.
+ *
+ * **Chords that land on top of each other are coalesced.** ⌘C then ⌘V half a
+ * second apart is one gesture to whoever is watching, and two plates in the
+ * same place at once is unreadable — so the later one cuts the earlier one
+ * short and what is on screen is always the last thing pressed. See
+ * `KEY_COALESCE_NS`.
+ */
+function keystrokeItems(
+  frame: Size,
+  layout: LayoutSettings,
+  chords: readonly RenderedChord[],
+): PlanItem[] {
+  const unit = Math.min(frame.width, frame.height);
+  const cap = clamp(layout.keysSize, KEY_SIZE_MIN, KEY_SIZE_MAX) * unit;
+  const margin = KEY_MARGIN * unit;
+
+  // This clip's own look, and only it: the set holds a copy per look in use.
+  // Filtered before the ordering, or the coalescing would cut a chord short
+  // against another clip's copy of the same press.
+  const look = keyStyleId(layout);
+  const mine = chords.filter((chord) => chord.style === look);
+
+  // In order, because the coalescing below reads the next one — and a track
+  // that arrived out of order would cut the wrong chord short.
+  const ordered = [...mine].sort((first, second) => first.at - second.at);
+
+  return ordered.flatMap((chord, index): PlanItem[] => {
+    // The bitmap is drawn at a fixed cap height and scaled here, so the size
+    // slider moves pixels rather than re-rasterising the recording.
+    const height =
+      chord.bitmap.height === 0 ? 0 : (cap / capHeightOf(chord.bitmap)) * chord.bitmap.height;
+    const width =
+      chord.bitmap.height === 0 ? 0 : (height / chord.bitmap.height) * chord.bitmap.width;
+    if (width <= 0 || height <= 0) return [];
+
+    const start = chord.at;
+    const next = ordered[index + 1]?.at;
+    // Cut short by the next chord, never extended past it.
+    const ends = Math.min(
+      start + KEY_HOLD_NS,
+      next !== undefined ? Math.max(next - KEY_COALESCE_NS, start) : Infinity,
+    );
+    // A chord the next one lands on top of is drawn for a moment and gone:
+    // the row has still changed, which is the thing worth seeing.
+    const end = Math.max(ends, start + KEY_FADE_NS);
+
+    const x = frame.width / 2 - width / 2;
+    const y = layout.keysPosition === "top" ? margin : frame.height - margin - height;
+
+    // In, hold, out. The opacity is the only thing that moves — a chord that
+    // slid or swelled would be a second animation language beside the texts'
+    // for something that is read in half a second.
+    const fade = Math.min(KEY_FADE_NS, (end - start) / 2);
+    const at = (time: number, opacity: number): OverlayKey => ({
+      at: time,
+      x,
+      y,
+      width,
+      height,
+      opacity,
+      blur: 0,
+    });
+
+    return [
+      {
+        kind: "overlay",
+        path: chord.path,
+        bitmap: chord.bitmap,
+        src: { x: 0, y: 0, width: chord.bitmap.width, height: chord.bitmap.height },
+        span: { start, end },
+        keys: [at(start, 0), at(start + fade, 1), at(end - fade, 1), at(end, 0)],
+      },
+    ];
+  });
+}
+
+/**
+ * The cap height inside a chord's bitmap, from the bitmap's own height.
+ *
+ * The bitmap is a cap plus the bleed on both sides — see `chordExtent` — so
+ * this is the one line that turns a drawn picture back into the quantity the
+ * size slider is in. Written here rather than carried on `RenderedChord`,
+ * because a number that could be carried wrongly is a row drawn at the wrong
+ * size with nothing to say so.
+ */
+function capHeightOf(bitmap: Size): number {
+  return bitmap.height / (1 + KEY_BLEED * 2);
+}
+
 function clickItems(
   clicks: readonly ClickEvent[],
   effectId: string,
@@ -7184,6 +7549,56 @@ export function pictureDrawn(
 }
 
 /**
+ * Whether the camera is wearing the shape fitted to whoever is on it.
+ *
+ * Exported because three places need the answer and it has to be one answer:
+ * `buildRenderPlan` draws the outline, the editor's preview withholds the turn
+ * zone around a camera that cannot turn, and the Camera panel greys the
+ * controls that shape takes away. Written out separately in each, the three
+ * drifted — and the way it showed was a television turned on screen with its
+ * selection ring drawn straight, because the preview's copy had never been
+ * told that picking a frame takes the fitted outline off.
+ *
+ * Three things have to be true: the recording was fitted with one at all, the
+ * background is not being cut away — a cutout *is* the outline, and wins — and
+ * no frame is on, which wins for the same reason. The shape leaf is left alone
+ * under both, so this is the only thing that says which of them is in force.
+ */
+export function cameraFollows(layout: LayoutSettings, hasOutline: boolean): boolean {
+  return (
+    hasOutline &&
+    !layout.cameraCutout &&
+    layout.cameraFrame === "none" &&
+    layout.cameraShape === "blob"
+  );
+}
+
+/**
+ * The camera's plate, where it is wearing one, exactly as `pictureDrawn` gives
+ * its picture.
+ *
+ * Read off the plan rather than worked out from the settings, for the reason
+ * `pictureDrawn` is: the editor's ring and its hit testing are measured in
+ * what is *on screen*, and the settings are a frame ahead of it. The plan is
+ * also the one place that has already decided whether a frame applies at all —
+ * a cutout and a fitted outline both take the plate away, and the editor has
+ * no business holding a second copy of that rule.
+ *
+ * Null for a camera with no plate, which is every camera before frames existed
+ * and most of them since.
+ */
+export function plateDrawn(plan: RenderPlan, at: number): { rect: Rect; rest: Rect } | null {
+  const item = plan.items.find((candidate) => candidate.kind === "frame");
+  if (item?.kind !== "frame") return null;
+
+  const rest = item.rect;
+  if (!item.motion || item.motion.length === 0) return { rect: rest, rest };
+
+  const now = rectAt(item.motion, at, rest, 0);
+  return { rect: { x: now.x, y: now.y, width: now.width, height: now.height }, rest };
+}
+
+/**
  * Whether this moment is inside the move the clip opens with.
  *
  * The editor's question, not the plan's: a picture travelling in from the clip
@@ -7661,9 +8076,9 @@ const FOCUS_BLUR = 0.024;
  * Pinned by `a screenshot's loupe` in `layout.test.ts`, so the two cannot drift
  * without a test saying so.
  */
-const LOUPE_CURVATURE = 0.4;
+const LOUPE_CURVATURE = 0.1;
 const LOUPE_ABERRATION = 0.45;
-const LOUPE_REFLECTION = 0.5;
+const LOUPE_REFLECTION = 0.15;
 const LOUPE_LIGHT = 0.5;
 
 /**
@@ -8890,6 +9305,124 @@ function grow(rect: Rect, by: number): Rect {
 }
 
 /**
+ * The camera's box, slid in far enough for its plate to be on the picture.
+ *
+ * The plate stands outside the bubble on all four sides, and the bubble is
+ * already allowed to sit close to the edge — so without this the default
+ * corner position draws a quarter of a polaroid off the frame. Only ever a
+ * translation: the person stays the size they were, which is the half of
+ * "picking a frame does not reframe the shot" worth keeping. A plate larger
+ * than the frame it is on cannot be tucked anywhere and is left where it is.
+ */
+function tucked(aperture: Rect, frame: Size, spec: CameraFrameSpec | null): Rect {
+  if (!spec) return aperture;
+
+  const plate = plated(aperture, spec);
+  if (plate.width > frame.width || plate.height > frame.height) return aperture;
+
+  // Right and bottom first, then left and top: pushed off both ends the near
+  // edge wins, which is the one somebody is looking at.
+  const x = Math.min(Math.max(plate.x, 0), frame.width - plate.width) - plate.x;
+  const y = Math.min(Math.max(plate.y, 0), frame.height - plate.height) - plate.y;
+  return { ...aperture, x: aperture.x + x, y: aperture.y + y };
+}
+
+/**
+ * The plate a frame hangs round the camera, in output pixels.
+ *
+ * Worked backwards from the art: the catalogue says where the hole is as
+ * fractions of the picture, so the picture is whatever size puts its hole
+ * exactly on this rectangle. The aperture itself is never moved — the person
+ * stays where and the size the bubble had them, and the paper is hung round
+ * them.
+ */
+function plated(aperture: Rect, spec: CameraFrameSpec): Rect {
+  const hole = spec.aperture;
+  const width = aperture.width / hole.width;
+  const height = aperture.height / hole.height;
+  return {
+    x: aperture.x - hole.x * width,
+    y: aperture.y - hole.y * height,
+    width,
+    height,
+  };
+}
+
+/** The plate's stand-in corner radius, in output pixels. Only a shadow reads it. */
+function plateRadius(plate: Rect, spec: CameraFrameSpec): number {
+  return spec.plate.radius * Math.min(plate.width, plate.height);
+}
+
+/**
+ * How far the picture reaches in under the paper, as a fraction of itself.
+ *
+ * The hole is measured where the art is *fully* clear, so the art's own
+ * antialiased lip lies outside that box — and a picture drawn exactly to the
+ * box leaves that lip showing the wallpaper through it, as a bright hairline
+ * all the way round the photograph. The picture is grown under the paper
+ * instead, by far less than the narrowest margin any frame here has, so what
+ * it reaches into is always opaque plate.
+ */
+const FRAME_OVERLAP = 0.008;
+
+/**
+ * The box the picture is drawn in under a frame: the hole, reaching in under
+ * the paper on all four sides.
+ *
+ * A fraction of each edge rather than the same number of pixels on all four,
+ * which is the one thing about it that is not obvious. The growth has to leave
+ * the box *similar* to the aperture — the same shape, about the same middle —
+ * because `framePivot` measures the spin's centre as a fraction of this box,
+ * and a growth that was a fraction of one edge applied to both would make that
+ * fraction depend on how wide the camera happened to be.
+ */
+function underPaper(aperture: Rect): Rect {
+  const x = aperture.width * FRAME_OVERLAP;
+  const y = aperture.height * FRAME_OVERLAP;
+  return {
+    x: aperture.x - x,
+    y: aperture.y - y,
+    width: aperture.width + x * 2,
+    height: aperture.height + y * 2,
+  };
+}
+
+/**
+ * Where the plate's middle is, measured from the drawn picture's, as a
+ * fraction of that picture's size.
+ *
+ * What a framed camera turns about. See the note on `turned`'s `pivot`: a
+ * plate is not concentric with the hole in it — a polaroid's paper hangs below
+ * its photograph — so the two spinning about their own middles slides the face
+ * out of the window, by further the further it is turned.
+ *
+ * Divided by the overlap, because this is a fraction of the box the picture is
+ * *drawn* in and `hole` describes the aperture inside it.
+ */
+function framePivot(spec: CameraFrameSpec): { x: number; y: number } {
+  const hole = spec.aperture;
+  const grown = 1 + FRAME_OVERLAP * 2;
+  return {
+    x: ((0.5 - hole.x) / hole.width - 0.5) / grown,
+    y: ((0.5 - hole.y) / hole.height - 0.5) / grown,
+  };
+}
+
+/**
+ * The camera's own track, restated as the plate's.
+ *
+ * Its own pass rather than another output of `cameraKeys`, which grows a
+ * rectangle by one number on all four sides: a plate is deeper along one edge
+ * than the other three, and that asymmetry is most of what makes each frame
+ * recognisable. The times are the camera's, key for key, which is what keeps
+ * the plate nailed to the picture through a move.
+ */
+function plateKeys(keys: RectKey[], spec: CameraFrameSpec): RectKey[] {
+  return keys.map((key) => ({ at: key.at, ...plated(key, spec), radius: 0 }));
+}
+
+/**
+ * A picture cut to the frame, with the source cropped to match./**
  * A picture cut to the frame, with the source cropped to match.
  *
  * A zoom scales the destination well past every edge — a 1920-wide frame holds

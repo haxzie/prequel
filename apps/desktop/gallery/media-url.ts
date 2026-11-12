@@ -10,12 +10,22 @@
  * than a screenshot.
  */
 import type { PermissionId } from "../src/shared/contract";
+import { libraryParts } from "../src/shared/library";
 
 export const MEDIA_SCHEME = "prequel-media";
 
 const ROOT = "/media";
 
 export function mediaUrl(recording: string, fileName: string): string {
+  // One of ours, which lives on the shelf rather than in the recording — the
+  // same branch the real `mediaUrl` takes, and here for the same reason: every
+  // caller holds a name out of a project and none of them knows which of the
+  // two roots it came from. Without it a wallpaper or a camera frame from the
+  // catalogue is looked for inside the fixture recording and 404s.
+  const shelved = libraryParts(fileName);
+  if (shelved) {
+    return `${ROOT}/library/${shelved.kind}/${encodeURIComponent(shelved.file)}`;
+  }
   return `${ROOT}/recording/${encodeURIComponent(recording)}/${encodeURIComponent(fileName)}`;
 }
 

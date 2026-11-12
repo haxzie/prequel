@@ -321,6 +321,18 @@ function Recording({ preferences, set }: PaneProps) {
           Off keeps only the rough stretches of typing the pointer hides behind. Passwords are never
           seen either way: macOS keeps them from every app while you type one.
         </p>
+
+        <Field label="Note the shortcuts you press" inline>
+          <Toggle
+            value={preferences.captureShortcuts}
+            onChange={(captureShortcuts) => set({ captureShortcuts })}
+          />
+        </Field>
+        <p className="text-[11px] leading-relaxed text-editor-muted">
+          Shortcuts only — a key held with Command, Control or Option. ⌘V is noted; what you type is
+          not, with or without Shift, in a document or anywhere else. The editor can show them on
+          the video, under Cursor. Off keeps no record of which keys you pressed at all.
+        </p>
       </Section>
     </>
   );

@@ -131,6 +131,27 @@ function resolveMedia(pathname: string, options: GalleryOptions): string | null 
     return null;
   }
 
+  // The shelf: the assets Prequel supplies, held once per machine under
+  // `userData` rather than inside a recording — see `shared/library.ts`. The
+  // app fills it; the gallery reads whatever is there, and falls back to the
+  // working tree's own copy of the frame artwork so a frame can be seen before
+  // any build has ever seeded it.
+  if (host === "library") {
+    if (rest.length !== 2) return null;
+    const [kind, file] = rest as [string, string];
+    if (!ALLOWED.test(file) || !/^[a-z]+$/.test(kind)) return null;
+
+    const shelf = join(options.userData, "library", kind);
+    const path = join(shelf, file);
+    if (inside(shelf, path) && existsSync(path)) return path;
+
+    if (kind === "frames") {
+      const shipped = join(PACKAGE_ROOT, "resources/frames", file);
+      if (existsSync(shipped)) return shipped;
+    }
+    return null;
+  }
+
   // The repo's own `fonts/`, flattened the way the bucket flattens it: the app
   // asks for `inter-400.woff2` and the folder holds `inter/400.woff2`. Resolved
   // against the listing rather than by splitting on the last hyphen, because a

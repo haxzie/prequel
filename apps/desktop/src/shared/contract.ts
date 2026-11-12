@@ -19,6 +19,7 @@ import type {
   KeySpan,
   Manifest,
   MediaTime,
+  Shortcut,
   TrackKind,
   TypingSample,
 } from "./manifest.js";
@@ -151,6 +152,19 @@ export interface RecordingPreferences {
    */
   captureKeys: boolean;
   /**
+   * Note the shortcut chords, so the editor can show them on the picture.
+   *
+   * On by default, and a different question from `captureKeys`: that one
+   * keeps how many keys and what sort, this one keeps *which*. Only a press
+   * carrying Command, Control or Option is kept — so ⌘V is noted and nothing
+   * anybody types is, with or without Shift. `shortcut` in
+   * `crates/prequel-capture/src/clicks.rs` is the whole of the rule.
+   *
+   * Off leaves a recording with no record of which keys were pressed at all,
+   * and the editor's Keyboard section then has nothing to draw.
+   */
+  captureShortcuts: boolean;
+  /**
    * Record what the Mac is playing losslessly.
    *
    * Off by default. The system track is read back and re-encoded by the export,
@@ -270,6 +284,7 @@ export const DEFAULT_PREFERENCES: RecordingPreferences = {
   micId: null,
   micLabel: null,
   captureKeys: true,
+  captureShortcuts: true,
   losslessSystemAudio: false,
   cameraPosition: null,
   toggleShortcut: "Shift+Cmd+5",
@@ -1568,6 +1583,8 @@ export interface StartOptions {
   showCursor?: boolean;
   /** Keep per-press key timing for typing sounds. See `RecordingPreferences`. */
   captureKeys?: boolean;
+  /** Keep the shortcut chords. See `RecordingPreferences`. */
+  captureShortcuts?: boolean;
   /** `CGWindowID`s of our own windows, so they stay out of the recording. */
   excludedWindowIds?: number[];
 }
@@ -2324,6 +2341,18 @@ export interface EditorSession {
    * was pressed, or the recording predates the tap.
    */
   clicks: ClickSample[];
+  /**
+   * The shortcut chords the recording saw, if any were kept.
+   *
+   * Beside `clicks` and for the same reason. Empty covers three things the
+   * editor treats alike — the switch in Settings was off, the recording
+   * predates the chord record, or nobody used one — and the Keyboard section
+   * says so rather than offering controls over nothing.
+   *
+   * Only chords: see `Manifest.shortcuts`, which is where what is and is not
+   * kept is spelled out.
+   */
+  shortcuts: Shortcut[];
   /**
    * The camera's fitted outline, or null when the recording has none.
    *

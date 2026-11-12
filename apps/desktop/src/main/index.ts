@@ -28,6 +28,7 @@ import {
   startedForACommand,
   wasOpenedAtLogin,
 } from "./login-item.js";
+import { provideFrames } from "./frames.js";
 import { missingPermissions } from "../shared/permissions.js";
 import { permissionStates } from "./permissions.js";
 import { getRecorder, type Recorder } from "./recorder.js";
@@ -242,6 +243,13 @@ app.on("second-instance", (_event, argv) => {
 
 void app.whenReady().then(() => {
   registerMediaProtocol();
+
+  // The camera frames onto the library shelf, before anything can ask for one.
+  // Here rather than when an editor opens, because the library grid composes
+  // its tiles through the same plan and draws them first — a recording wearing
+  // a polaroid would have shown as a bare bubble until its editor had been
+  // opened once. Four content comparisons, once a launch.
+  provideFrames();
 
   // The editor's palette is dark whatever the system theme is; the workspace
   // window's vibrancy is not. An `NSVisualEffectView` takes its material from

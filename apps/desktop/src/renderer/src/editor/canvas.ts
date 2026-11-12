@@ -299,7 +299,7 @@ function moving(
   // A mask carries `motion` too and has no `shape` — it is a square-cornered
   // patch by definition. Excluded rather than given a branch, because this
   // file draws no mask at all: see the note at the top of it.
-  item: Exclude<Extract<PlanItem, { motion?: RectKey[] }>, { kind: "mask" }>,
+  item: Exclude<Extract<PlanItem, { motion?: RectKey[] }>, { kind: "mask" | "frame" }>,
   at: number,
 ): { rect: Rect; shape: Shape; src?: Rect } {
   const rect = "rect" in item ? item.rect : item.dstRect;

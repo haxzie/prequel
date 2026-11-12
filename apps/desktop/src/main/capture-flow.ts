@@ -1139,6 +1139,7 @@ export class CaptureFlow {
       system_audio: options?.systemAudio ?? true,
       lossless_system_audio: preferences.losslessSystemAudio,
       capture_keys: preferences.captureKeys,
+      capture_shortcuts: preferences.captureShortcuts,
       countdown: preferences.countdown,
       teleprompter: preferences.teleprompter,
       teleprompter_mode: preferences.teleprompter ? preferences.teleprompterMode : null,
@@ -1158,6 +1159,7 @@ export class CaptureFlow {
           // app's.
           ...(options?.fps === undefined ? {} : { fps: options.fps }),
           captureKeys: preferences.captureKeys,
+          captureShortcuts: preferences.captureShortcuts,
           // Always, unless this take asked otherwise. Whether it ends up in the
           // export is the editor's business — see `CaptureOptions.systemAudio`.
           systemAudio: options?.systemAudio ?? true,

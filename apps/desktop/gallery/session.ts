@@ -123,6 +123,7 @@ export async function loadSession(
     media,
     cursor: cursorLayer(manifest),
     clicks: manifest.clicks ?? [],
+    shortcuts: manifest.shortcuts ?? [],
     blobs: blobTrack(manifest),
     project: await withBackground(name, project),
     transcript,

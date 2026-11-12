@@ -6,7 +6,8 @@
  * of their desktop. Those are irreplaceable, and copying them in is what makes
  * a recording stand on its own.
  *
- * The catalogue is not that. A wallpaper from our own list is the same two
+ * The catalogue is not that. A camera frame is the same picture in every
+ * project that picks it, and a wallpaper from our own list is the same two
  * megabytes in every project that uses it, fetched from an address that can
  * answer again tomorrow — `monterey.jpg` was on this machine a hundred and
  * seventy-eight times, one copy per recording, for 53 MB of the same bytes. So
@@ -36,7 +37,7 @@
 export const LIBRARY_PREFIX = "@library/";
 
 /** Which shelf an asset sits on. One directory each, under the prefix. */
-export type LibraryKind = "backgrounds" | "music";
+export type LibraryKind = "backgrounds" | "music" | "frames";
 
 /** How a project refers to one of ours: `@library/backgrounds/monterey.jpg`. */
 export function libraryRef(kind: LibraryKind, file: string): string {
@@ -62,7 +63,7 @@ export function libraryParts(path: string): { kind: LibraryKind; file: string } 
   if (parts.length !== 2) return null;
 
   const [kind, file] = parts as [string, string];
-  if (kind !== "backgrounds" && kind !== "music") return null;
+  if (kind !== "backgrounds" && kind !== "music" && kind !== "frames") return null;
   // A bare name: letters, digits and dashes, one dot, an extension. The same
   // shape the API's own names take — see `BARE_JPEG`.
   if (!/^[a-z0-9][a-z0-9-]*\.[a-z0-9]+$/i.test(file)) return null;

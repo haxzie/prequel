@@ -420,6 +420,38 @@ pub struct Manifest {
     /// every event tap while a secure text field has focus.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub key_presses: Vec<KeyPress>,
+    /// The shortcut chords pressed during the recording, for the editor to
+    /// show on the picture.
+    ///
+    /// **Only chords.** A press is kept here when it carries Command, Control
+    /// or Option, and never otherwise — so what is recorded is the sort of
+    /// thing that goes in a tutorial, and what somebody *types* is not kept at
+    /// all. There is no entry for a letter, a digit, a space or a
+    /// Shift-letter, with or without a text field in front of it. ⌘V is here;
+    /// what was on the clipboard is not, and neither is anything typed into
+    /// the document it went into.
+    ///
+    /// Already assembled into the caps it is drawn as — `["⌘", "⇧", "4"]` —
+    /// rather than a key code and a flags word. The editor draws exactly what
+    /// is here, so there is no table on that side to disagree with this one,
+    /// and a manifest read by a person says plainly what was kept.
+    ///
+    /// Empty when the switch in Settings is off, and for every recording made
+    /// before it existed. Absent means "not recorded", not "no shortcuts were
+    /// used". Passwords are absent regardless: macOS withholds keyboard events
+    /// from every event tap while a secure text field has focus.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shortcuts: Vec<Shortcut>,
+}
+
+/// One shortcut chord: when, and the caps it is drawn as.
+///
+/// See `Manifest::shortcuts` for what is and is not kept.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Shortcut {
+    pub at: MediaTime,
+    /// The caps, in the order macOS writes them: ⌃ ⌥ ⇧ ⌘, then the key.
+    pub keys: Vec<String>,
 }
 
 /// A stretch somebody was typing through. See `Manifest::keys`.
@@ -637,6 +669,7 @@ mod tests {
             clicks: Vec::new(),
             keys: Vec::new(),
             key_presses: Vec::new(),
+            shortcuts: Vec::new(),
             typing: Vec::new(),
             cursor: vec![CursorSample {
                 at: 0,

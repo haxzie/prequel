@@ -138,6 +138,7 @@ export class RecordingSession {
       // to that state for a preferences file or a caller to find.
       showCursor: false,
       captureKeys: options.captureKeys ?? true,
+      captureShortcuts: options.captureShortcuts ?? true,
       systemAudio: options.systemAudio ?? false,
       losslessSystemAudio: options.losslessSystemAudio ?? false,
       microphone: options.microphone ?? false,

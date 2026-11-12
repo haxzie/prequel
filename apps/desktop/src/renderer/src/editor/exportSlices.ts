@@ -22,6 +22,7 @@ import {
   textOnClip,
   withWholeTimes,
   type CursorTag,
+  type RenderedChord,
   type RenderedCue,
   type RenderedText,
   type Size,
@@ -83,6 +84,14 @@ export function buildSlices(
    * because it is one fact about the composition.
    */
   still = false,
+  /**
+   * The shortcut chords, already drawn.
+   *
+   * Empty where the row is switched off or the recording kept none — the
+   * editor's `useKeystrokes` answers all three cases with an empty list, and
+   * `buildRenderPlan` draws nothing for it.
+   */
+  chords: readonly RenderedChord[] = [],
 ): ExportSlice[] {
   const all = slicesOf(project);
   const laid = place(all);
@@ -196,6 +205,10 @@ export function buildSlices(
           // clip's slice of it: a press outside the clip is skipped by its
           // span, and filtering here would be a second answer to that.
           session.clicks,
+          // Every chord, for the same reason: one outside the clip is skipped
+          // by its span, and a clip that does not show the row is answered
+          // inside the plan.
+          chords,
         ),
       ),
       speed: slice.speed,

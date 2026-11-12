@@ -14,7 +14,9 @@
  * would be a library and a set of documentation screenshots that quietly
  * disagreed.
  */
+import { cameraFrame } from "./camera-frames.js";
 import type { ProjectComposition } from "./contract.js";
+import { libraryRef } from "./library.js";
 import type { Manifest, MediaTime, Segment } from "./manifest.js";
 import { findTrack, isStill } from "./manifest.js";
 import { AUTO_PRESET_ID } from "./presets.js";
@@ -167,6 +169,15 @@ function pictures(
   const background = settings.background.background;
   if (background.kind === "image" && background.path) paths.add(background.path);
   if (settings.watermark.watermark) paths.add(settings.watermark.watermark);
+
+  // The camera's plate, where it is wearing one. Only the one it wears, unlike
+  // the editor, which loads all of them because the setting changes on a
+  // click: nothing changes under a tile, and the other four would be four
+  // fetches a tile never draws.
+  const dressing = cameraFrame(settings.layout.cameraFrame);
+  if (dressing && !settings.layout.cameraCutout) {
+    paths.add(libraryRef("frames", dressing.file));
+  }
 
   return [...paths].map((path) => ({ path, url: url(path) }));
 }

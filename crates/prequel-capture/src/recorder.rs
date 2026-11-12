@@ -19,7 +19,7 @@ use prequel_encode::{
 };
 use prequel_session::{SampleDecision, SharedClock, TrackStats, TrackTimeline};
 
-use crate::clicks::{ClickSample, KeyPress, KeySpan};
+use crate::clicks::{ClickSample, KeyPress, KeySpan, Shortcut};
 use crate::cursor::{CursorSample, CursorTrack, Region};
 use crate::error::{Error, Result};
 use crate::targets::{Bounds, Target, TargetKind};
@@ -82,6 +82,12 @@ pub struct RecordOptions {
     /// exactly what that is and is not. The editor's typing sounds need it;
     /// the typing spans that hide the pointer are kept either way.
     pub capture_keys: bool,
+    /// Keep the shortcut chords, so the editor can show them on the picture.
+    ///
+    /// Its own switch because it keeps a different thing: which keys, rather
+    /// than how many and what sort. Only chords — see `clicks::shortcut`,
+    /// which is the whole of the rule and refuses anything anybody typed.
+    pub capture_shortcuts: bool,
 }
 
 impl RecordOptions {
@@ -98,6 +104,7 @@ impl RecordOptions {
             capture_microphone: false,
             excluded_windows: Vec::new(),
             capture_keys: true,
+            capture_shortcuts: true,
         }
     }
 }
@@ -147,6 +154,10 @@ pub struct RecordingSummary {
     /// Each key press, as a moment and a coarse class. Empty when
     /// `RecordOptions::capture_keys` was off. See `clicks.rs`.
     pub key_presses: Vec<KeyPress>,
+    /// The shortcut chords, as the caps they are drawn as. Empty when
+    /// `RecordOptions::capture_shortcuts` was off, and empty of anything
+    /// anybody typed either way. See `clicks::shortcut`.
+    pub shortcuts: Vec<Shortcut>,
     /// The recorded window's corner radius, in pixels of the frame.
     ///
     /// Only for a window capture, and only when it could be read — see
@@ -550,7 +561,7 @@ impl ScreenRecorder {
 
         // A tap that cannot be made is logged and the recording carries on
         // without clicks.
-        if !crate::clicks::start(options.capture_keys) {
+        if !crate::clicks::start(options.capture_keys, options.capture_shortcuts) {
             tracing::warn!("could not tap mouse events; no clicks will be recorded");
         } else if !crate::accessibility_trusted() {
             // The tap exists and will still deliver nothing worth having. Said
@@ -769,6 +780,7 @@ impl ScreenRecorder {
             clicks: crate::clicks::stop(self.sampled, |host| self.clock.media_time(host).ok()),
             keys: keyboard.spans,
             key_presses: keyboard.presses,
+            shortcuts: keyboard.shortcuts,
             typing: self
                 .typing
                 .lock()

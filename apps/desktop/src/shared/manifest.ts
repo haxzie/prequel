@@ -327,6 +327,17 @@ export interface KeyPress {
   class: KeyClass;
 }
 
+/**
+ * One shortcut chord: when, and the caps it is drawn as.
+ *
+ * `["⌃", "⌥", "⌘", "4"]` — the modifiers in the order macOS writes them, then
+ * the key. See `Manifest.shortcuts` for what is and is not kept.
+ */
+export interface Shortcut {
+  at: MediaTime;
+  keys: string[];
+}
+
 /** A focused text area, sampled during the recording. */
 export interface TypingSample {
   at: MediaTime;
@@ -404,6 +415,24 @@ export interface Manifest {
    * typed" rather than "this recording does not say".
    */
   keys?: KeySpan[];
+  /**
+   * The shortcut chords pressed during the recording, for the editor to show
+   * on the picture.
+   *
+   * **Only chords.** A press is kept when it carries Command, Control or
+   * Option, and never otherwise — so ⌘V is here and what somebody *typed* is
+   * not, with or without Shift, in or out of a text field. The rule is
+   * `shortcut` in `crates/prequel-capture/src/clicks.rs` and that function is
+   * the whole of it.
+   *
+   * Already assembled into the caps it is drawn as, so nothing on this side
+   * turns a key code into a legend — there is no table here to disagree with
+   * the one there.
+   *
+   * Absent on every recording made before it existed, and absent means "not
+   * recorded" rather than "no shortcuts were used".
+   */
+  shortcuts?: Shortcut[];
   /**
    * The moment of each key press and roughly what kind of key it was — what
    * the editor's typing sounds are made from.

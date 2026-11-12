@@ -1154,12 +1154,25 @@ export function WordsIcon() {
   );
 }
 
-/** Lucide `captions`. The CC plate, drawn as two short runs of text. */
+/**
+ * The CC plate, with the two letters actually drawn.
+ *
+ * Lucide's `captions` is the same plate with two short runs of text inside it,
+ * and at sixteen pixels that is a rounded rectangle with dashes in it — which
+ * is also what the keyboard beside it on the rail is. Two tabs that read alike
+ * are two tabs somebody has to click to tell apart. The letters are what the
+ * plate means and the one thing no other glyph in the set can be mistaken for.
+ *
+ * Arcs rather than a `<text>`: a glyph in an icon is at the mercy of whatever
+ * face the window happens to resolve, and two C's drawn at 2.6 units are the
+ * same two C's everywhere.
+ */
 export function CaptionsIcon() {
   return (
     <svg {...STROKE} aria-hidden="true">
       <rect width="18" height="14" x="3" y="5" rx="2" />
-      <path d="M7 15h4M15 15h2M7 11h2M13 11h4" />
+      <path d="M10.6 9.95a2.6 2.6 0 1 0 0 4.1" />
+      <path d="M17.2 9.95a2.6 2.6 0 1 0 0 4.1" />
     </svg>
   );
 }
@@ -1565,6 +1578,16 @@ export function GlassEdgeIcon() {
     <svg {...STROKE} aria-hidden="true">
       <rect width="18" height="18" x="3" y="3" rx="6" />
       <rect width="10" height="10" x="7" y="7" rx="3.5" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/** A key cap, for how the shortcut row is dressed. */
+export function KeyPlateIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <rect width="7" height="7" x="3" y="8.5" rx="1.5" />
+      <rect width="7" height="7" x="14" y="8.5" rx="1.5" strokeOpacity="0.5" />
     </svg>
   );
 }

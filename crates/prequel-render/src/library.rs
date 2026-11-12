@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 pub const LIBRARY_PREFIX: &str = "@library/";
 
 /// The shelves. One directory each under the library root.
-const SHELVES: [&str; 2] = ["backgrounds", "music"];
+const SHELVES: [&str; 3] = ["backgrounds", "music", "frames"];
 
 /// The shelf and bare name a reference points at, or `None` for a recording's
 /// own file.
@@ -88,6 +88,10 @@ mod tests {
         assert_eq!(
             library_parts("@library/music/slow-wander.m4a"),
             Some(("music", "slow-wander.m4a"))
+        );
+        assert_eq!(
+            library_parts("@library/frames/polaroid.png"),
+            Some(("frames", "polaroid.png"))
         );
     }
 

@@ -83,6 +83,8 @@ export interface StartRecordingRequest {
   showCursor?: boolean;
   /** Keep the moment and class of each key press. Defaults to true in the addon. */
   captureKeys?: boolean;
+  /** Keep the shortcut chords. Defaults to true in the addon. */
+  captureShortcuts?: boolean;
   /** Sub-region of the target to capture, in points relative to its origin. */
   crop?: { x: number; y: number; width: number; height: number };
   systemAudio?: boolean;

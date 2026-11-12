@@ -1,4 +1,4 @@
-import type { Project } from "../../../shared/project";
+import type { LayoutSettings, Project } from "../../../shared/project";
 
 /**
  * A face under the pointer in a font list, standing in for the one the project
@@ -136,6 +136,44 @@ export function withCameraLookPreview(project: Project, look: string | null): Pr
             }
           : slice,
       ),
+    })),
+  };
+}
+
+/**
+ * The project as the preview should draw it, with a hovered camera shape on.
+ *
+ * The third of these, and the same shape as the two above for the same
+ * reason — but a patch of leaves rather than one value, because a shape is not
+ * one leaf: picking a frame moves the bubble's proportions as well as its
+ * outline, and picking a plain shape moves its roundness too. The patch is
+ * `cameraShapePatch`'s, so what is previewed is exactly what a click writes.
+ *
+ * Returns the project itself when nothing is hovered — identity, not a copy,
+ * because everything downstream is keyed on it.
+ *
+ * Clips follow where they override *any* leaf the patch touches. The looks'
+ * rule said "the clip that sets its own look", which is the same idea: without
+ * it, hovering the list does nothing on exactly the clip whose shape you
+ * opened the list to change.
+ */
+export function withCameraShapePreview(
+  project: Project,
+  patch: Partial<LayoutSettings> | null,
+): Project {
+  if (patch === null) return project;
+  const keys = Object.keys(patch);
+
+  return {
+    ...project,
+    defaults: { ...project.defaults, layout: { ...project.defaults.layout, ...patch } },
+    tracks: project.tracks.map((track) => ({
+      ...track,
+      slices: track.slices.map((slice) => {
+        const layout = slice.overrides.layout;
+        if (!layout || !keys.some((key) => key in layout)) return slice;
+        return { ...slice, overrides: { ...slice.overrides, layout: { ...layout, ...patch } } };
+      }),
     })),
   };
 }

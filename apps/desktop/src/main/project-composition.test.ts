@@ -115,6 +115,41 @@ describe("readComposition", () => {
     expect(spec?.camera?.at).toBeCloseTo(0.5);
   });
 
+  it("names the camera's frame among the pictures the tile needs", async () => {
+    // The tile draws the same plan the preview does, and a plate it was never
+    // handed the artwork for draws nothing — a recording wearing a polaroid
+    // would be a bare bubble in the library and framed everywhere else, with
+    // nothing to say which was right.
+    const dir = recording("framed");
+    writeFileSync(
+      join(dir, PROJECT_FILE_NAME),
+      JSON.stringify({
+        version: 1,
+        recordingId: "framed",
+        defaults: { layout: { cameraFrame: "polaroid" } },
+        tracks: [
+          {
+            id: "track",
+            kind: "composite",
+            slices: [
+              { id: "slice", source: { start: 0, end: 10 * SECOND }, speed: 1, overrides: {} },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const spec = await readComposition(dir, SCRATCH);
+
+    expect(spec?.images.map((image) => image.path)).toContain("@library/frames/polaroid.png");
+  });
+
+  it("names no frame on a camera wearing none", async () => {
+    const spec = await readComposition(recording("plain"), SCRATCH);
+
+    expect(spec?.images.some((image) => image.path.startsWith("@library/frames/"))).toBe(false);
+  });
+
   it("refuses a directory outside the recordings folder", async () => {
     const outside = mkdtempSync(join(tmpdir(), "prequel-elsewhere-"));
 

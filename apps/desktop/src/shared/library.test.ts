@@ -12,6 +12,10 @@ describe("pointing at an asset of ours", () => {
       kind: "music",
       file: "slow-wander.m4a",
     });
+    expect(libraryParts(libraryRef("frames", "polaroid.png"))).toEqual({
+      kind: "frames",
+      file: "polaroid.png",
+    });
   });
 
   it("says nothing about a recording's own file", () => {

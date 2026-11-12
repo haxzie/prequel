@@ -154,6 +154,28 @@ pub enum PlanItem {
         #[serde(default)]
         motion: Vec<RectKey>,
     },
+    /// The plate the camera is dressed in — a picture with a hole in it,
+    /// hung round the bubble. Mirrors `kind: "frame"` in `shared/layout.ts`.
+    ///
+    /// Drawn over the camera rather than under it: the hole is transparent, so
+    /// the picture shows through it, and everything the plate draws over is
+    /// the part of the camera that was never meant to be seen — the corners a
+    /// television's bezel rounds off, the strip a polaroid covers.
+    ///
+    /// No shape, like a mask: the art carries its own outline in its alpha,
+    /// scallops and knobs and all, so there is nothing for a radius to say.
+    /// The shadow it casts is a separate item, with a rounded rectangle that
+    /// stands in for that outline — see `CameraFrameSpec.plate`.
+    Frame {
+        /// The artwork, resolved like a wallpaper: `@library/frames/crt.png`.
+        path: String,
+        /// Where the whole picture lands in the output frame, in output
+        /// pixels — the hole placed over the camera and the rest worked
+        /// outwards from it.
+        rect: Rect,
+        #[serde(default)]
+        motion: Vec<RectKey>,
+    },
     /// A patch of the picture, blurred or blocked up.
     ///
     /// Carries the *picture's* geometry — the same `rect`, `src`, `shape`,

@@ -31,6 +31,7 @@ import type {
   KeySpan,
   Manifest,
   Segment,
+  Shortcut,
   Track,
   TypingSample,
 } from "../shared/manifest.js";
@@ -124,6 +125,7 @@ export function mergeTake(dir: string, takeDir: string): Merged | null {
     typing: [...(base.typing ?? []), ...shiftPoints(take.typing ?? [], at)],
     keys: [...(base.keys ?? []), ...shiftSpans(take.keys ?? [], at)],
     key_presses: [...(base.key_presses ?? []), ...shiftPoints(take.key_presses ?? [], at)],
+    shortcuts: [...(base.shortcuts ?? []), ...shiftPoints(take.shortcuts ?? [], at)],
   };
 
   // Atomically, and before the project: a project naming a slice past the
@@ -234,7 +236,7 @@ function shiftSegment(segment: Segment, name: string, at: number): Segment {
   };
 }
 
-function shiftPoints<T extends CursorSample | ClickSample | TypingSample | KeyPress>(
+function shiftPoints<T extends CursorSample | ClickSample | TypingSample | KeyPress | Shortcut>(
   samples: readonly T[],
   at: number,
 ): T[] {

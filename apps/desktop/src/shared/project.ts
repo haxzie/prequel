@@ -9,9 +9,11 @@
  * renderer edits it, and the exporter is handed what it resolves to.
  */
 import type { Annotation } from "./annotations.js";
+import type { CameraFrameId } from "./camera-frames.js";
 import { sanitiseAnnotations } from "./annotations.js";
 import type { ExportFormat } from "./contract.js";
 import { filterId } from "./filters.js";
+import type { KeyPosition } from "./keystrokes.js";
 import { libraryRef } from "./library.js";
 import { placement } from "./layout.js";
 import type { MediaTime, SourceInfo } from "./manifest.js";
@@ -164,6 +166,19 @@ export type CameraEdge = "none" | "glass";
  * the whole picture — a heavy round starts eating the corners of what the shape
  * was chosen to show.
  */
+/**
+ * What a labelled pointer is called when nobody has said.
+ *
+ * Written by the picker when one of those styles is chosen with the name
+ * empty, not stored as the leaf's default: the leaf is empty on every
+ * recording and an empty one deliberately draws no tag, so a default here
+ * would put a label beside every plain pointer in the app.
+ *
+ * "You" because that is what the tag is for — a recording is somebody showing
+ * their own screen, and the pointer with a name on it is theirs.
+ */
+export const DEFAULT_CURSOR_NAME = "You";
+
 export const SHAPE_RADIUS: Record<CameraShape, number> = {
   circle: 0.5,
   squircle: 0.5,
@@ -433,6 +448,24 @@ export interface LayoutSettings {
    */
   cameraCornerRadius: number;
   /**
+   * The plate the bubble is dressed in — a polaroid, a window, a stamp, a
+   * television — or `none`. See `CAMERA_FRAMES`.
+   *
+   * A name rather than the plate's number, for the reason a click mark is one:
+   * a frame this build has never heard of draws no plate, which is what a
+   * project written by a newer build should look like here.
+   *
+   * It takes the corner radius over while it is on — the hole is part of the
+   * picture of the object — and `cameraCornerRadius` is deliberately left
+   * alone underneath, so taking the frame off puts back the roundness that was
+   * dialled in before it went on.
+   *
+   * Every shape but the cutout and the one that follows somebody. Both replace
+   * the camera's edge with the person's own, and a polaroid round a silhouette
+   * frames nothing.
+   */
+  cameraFrame: CameraFrameId;
+  /**
    * The glass rim on the camera's edge, or none.
    *
    * Every shape but the cutout: the rim is a treatment of an edge, and a person
@@ -568,6 +601,48 @@ export interface LayoutSettings {
    * whatever this says.
    */
   cursorHideWhileTyping: boolean;
+  /**
+   * Show the shortcuts the recording saw, as rows of key caps.
+   *
+   * Off by default, and deliberately: a recording *carries* its chords
+   * whenever the switch in Settings is on, and drawing them on the picture is
+   * a separate decision somebody makes per video. A feature that turned itself
+   * on would put a ⌘Q on the end of every export.
+   *
+   * Nothing is drawn on a recording made before the chords were recorded, or
+   * one made with that switch off — there is nothing to draw, and the panel
+   * says so rather than offering controls over an empty list.
+   */
+  keysVisible: boolean;
+  /**
+   * How big one cap is, as a fraction of the frame's shorter edge.
+   *
+   * The cap's *height* — the side of one square key — rather than the row's or
+   * the font's, because that is the thing being judged when the slider moves.
+   * See `KEY_SIZE_MIN`.
+   */
+  keysSize: number;
+  /** Which edge of the frame the row sits against. */
+  keysPosition: KeyPosition;
+  /**
+   * How the caps are dressed. See `KEY_PLATES`.
+   *
+   * A string rather than the union, for the reason `cursorStyle` is one: a
+   * project written by a build with plates this one does not have still opens,
+   * and `keyPlate()` falls back rather than throwing.
+   */
+  keysPlate: string;
+  /**
+   * The legends' colour, as hex — the letters on the caps, not the caps.
+   *
+   * The plate behind them is a fixed near-black: a cap on a video is read
+   * against whatever footage is behind it, and the one backing that works on
+   * all of it is a dark one with the lettering light. `keysOpacity` is how
+   * much of that backing there is, which is the question somebody has.
+   */
+  keysColor: string;
+  /** How opaque the dark plate behind them is, 0 to 1. */
+  keysOpacity: number;
   /**
    * The mark drawn where the recording was clicked. See `CLICK_EFFECTS`.
    *
@@ -1313,12 +1388,17 @@ export type LensMethod = Exclude<ZoomSlice["method"], "camera">;
  * the other one's figures across. See `ZoomMotionPanel`.
  */
 export const LENS_FIGURES = {
-  loupe: { loupeSize: 0.44, loupeCurvature: 0.4, loupeAberration: 0.45, loupeReflection: 0.5 },
-  // Barely reflective, where a hand magnifier is plain glass: a fisheye's front
+  // A tenth of the radius rolled at the rim, and a quiet reflection. The glass
+  // is there to be read through: at the old four tenths the bow ate a third of
+  // what was under it, and at half the reflection laid a bright band over the
+  // text somebody had zoomed in to show. Both are still on the controls for
+  // anyone who wants the heavier object.
+  loupe: { loupeSize: 0.44, loupeCurvature: 0.1, loupeAberration: 0.45, loupeReflection: 0.15 },
+  // Reflective in the same measure, for a different reason: a fisheye's front
   // element is coated, and it has to be — it is pointing at a whole hemisphere,
   // so an uncoated one would be looking at its own housing from every angle at
-  // once. Left at the magnifier's, the rim drew a thick white band of reflected
-  // room that read as a ring stuck on the picture.
+  // once. A thick white band of reflected room round the rim read as a ring
+  // stuck on the picture.
   fisheye: { loupeSize: 1.15, loupeCurvature: 0.8, loupeAberration: 0.15, loupeReflection: 0.18 },
 } as const;
 
@@ -1374,9 +1454,9 @@ export const DEFAULT_ZOOM = {
   vignette: 0,
   // The loupe's own figures, because that is the lens a zoom dropped on the
   // timeline becomes if it becomes one at all: a bit under half the shorter
-  // edge, and enough bow to read as glass at the rim while the middle magnifies
-  // evenly. Read from `LENS_FIGURES` rather than written again, so the opening
-  // value and the one the panel brings back cannot drift apart.
+  // edge, with just enough roll at the rim to say there is glass there. Read
+  // from `LENS_FIGURES` rather than written again, so the opening value and the
+  // one the panel brings back cannot drift apart.
   loupeSize: LENS_FIGURES.loupe.loupeSize,
   loupeCurvature: LENS_FIGURES.loupe.loupeCurvature,
   // Present, and not slight. The rim is where a lens shows what it is — the
@@ -2010,6 +2090,11 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   // what writes this. The two have to open agreeing or the first touch of the
   // shape control would visibly re-round a bubble nobody had asked it to.
   cameraCornerRadius: 0.5,
+  // No plate, for the reason the glass edge is `none`: a frame is a strong look
+  // somebody chooses, and this is also what every project saved before frames
+  // existed reads back as with no migration — `sanitiseProject` spreads the
+  // file over these defaults and a bare bubble is what it drew.
+  cameraFrame: "none",
   // No glass, for the reason the border is off: it is a look somebody chooses,
   // and `none` is also what every project saved before the rim existed reads
   // back as, with no migration — `sanitiseProject` spreads the file over these
@@ -2069,6 +2154,24 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   cursorAutoHide: false,
   cursorHideAfter: 2,
   cursorHideWhileTyping: true,
+  // Off, for the reason on the leaf: a recording keeps its chords, and
+  // drawing them is a decision per video. Also what every project saved
+  // before this existed drew, so there is no migration.
+  keysVisible: false,
+  // A cap about the height of a line of captions at the same frame size:
+  // legible at a glance on a phone, and not a banner.
+  keysSize: 0.045,
+  // The bottom, which is where a viewer's eye already is on a captioned video
+  // and where the menus a shortcut just opened are not.
+  keysPosition: "bottom",
+  keysPlate: "keys",
+  // White lettering on the dark plate, which is the pair that reads on any
+  // footage — see `keysColor`.
+  keysColor: "#ffffff",
+  // Enough plate to hold the lettering off the picture, little enough to see
+  // the recording through it. A solid plate reads as a bar stuck on the video
+  // rather than as something laid over it.
+  keysOpacity: 0.62,
   // No mark. A choice like a filter is, and like a filter a new project starts
   // without one; and no `before*` guard is needed, because nothing is what
   // every project saved before this existed drew.
@@ -3004,6 +3107,13 @@ function migrateLayout(
   // answering yes for a setting no control can reach, and the Screen section
   // would offer a Reset for something invisible.
   delete (migrated as { screenZoom?: unknown }).screenZoom;
+
+  // The face the key caps were drawn in, removed once there was only ever one
+  // answer: a shortcut is a keyboard legend, and a keyboard legend is the
+  // system face. Dropped rather than left to sit unread, for the reason above
+  // — a slice that overrode it would keep `key in overrides.layout` answering
+  // yes for a setting no control can reach.
+  delete (migrated as { keysFont?: unknown }).keysFont;
 
   // Arrangements that have been taken out of the grid. Translated rather than
   // left to sit on disk: `layoutBoxes` answers for the arrangements that exist,

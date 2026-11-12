@@ -108,6 +108,9 @@ impl Manifest {
             typing: self.typing,
             keys: self.keys,
             key_presses: self.key_presses,
+            // A v1 manifest predates the shortcut record entirely. Empty is
+            // "not recorded", which is what it is.
+            shortcuts: Vec::new(),
         }
     }
 }

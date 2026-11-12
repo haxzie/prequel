@@ -17,6 +17,7 @@
     "gallery": "vite --config gallery/vite.config.ts",
     "shots": "node scripts/shoot-docs.mjs",
     "clean": "rm -rf out dist release .turbo node_modules *.tsbuildinfo",
+    "frames": "node scripts/make-frames.mjs",
     "icons": "node scripts/make-tray-icons.mjs",
     "cursor": "node scripts/make-cursor.mjs",
     "cursor:sticks": "node scripts/make-stick-cursors.mjs",

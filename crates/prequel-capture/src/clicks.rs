@@ -34,7 +34,7 @@ use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 
 use prequel_encode::host_now;
 use prequel_session::MediaTime;
-pub use prequel_session::{KeyClass, KeyPress};
+pub use prequel_session::{KeyClass, KeyPress, Shortcut};
 
 use crate::cursor::Region;
 
@@ -70,11 +70,12 @@ pub struct KeySpan {
     pub end: MediaTime,
 }
 
-/// Both records of the keyboard, drained together. See `key_tracks`.
+/// Every record of the keyboard, drained together. See `key_tracks`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct KeyTracks {
     pub spans: Vec<KeySpan>,
     pub presses: Vec<KeyPress>,
+    pub shortcuts: Vec<Shortcut>,
 }
 
 /// One key-down as the tap saw it: host time, and which kind of key.
@@ -86,6 +87,19 @@ pub struct KeyTracks {
 struct RawKey {
     host: u64,
     class: KeyClass,
+}
+
+/// One shortcut chord as the tap saw it: host time, and the caps to draw.
+///
+/// `&'static str` rather than `String`, and that is not only about
+/// allocation: every cap a chord can be made of is a literal in `cap` or in
+/// the four modifier constants, so a chord that could be assembled from
+/// anything else cannot be built here at all. A key code with no cap is a
+/// press that is simply not recorded.
+#[derive(Debug, Clone, PartialEq)]
+struct RawShortcut {
+    host: u64,
+    keys: Vec<&'static str>,
 }
 
 /// Longest quiet stretch inside one span.
@@ -121,6 +135,25 @@ static CLICKS: Mutex<Vec<RawClick>> = Mutex::new(Vec::new());
 /// presses themselves leave this buffer as anything but spans is `KEEP_PRESSES`.
 static KEYS: Mutex<Vec<RawKey>> = Mutex::new(Vec::new());
 
+/// The shortcut chords since the tap started.
+///
+/// Its own buffer rather than a field on `RawKey`, because the two are
+/// recorded under different rules and the difference has to be legible: every
+/// key-down lands in `KEYS`, and only a press carrying Command, Control or
+/// Option lands here. Nothing a person *types* reaches this list — see
+/// `Manifest::shortcuts`.
+static SHORTCUTS: Mutex<Vec<RawShortcut>> = Mutex::new(Vec::new());
+
+/// Whether chords are recorded at all.
+///
+/// Its own switch in Settings, separate from `KEEP_PRESSES`, because the two
+/// keep different things: that one is a time and one of five classes, this one
+/// is which keys. Checked **in the callback** rather than on the way out,
+/// unlike that one — a chord that was never assembled cannot be drained by
+/// mistake, and the point of switching this off is that the key is not
+/// recorded, not that it is recorded and dropped later.
+static KEEP_SHORTCUTS: AtomicBool = AtomicBool::new(true);
+
 /// Whether `key_tracks` hands back the presses, or only the spans.
 ///
 /// The switch in Settings. Checked on the way *out* rather than in the
@@ -155,7 +188,8 @@ static DISABLES: AtomicU32 = AtomicU32::new(0);
 /// Starts listening for presses. Returns false if the tap could not be made.
 ///
 /// `capture_keys` is whether individual key presses are kept — see
-/// `KEEP_PRESSES`. Typing spans are kept either way.
+/// `KEEP_PRESSES` — and `capture_shortcuts` whether chords are, which is a
+/// different question about different data. Typing spans are kept either way.
 ///
 /// **A successful return does not mean presses will arrive.** `CGEventTapCreate`
 /// hands back a working tap to a process that has not been permitted to observe
@@ -167,14 +201,18 @@ static DISABLES: AtomicU32 = AtomicU32::new(0);
 /// counter in `stop` is what makes the difference visible: a recording whose
 /// `pressed` count is far below what the user actually did has not lost the
 /// presses, it never saw them.
-pub fn start(capture_keys: bool) -> bool {
+pub fn start(capture_keys: bool, capture_shortcuts: bool) -> bool {
     if let Ok(mut clicks) = CLICKS.lock() {
         clicks.clear();
     }
     if let Ok(mut keys) = KEYS.lock() {
         keys.clear();
     }
+    if let Ok(mut shortcuts) = SHORTCUTS.lock() {
+        shortcuts.clear();
+    }
     KEEP_PRESSES.store(capture_keys, Ordering::Relaxed);
+    KEEP_SHORTCUTS.store(capture_shortcuts, Ordering::Relaxed);
     DISABLES.store(0, Ordering::Relaxed);
 
     let (started, ready) = std::sync::mpsc::channel();
@@ -287,6 +325,12 @@ pub fn key_tracks(to_media: impl Fn(u64) -> Option<MediaTime>) -> KeyTracks {
         .map(|mut keys| std::mem::take(&mut *keys))
         .unwrap_or_default();
 
+    // Drained whatever happens, for the reason the presses are.
+    let chords = SHORTCUTS
+        .lock()
+        .map(|mut shortcuts| std::mem::take(&mut *shortcuts))
+        .unwrap_or_default();
+
     let hosts: Vec<u64> = raw.iter().map(|key| key.host).collect();
     let spans = coalesce(&hosts, &to_media);
     let presses = if KEEP_PRESSES.load(Ordering::Relaxed) {
@@ -294,13 +338,38 @@ pub fn key_tracks(to_media: impl Fn(u64) -> Option<MediaTime>) -> KeyTracks {
     } else {
         Vec::new()
     };
+    let shortcuts = shortcuts(&chords, &to_media);
     tracing::info!(
-        "captured {} typing spans, {} key presses",
+        "captured {} typing spans, {} key presses, {} shortcuts",
         spans.len(),
-        presses.len()
+        presses.len(),
+        shortcuts.len()
     );
 
-    KeyTracks { spans, presses }
+    KeyTracks {
+        spans,
+        presses,
+        shortcuts,
+    }
+}
+
+/// Puts raw chords in the recording's terms, in order.
+///
+/// Sorted for the reason the presses are: a host time inside a pause is
+/// subtracted from, and two chords either side of one can come out the other
+/// way round.
+fn shortcuts(raw: &[RawShortcut], to_media: impl Fn(u64) -> Option<MediaTime>) -> Vec<Shortcut> {
+    let mut shortcuts: Vec<Shortcut> = raw
+        .iter()
+        .filter_map(|chord| {
+            Some(Shortcut {
+                at: to_media(chord.host)?,
+                keys: chord.keys.iter().map(|cap| (*cap).to_owned()).collect(),
+            })
+        })
+        .collect();
+    shortcuts.sort_by_key(|shortcut| shortcut.at);
+    shortcuts
 }
 
 /// Puts raw presses in the recording's terms, in order.
@@ -343,6 +412,164 @@ fn classify(keycode: i64) -> KeyClass {
         54..=63 => KeyClass::Modifier,
         _ => KeyClass::Letter,
     }
+}
+
+/// The caps a press is drawn as, or `None` where it is not a shortcut.
+///
+/// **This function is the whole of what a recording keeps about which keys
+/// were pressed**, so what it refuses matters more than what it returns. It
+/// returns `None` unless the press carries Command, Control or Option — so a
+/// letter, a digit, a space, a Return and a Shift-letter are all `None`,
+/// which is to say that nothing anybody types is ever recorded. What is left
+/// is the sort of thing that goes in a tutorial: ⌘S, ⌃⌥⌘4, ⌥Tab.
+///
+/// Shift is written into a chord but never makes one on its own: ⇧A is a
+/// capital letter, and a capital letter is typing.
+///
+/// A key code with no cap in the table is `None` as well. There is no
+/// fallback to a number or to the raw code — a cap nobody can read is not
+/// worth drawing, and a code in a manifest is exactly the thing this is
+/// careful not to write.
+fn shortcut(keycode: i64, flags: u64) -> Option<Vec<&'static str>> {
+    let held = |mask: u64| flags & mask != 0;
+    // Shift alone is not a chord. Caps Lock is not either — it is a *state*,
+    // and every press made while it is on would otherwise be recorded as a
+    // shortcut.
+    if !held(FLAG_COMMAND) && !held(FLAG_CONTROL) && !held(FLAG_OPTION) {
+        return None;
+    }
+
+    // A modifier pressed on its own arrives as `flagsChanged`, which is not in
+    // the mask — but a key code in the modifier range can still reach here on
+    // some boards, and "⌘ ⌘" is not a shortcut anybody meant to show.
+    let key = cap(keycode)?;
+
+    // The order macOS writes them in, on the menus and on the keyboard
+    // shortcut sheets: Control, Option, Shift, Command, then the key.
+    let mut keys = Vec::with_capacity(5);
+    if held(FLAG_CONTROL) {
+        keys.push("⌃");
+    }
+    if held(FLAG_OPTION) {
+        keys.push("⌥");
+    }
+    if held(FLAG_SHIFT) {
+        keys.push("⇧");
+    }
+    if held(FLAG_COMMAND) {
+        keys.push("⌘");
+    }
+    keys.push(key);
+    Some(keys)
+}
+
+/// The cap a virtual key code is drawn as, for the ANSI layout.
+///
+/// Positional codes, like `classify` above, so this is the US layout's legend
+/// and not necessarily the one on the board in front of the user. That is a
+/// known and accepted limit: the alternative is `UCKeyTranslate` against the
+/// current input source, which is right for the letter and wrong for every
+/// chord whose key is unshifted punctuation — and shortcuts are overwhelmingly
+/// letters and digits, where the two agree on nearly every Latin layout.
+///
+/// Symbols rather than words wherever macOS uses one, because that is what the
+/// menus show: ⇥ not "Tab", ⌫ not "Delete".
+fn cap(keycode: i64) -> Option<&'static str> {
+    Some(match keycode {
+        0 => "A",
+        1 => "S",
+        2 => "D",
+        3 => "F",
+        4 => "H",
+        5 => "G",
+        6 => "Z",
+        7 => "X",
+        8 => "C",
+        9 => "V",
+        11 => "B",
+        12 => "Q",
+        13 => "W",
+        14 => "E",
+        15 => "R",
+        16 => "Y",
+        17 => "T",
+        18 => "1",
+        19 => "2",
+        20 => "3",
+        21 => "4",
+        22 => "6",
+        23 => "5",
+        24 => "=",
+        25 => "9",
+        26 => "7",
+        27 => "-",
+        28 => "8",
+        29 => "0",
+        30 => "]",
+        31 => "O",
+        32 => "U",
+        33 => "[",
+        34 => "I",
+        35 => "P",
+        36 => "↩",
+        37 => "L",
+        38 => "J",
+        39 => "\'",
+        40 => "K",
+        41 => ";",
+        42 => "\\",
+        43 => ",",
+        44 => "/",
+        45 => "N",
+        46 => "M",
+        47 => ".",
+        48 => "⇥",
+        49 => "Space",
+        50 => "`",
+        51 => "⌫",
+        53 => "⎋",
+        // The keypad. Its own codes, and worth having: ⌘⌥+ and ⌘⌥- are the
+        // zoom shortcuts half the apps on the Mac use.
+        65 => ".",
+        67 => "*",
+        69 => "+",
+        75 => "/",
+        76 => "↩",
+        78 => "-",
+        81 => "=",
+        82 => "0",
+        83 => "1",
+        84 => "2",
+        85 => "3",
+        86 => "4",
+        87 => "5",
+        88 => "6",
+        89 => "7",
+        91 => "8",
+        92 => "9",
+        96 => "F5",
+        97 => "F6",
+        98 => "F7",
+        99 => "F3",
+        100 => "F8",
+        101 => "F9",
+        103 => "F11",
+        109 => "F10",
+        111 => "F12",
+        115 => "↖",
+        116 => "⇞",
+        117 => "⌦",
+        118 => "F4",
+        119 => "↘",
+        120 => "F2",
+        121 => "⇟",
+        122 => "F1",
+        123 => "←",
+        124 => "→",
+        125 => "↓",
+        126 => "↑",
+        _ => return None,
+    })
 }
 
 /// Turns key press times into the spans the manifest carries.
@@ -449,8 +676,13 @@ extern "C" fn on_event(
         return event;
     }
 
-    // A key: a moment and a class. The code is read to pick the class and
-    // goes no further; the modifier flags and the character are never read.
+    // A key: a moment and a class, and — where the press is a chord and
+    // chords are being kept — the caps it is drawn as.
+    //
+    // The character is never read. The modifier flags are, and only here: a
+    // chord is the one thing a recording keeps that names a key, and
+    // `shortcut` is where the line between a chord and something somebody
+    // typed is drawn.
     if kind == EVENT_KEY_DOWN {
         // Safety: the event is owned by the caller and only read here.
         let (repeat, keycode) = unsafe {
@@ -465,11 +697,21 @@ extern "C" fn on_event(
         if repeat != 0 {
             return event;
         }
+        let now = host_now();
         if let Ok(mut keys) = KEYS.lock() {
             keys.push(RawKey {
-                host: host_now(),
+                host: now,
                 class: classify(keycode),
             });
+        }
+        if KEEP_SHORTCUTS.load(Ordering::Relaxed) {
+            // Safety: the event is owned by the caller and only read here.
+            let flags = unsafe { CGEventGetFlags(event) };
+            if let Some(keys) = shortcut(keycode, flags)
+                && let Ok(mut shortcuts) = SHORTCUTS.lock()
+            {
+                shortcuts.push(RawShortcut { host: now, keys });
+            }
         }
         return event;
     }
@@ -520,6 +762,19 @@ const EVENT_KEY_DOWN: u32 = 10;
 const KEYBOARD_EVENT_AUTOREPEAT: u32 = 8;
 const KEYBOARD_EVENT_KEYCODE: u32 = 9;
 
+/// The modifier bits of `CGEventGetFlags`, which is the one field of a
+/// keyboard event this reads beyond the two above. The unicode string is
+/// deliberately not among them.
+///
+/// `kCGEventFlagMaskShift`, `Control`, `Alternate` and `Command`. Caps Lock
+/// has a bit of its own and is deliberately not read: it is a state rather
+/// than a key somebody is holding, and reading it would record every press
+/// made with it on.
+const FLAG_SHIFT: u64 = 0x0002_0000;
+const FLAG_CONTROL: u64 = 0x0004_0000;
+const FLAG_OPTION: u64 = 0x0008_0000;
+const FLAG_COMMAND: u64 = 0x0010_0000;
+
 /// `kCGEventTapDisabledByTimeout` and `kCGEventTapDisabledByUserInput`.
 ///
 /// Delivered to the callback as event *types*, outside the mask, and the only
@@ -540,6 +795,7 @@ unsafe extern "C" {
     fn CGEventTapEnable(tap: *const c_void, enable: bool);
     fn CGEventGetLocation(event: *const c_void) -> CGPoint;
     fn CGEventGetIntegerValueField(event: *const c_void, field: u32) -> i64;
+    fn CGEventGetFlags(event: *const c_void) -> u64;
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -572,6 +828,103 @@ mod tests {
 
     fn raw(x: f64, y: f64) -> RawClick {
         RawClick { host: 7, x, y }
+    }
+
+    /// `kVK_ANSI_C`, a key somebody both types and holds Command with.
+    const C: i64 = 8;
+
+    /// What a recording keeps about which keys were pressed, in one test.
+    ///
+    /// This is the privacy rule, not a formatting detail: every case below
+    /// that expects `None` is a press somebody made while *typing*, and the
+    /// reason a recording carries no record of what anybody wrote is that
+    /// this function refuses them. A change here that turns one of them into
+    /// a chord is a change to what the product keeps about its users, and it
+    /// would not otherwise announce itself anywhere.
+    #[test]
+    fn only_a_chord_is_ever_recorded() {
+        // Typing. None of it is kept, with or without Shift — a capital
+        // letter is a letter.
+        assert_eq!(shortcut(C, 0), None);
+        assert_eq!(shortcut(C, FLAG_SHIFT), None);
+        // Caps Lock is a state rather than a chord; a whole sentence typed
+        // with it on is still typing.
+        assert_eq!(shortcut(C, 0x0001_0000), None);
+
+        // Chords, in the order the menus write them.
+        assert_eq!(shortcut(C, FLAG_COMMAND), Some(vec!["⌘", "C"]));
+        assert_eq!(
+            shortcut(C, FLAG_COMMAND | FLAG_SHIFT),
+            Some(vec!["⇧", "⌘", "C"])
+        );
+        assert_eq!(
+            shortcut(C, FLAG_CONTROL | FLAG_OPTION | FLAG_SHIFT | FLAG_COMMAND),
+            Some(vec!["⌃", "⌥", "⇧", "⌘", "C"])
+        );
+        // Control and Option make one on their own, which is where an awful
+        // lot of a Mac's shortcuts live.
+        assert_eq!(shortcut(C, FLAG_CONTROL), Some(vec!["⌃", "C"]));
+        assert_eq!(shortcut(C, FLAG_OPTION), Some(vec!["⌥", "C"]));
+    }
+
+    #[test]
+    fn a_key_with_no_cap_is_not_recorded() {
+        // There is no fallback to the number. A cap nobody can read is not
+        // worth drawing, and a key code in a manifest is the thing this is
+        // careful not to write.
+        assert_eq!(cap(10), None);
+        assert_eq!(shortcut(10, FLAG_COMMAND), None);
+        // A modifier's own code, which can reach the callback on some boards.
+        // "⌘ ⌘" is not a shortcut anybody meant to show.
+        assert_eq!(shortcut(55, FLAG_COMMAND), None);
+    }
+
+    #[test]
+    fn draws_the_keys_macos_draws() {
+        // Symbols wherever a menu shows one, because that is what somebody
+        // watching the video has just seen on their own screen.
+        assert_eq!(cap(36), Some("↩"));
+        assert_eq!(cap(48), Some("⇥"));
+        assert_eq!(cap(51), Some("⌫"));
+        assert_eq!(cap(53), Some("⎋"));
+        assert_eq!(cap(123), Some("←"));
+        assert_eq!(cap(49), Some("Space"));
+        assert_eq!(cap(122), Some("F1"));
+    }
+
+    #[test]
+    fn chords_come_out_in_time_order() {
+        // Sorted for the reason the presses are: a host time inside a pause is
+        // subtracted from, and two chords either side of one come out the
+        // other way round.
+        let raw = vec![
+            RawShortcut {
+                host: 20,
+                keys: vec!["⌘", "V"],
+            },
+            RawShortcut {
+                host: 10,
+                keys: vec!["⌘", "C"],
+            },
+        ];
+
+        let out = shortcuts(&raw, |host| Some(host as MediaTime));
+
+        assert_eq!(out[0].keys, vec!["⌘", "C"]);
+        assert_eq!(out[1].keys, vec!["⌘", "V"]);
+    }
+
+    #[test]
+    fn a_chord_the_clock_cannot_place_is_dropped() {
+        // A press inside a paused span has no moment in the recording. Dropped
+        // rather than placed at zero, which would stack every one of them on
+        // the first frame.
+        let raw = vec![RawShortcut {
+            host: 10,
+            keys: vec!["⌘", "C"],
+        }];
+
+        assert!(shortcuts(&raw, |_| None).is_empty());
     }
 
     #[test]

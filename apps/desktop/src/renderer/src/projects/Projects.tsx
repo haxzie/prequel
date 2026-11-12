@@ -49,6 +49,17 @@ const PAGE = 12;
  * The first column is the tick. It holds its width whether or not anything is
  * showing in it, so rows do not shift sideways as the pointer crosses them.
  */
+/**
+ * How long a second press still counts as a double one, in milliseconds.
+ *
+ * macOS's own default, which is what a double-click means to somebody using
+ * this: the system setting can be slower and a person who has raised it is
+ * used to everything else honouring it, but there is no way to read it from a
+ * renderer — and a window longer than this makes two deliberate presses on the
+ * same tile open it by surprise.
+ */
+const DOUBLE_PRESS_MS = 500;
+
 const COLUMNS = "grid grid-cols-[18px_minmax(0,1fr)_130px_130px_64px] items-center gap-4 px-4";
 
 export function Projects({
@@ -196,6 +207,49 @@ export function Projects({
   const clear = useCallback(() => setSelected(new Set()), []);
 
   /**
+   * The last tile pressed, so a second press on it opens the editor.
+   *
+   * Paired here rather than left to `onDoubleClick`, which is wired on the
+   * tile and *mostly does not fire*: the first click opens the pane beside the
+   * grid, the grid gives up its width, and every tile but the leftmost column
+   * moves out from under the pointer before the second click lands. The
+   * browser then has two clicks on two elements and no double-click at all,
+   * which reads as the feature not existing.
+   *
+   * Keyed on the recording rather than on the element, so it survives the
+   * tile moving — and a second click that lands on a *different* tile is a
+   * different recording, which selects it rather than opening something
+   * nobody aimed at.
+   */
+  const lastPress = useRef<{ dir: string; at: number } | null>(null);
+
+  /**
+   * A press on a tile: select it, or open it if this is the second.
+   *
+   * The whole gesture in one place, because the two halves have to agree
+   * about what counts as "again" — and because `onClick` fires for both
+   * clicks of a double-click, so a handler that only selected would fight one
+   * that only opened.
+   */
+  const press = useCallback(
+    (dir: string) => {
+      const now = performance.now();
+      const previous = lastPress.current;
+      lastPress.current = { dir, at: now };
+
+      if (previous && previous.dir === dir && now - previous.at <= DOUBLE_PRESS_MS) {
+        // Cleared, or a third click inside the window would open it twice.
+        lastPress.current = null;
+        onOpen(dir);
+        return;
+      }
+
+      setPicked(dir);
+    },
+    [onOpen],
+  );
+
+  /**
    * Ticks every recording in this library, not only the ones drawn.
    *
    * Asked for unpaged, which is the one call in here that is: the grid pages
@@ -328,7 +382,7 @@ export function Projects({
                   checked={selected.has(project.dir)}
                   picked={picked === project.dir}
                   selecting={selecting}
-                  onPick={() => (selecting ? toggle(project.dir) : setPicked(project.dir))}
+                  onPick={() => (selecting ? toggle(project.dir) : press(project.dir))}
                   onOpen={() => (selecting ? toggle(project.dir) : onOpen(project.dir))}
                   onToggle={() => toggle(project.dir)}
                   onRename={() => setRenaming(project.dir)}

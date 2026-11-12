@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isImageExport, type EditorSession, type ExportProgress } from "../../../shared/contract";
-import type { RenderedCue, RenderedText, Size } from "../../../shared/layout";
+import type { RenderedChord, RenderedCue, RenderedText, Size } from "../../../shared/layout";
 import {
   outputFrame,
   playedSpan,
@@ -81,6 +81,8 @@ export function useExport(
   captions: { byLook: ReadonlyMap<string, readonly RenderedCue[]>; drawing: boolean },
   texts: { rendered: ReadonlyMap<string, RenderedText>; drawing: boolean },
   tags: CursorTags,
+  /** The shortcut chords, drawn — see `useKeystrokes`. */
+  keystrokes: { chords: readonly RenderedChord[]; drawing: boolean },
   /**
    * A screenshot's one frame, or null for a recording.
    *
@@ -104,8 +106,8 @@ export function useExport(
 
   // Read through a ref because `start` runs long after it was created, and the
   // bitmaps it has to wait for are still being written while it does.
-  const drawing = useRef(captions.drawing || texts.drawing);
-  drawing.current = captions.drawing || texts.drawing;
+  const drawing = useRef(captions.drawing || texts.drawing || keystrokes.drawing);
+  drawing.current = captions.drawing || texts.drawing || keystrokes.drawing;
   /**
    * The bitmaps, read at the moment the plan is built rather than captured.
    *
@@ -117,8 +119,18 @@ export function useExport(
    * ref has no list to forget them from; `settled` above already waits on
    * the same ref pattern for the same reason.
    */
-  const bitmaps = useRef({ cues: captions.byLook, texts: texts.rendered, tags });
-  bitmaps.current = { cues: captions.byLook, texts: texts.rendered, tags };
+  const bitmaps = useRef({
+    cues: captions.byLook,
+    texts: texts.rendered,
+    tags,
+    chords: keystrokes.chords,
+  });
+  bitmaps.current = {
+    cues: captions.byLook,
+    texts: texts.rendered,
+    tags,
+    chords: keystrokes.chords,
+  };
 
   const start = useCallback(async () => {
     // The dialog's own button, so a press that lands here with no session is a
@@ -168,6 +180,7 @@ export function useExport(
         // is written by the same compositor that drew the preview, so there is
         // one rasteriser and a mask cannot go missing from it.
         true,
+        bitmaps.current.chords,
       );
 
       const bytes =
@@ -273,6 +286,8 @@ export function useExport(
         bitmaps.current.cues,
         bitmaps.current.texts,
         (layout) => tagFor(layout, bitmaps.current.tags),
+        false,
+        bitmaps.current.chords,
       ),
       sound: session.sound,
       music: buildMusic(project),

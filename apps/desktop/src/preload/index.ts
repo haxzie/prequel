@@ -614,7 +614,7 @@ const api = {
        * bitmap is a plainer video, and the rest are still worth drawing.
        */
       write: (
-        kind: "captions" | "texts" | "cursor",
+        kind: "captions" | "texts" | "cursor" | "keys",
         dir: string,
         file: string,
         bytes: Uint8Array,
@@ -626,7 +626,7 @@ const api = {
        * one per layer — see `writeBitmaps`, where the round trip is the cost.
        */
       writeMany: (
-        kind: "captions" | "texts" | "cursor",
+        kind: "captions" | "texts" | "cursor" | "keys",
         dir: string,
         files: { file: string; bytes: Uint8Array }[],
       ): Promise<IpcResult<(string | null)[]>> =>
@@ -637,14 +637,14 @@ const api = {
        * them. Answers with the subset that is there.
        */
       have: (
-        kind: "captions" | "texts" | "cursor",
+        kind: "captions" | "texts" | "cursor" | "keys",
         dir: string,
         files: string[],
       ): Promise<IpcResult<string[]>> =>
         ipcRenderer.invoke(IPC_CHANNELS.editorHaveBitmaps, kind, dir, files),
 
       sweep: (
-        kind: "captions" | "texts" | "cursor",
+        kind: "captions" | "texts" | "cursor" | "keys",
         dir: string,
         keep: string[],
       ): Promise<IpcResult<void>> =>

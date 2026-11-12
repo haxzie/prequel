@@ -3,6 +3,15 @@ import { useEffect, useRef, useState, type Dispatch } from "react";
 import type { Annotation, AnnotationKind } from "../../../shared/annotations";
 import { MASK_STRENGTH } from "../../../shared/annotations";
 import { captionStyle } from "../../../shared/captions";
+import {
+  KEY_PLATES,
+  KEY_PLATE_IDS,
+  keyPlate,
+  keySizeLeaf,
+  keySizeSlider,
+  type KeyPlate,
+  type KeyPosition,
+} from "../../../shared/keystrokes";
 import { clickEffect, clickEffectId } from "../../../shared/click-effects";
 import { cursorArrivesWith, cursorReach, cursorStyle, cursorTag } from "../../../shared/contract";
 import { MAX_NAME } from "./cursorTag";
@@ -18,6 +27,7 @@ import {
 } from "../../../shared/filters";
 import {
   cameraFloats,
+  cameraFollows,
   fillsTheFrame,
   LEAN_PADDING,
   screenYawFor,
@@ -28,6 +38,7 @@ import type { TrackKind } from "../../../shared/manifest";
 import {
   CLICK_SOUNDS,
   clickSoundId,
+  DEFAULT_CURSOR_NAME,
   DEFAULT_BACKGROUND,
   DEFAULT_LAYOUT,
   KEY_SOUNDS,
@@ -59,7 +70,9 @@ import {
 import { FISHEYE_FOV_MAX, FISHEYE_FOV_MIN, LOUPE_HASTE } from "../../../shared/layout";
 import type { WallpaperCatalogue, WallpaperSpec } from "../../../shared/wallpapers";
 import type { Backgrounds } from "./useBackgrounds";
+import { cameraShapeChoice, cameraShapePatch } from "./cameraShape";
 import { CameraLookPicker } from "./controls/CameraLookPicker";
+import { CameraShapePicker } from "./controls/CameraShapePicker";
 import { CameraMap } from "./controls/CameraMap";
 import { CaptionEditor, type CaptionEditing } from "./CaptionEditor";
 import { CaptionStylePicker } from "./controls/CaptionStylePicker";
@@ -79,6 +92,7 @@ import {
   AngleIcon,
   AudioIcon,
   GlassEdgeIcon,
+  KeyPlateIcon,
   FisheyeIcon,
   GlassIcon,
   GlassLightIcon,
@@ -102,7 +116,7 @@ import {
   MouseIcon,
   MoveIcon,
   NoneIcon,
-  PersonIcon,
+  TextIcon,
   DepthIcon,
   DropletIcon,
   EllipseToolIcon,
@@ -228,6 +242,8 @@ export interface InspectorProps {
    * into its frames can still wear one.
    */
   hasClicks: boolean;
+  /** Whether the recording kept any shortcut chords, for the Keyboard section. */
+  hasShortcuts: boolean;
   /**
    * Whether this is a screenshot rather than a recording.
    *
@@ -317,6 +333,16 @@ export interface InspectorProps {
    */
   /** The camera look to draw instead of the chosen one while a row is hovered. */
   onPreviewCameraLook: (id: string | null) => void;
+  /**
+   * The camera shape to draw instead of the chosen one while a row is hovered,
+   * as the leaves picking it would write — see `cameraShapePatch`.
+   *
+   * A patch rather than a name, unlike the look's: a shape is not one leaf. A
+   * frame moves the bubble's proportions as well as its outline, and a plain
+   * shape its roundness too, so what the preview has to show is the whole
+   * write and not the choice behind it.
+   */
+  onPreviewCameraShape: (patch: Partial<LayoutSettings> | null) => void;
   onPreviewFont: (preview: FontPreview | null) => void;
   onPickWallpaper: () => void;
   onPickImage: () => void;
@@ -953,6 +979,13 @@ function InspectorPanels(props: InspectorProps) {
     ...(props.hasCursor || props.hasClicks
       ? [{ id: "cursor" as const, label: "Cursor", Icon: CursorIcon }]
       : []),
+    // Only where the recording kept a chord to draw. The same rule the two
+    // above follow, and for the reason Captions gives: a panel whose every
+    // control is dead reads as something broken rather than as something this
+    // take has nothing for.
+    ...(props.hasShortcuts
+      ? [{ id: "keyboard" as const, label: "Keyboard", Icon: KeyboardIcon }]
+      : []),
     // Only where there is a voice to caption. A recording with no microphone
     // and no imported clip has nothing to transcribe, and offering the panel
     // anyway would be a section whose every control is dead.
@@ -1013,7 +1046,8 @@ function InspectorPanels(props: InspectorProps) {
     watermark: [{ section: "watermark" }],
     camera: [{ section: "layout" }],
     audio: [{ section: "audio" }],
-    cursor: [{ section: "layout" }],
+    cursor: [{ section: "layout", keys: CURSOR_KEYS }],
+    keyboard: [{ section: "layout", keys: KEYBOARD_KEYS }],
     captions: [{ section: "captions" }],
     // Owns no `SliceSettings` section, like `presets`: covers are a list on the
     // project rather than settings on a clip, so Reset and apply-to-all have
@@ -1359,6 +1393,7 @@ function InspectorPanels(props: InspectorProps) {
                     field={field}
                     set={set}
                     onPreviewCameraLook={props.onPreviewCameraLook}
+                    onPreviewCameraShape={props.onPreviewCameraShape}
                   />
                 )}
 
@@ -1386,6 +1421,10 @@ function InspectorPanels(props: InspectorProps) {
                     hasCursor={props.hasCursor}
                     hasClicks={props.hasClicks}
                   />
+                )}
+
+                {active === "keyboard" && (
+                  <KeyboardPanel settings={settings} field={field} set={set} />
                 )}
 
                 {active === "captions" && !editingCaptions && (
@@ -1648,6 +1687,7 @@ export type CategoryId =
   | "camera"
   | "audio"
   | "cursor"
+  | "keyboard"
   | "captions"
   | "filters"
   | "watermark";
@@ -2147,6 +2187,7 @@ function CameraPanel({
   field,
   set,
   onPreviewCameraLook,
+  onPreviewCameraShape,
 }: {
   settings: SliceSettings;
   frame: Size;
@@ -2160,6 +2201,8 @@ function CameraPanel({
   set: Setter;
   /** The look to draw instead of the chosen one while a row is hovered. */
   onPreviewCameraLook: (id: string | null) => void;
+  /** The shape to draw instead of the chosen one while a row is hovered. */
+  onPreviewCameraShape: (patch: Partial<LayoutSettings> | null) => void;
 }) {
   const { layout } = settings;
   // Disabled rather than hidden. Controls that vanish take the panel's shape
@@ -2174,7 +2217,15 @@ function CameraPanel({
   // The shape fitted to whoever is on camera, which is the one that cannot be
   // turned — the outline is sampled from the footage and placed in the frame's
   // own pixels. A cutout turns: its matte is sampled in the picture's own uv.
-  const follows = !cutout && layout.cameraShape === "blob" && cameraBlobs;
+  const follows = cameraFollows(layout, cameraBlobs);
+  /**
+   * Whether a plate is on, which is the third answer the shape row can hold.
+   *
+   * Not a shape: the leaf stays where it was underneath, exactly as the
+   * cutout's does, so taking the frame off puts back the shape and the
+   * roundness that were chosen before it went on.
+   */
+  const framed = !cutout && layout.cameraFrame !== "none";
   // Where the camera is a card beside the screen, the arrangement decides how
   // big it is and where it sits — so those controls are unavailable rather than
   // visibly doing nothing. Shape is not among them: the camera is round because
@@ -2210,78 +2261,69 @@ function CameraPanel({
           }}
         />
 
-        {/* The cutout is offered as a shape, though it is stored as a switch
-            beside the shape. It used to be a toggle of its own above this row,
-            which put the same question — what outline does the camera have —
-            in two controls that greyed each other out. As an option here the
-            row answers it once. The switch stays underneath because the
-            geometry reads it, and because it keeps the shape that was chosen
-            before: pick a shape again and the cutout simply lets go of it. */}
+        {/* The cutout and the frames are offered as shapes, though each is
+            stored in a leaf of its own beside the shape. All three answer the
+            one question — what outline does the camera have — and asking it in
+            three controls that greyed each other out is what this row replaced.
+            The leaves stay underneath because the geometry reads them, and
+            because each keeps what was chosen before the other went on: pick a
+            plain shape and the frame simply lets go of it. */}
         <Field
           icon={<SquircleIcon />}
-          // Set for the clip if either half of the answer is.
+          // No label on the row, for the reason the look's list has none: the
+          // control already says what it is, because the name of the shape
+          // that is on is written on it.
+          // Set for the clip if any of the three leaves behind the row is.
           overridden={
-            field("layout", "cameraShape").overridden || field("layout", "cameraCutout").overridden
+            field("layout", "cameraShape").overridden ||
+            field("layout", "cameraCutout").overridden ||
+            field("layout", "cameraFrame").overridden
           }
         >
-          <Segmented<CameraShape | "cutout">
-            value={cutout ? "cutout" : layout.cameraShape}
+          <CameraShapePicker
+            value={cameraShapeChoice(layout)}
             disabled={off}
-            iconsOnly
-            // The name alone as each option's tooltip. A description under a
-            // glyph was tried and read as a paragraph in a bubble; the glyph
-            // and its name say it.
-            options={[
-              {
-                value: "cutout",
-                label: "Remove background",
-                // Greyed rather than hidden on a recording without a matte, so
-                // the option still says the feature exists — and the tooltip
-                // says why it cannot be had here.
-                title: cameraMatte
-                  ? undefined
-                  : "This recording was made before backgrounds could be removed",
-                icon: <CutoutIcon />,
-                disabled: !cameraMatte,
-              },
-              {
-                value: "blob",
-                label: "Follow me",
-                // Greyed rather than hidden on a recording with no fitted
-                // outline, for the reason the cutout is: the option still says
-                // the shape exists, and the tooltip says why it cannot be had
-                // on this take.
-                title: cameraBlobs
-                  ? "The shape follows you, and opens around a raised hand"
-                  : "This recording was made before the camera could be shaped this way",
-                icon: <BlobIcon />,
-                disabled: !cameraBlobs,
-              },
-              { value: "circle", label: "Circle", icon: <CircleIcon /> },
-              { value: "squircle", label: "Squircle", icon: <SquircleIcon /> },
-              { value: "rounded", label: "Rounded", icon: <RoundedIcon /> },
-              { value: "wide", label: "Wide", icon: <WideIcon /> },
-              { value: "portrait", label: "Portrait", icon: <PortraitIcon /> },
-            ]}
-            onChange={(value) => {
-              if (value === "cutout") {
-                // The size, zoom and framing are left as they are: the cutout
-                // is the same picture with its background gone, not a new one.
-                set("layout", "cameraCutout", true);
-                return;
+            icons={{
+              cutout: <CutoutIcon />,
+              blob: <BlobIcon />,
+              circle: <CircleIcon />,
+              squircle: <SquircleIcon />,
+              rounded: <RoundedIcon />,
+              wide: <WideIcon />,
+              portrait: <PortraitIcon />,
+            }}
+            // Greyed rather than hidden where the *recording* cannot offer one,
+            // with the reason in place of the note: the row still says the
+            // shape exists, which a row that vanished would not, and the line
+            // under it is where a reason can be read rather than hunted for in
+            // a tooltip.
+            options={{
+              cutout: cameraMatte
+                ? undefined
+                : {
+                    disabled: true,
+                    note: "This recording was made before backgrounds could be removed.",
+                  },
+              blob: cameraBlobs
+                ? undefined
+                : {
+                    disabled: true,
+                    note: "This recording was made before the camera could be shaped this way.",
+                  },
+            }}
+            onPreview={(choice) =>
+              onPreviewCameraShape(
+                choice === null ? null : cameraShapePatch(choice, layout, cameraSource),
+              )
+            }
+            onChange={(choice) => {
+              // Through the same patch the preview is drawn from, so what a
+              // click does is what hovering showed.
+              for (const [key, leaf] of Object.entries(
+                cameraShapePatch(choice, layout, cameraSource),
+              )) {
+                set("layout", key, leaf);
               }
-              // Only when there is a cutout to let go of. Written every time,
-              // `false` would land in a clip's overrides on any shape change
-              // and mark the cutout as set for that clip when nobody set it.
-              if (cutout) set("layout", "cameraCutout", false);
-              set("layout", "cameraShape", value);
-              // The shape decides the proportions and the roundness once, here,
-              // rather than on every frame. Derived during layout instead, a
-              // bubble someone had dragged to a shape of their own would snap
-              // back to a square the next time this control was touched — and
-              // the same was true of a radius someone had dialled in by hand.
-              set("layout", "cameraWidth", layout.cameraHeight * shapeAspect(value, cameraSource));
-              set("layout", "cameraCornerRadius", SHAPE_RADIUS[value]);
             }}
           />
         </Field>
@@ -2295,7 +2337,13 @@ function CameraPanel({
           shape has no corners, so what is left for "roundness" to mean is how
           near a circle it stays. At the top it is a gentle egg, and winding it
           down lets the lobes of the silhouette through. Picking the shape puts
-          it at the top. */}
+          it at the top.
+
+          Greyed under a frame, where the hole in the art is the shape and
+          there is nothing left for this to round. Greyed rather than hidden,
+          like every other control one setting takes away — and the leaf it
+          writes is deliberately left untouched underneath, so taking the frame
+          off puts the slider back exactly where it was. */}
         <Slider
           icon={<CornerRadiusIcon />}
           label="Roundness"
@@ -2304,7 +2352,7 @@ function CameraPanel({
           min={0}
           max={0.5}
           format={(value) => `${Math.round((value / 0.5) * 100)}%`}
-          disabled={off || cutout}
+          disabled={off || cutout || framed}
           onChange={(value) => set("layout", "cameraCornerRadius", value)}
         />
 
@@ -2385,7 +2433,7 @@ function CameraPanel({
 
             Labelled, unlike the look above it: that row is a grid of swatches
             that says what it is, and this one is two words in a pill that could
-            be anything. Greyed under Remove background rather than taken away,
+            be anything. Greyed under No background rather than taken away,
             the same trade the Border width makes — a person on the wallpaper has
             no edge to put glass on, and a row that vanishes takes the fact that
             the option exists with it. */}
@@ -3383,6 +3431,114 @@ function WatermarkPanel({
  * Only reachable when the recording was made with the system cursor switched
  * off — otherwise the pointer is part of the picture and none of this applies.
  */
+
+/**
+ * The shortcuts the recording saw, as rows of key caps.
+ *
+ * Its own panel rather than a section under Cursor, where it started: the two
+ * are both about what the *input* left on the picture, but a chord is not a
+ * pointer — it has its own typeface, its own plate and its own place in the
+ * frame, which is a panel's worth of choices rather than a group at the foot
+ * of somebody else's.
+ *
+ * Only offered where the recording kept a chord, so there is no empty state
+ * to write: the rail leaves the tab out instead. See `categories`.
+ */
+function KeyboardPanel({
+  settings,
+  field,
+  set,
+}: {
+  settings: SliceSettings;
+  field: FieldProps;
+  set: Setter;
+}) {
+  const { layout } = settings;
+
+  return (
+    <Section>
+      <ToggleField
+        icon={<KeyboardIcon />}
+        label="Show shortcuts"
+        {...field("layout", "keysVisible")}
+        value={layout.keysVisible}
+        onChange={(value) => set("layout", "keysVisible", value)}
+      />
+
+      <Field icon={<KeyPlateIcon />} label="Keys" {...field("layout", "keysPlate")}>
+        <Segmented<KeyPlate>
+          value={keyPlate(layout.keysPlate)}
+          disabled={!layout.keysVisible}
+          options={KEY_PLATE_IDS.map((id) => ({
+            value: id,
+            label: KEY_PLATES[id].label,
+            title: KEY_PLATES[id].hint,
+          }))}
+          onChange={(value) => set("layout", "keysPlate", value)}
+        />
+      </Field>
+
+      {/* The lettering and the backing are two controls because they are two
+          questions, and only one of them is a colour: the backing is always
+          dark — see `keysColor` — and what is adjustable about it is how much
+          of the recording shows through. */}
+      <ColorField
+        icon={<DropletIcon />}
+        label="Text"
+        overridden={field("layout", "keysColor").overridden}
+        disabled={!layout.keysVisible}
+        value={layout.keysColor}
+        onChange={(value) => set("layout", "keysColor", value)}
+      />
+
+      {/* Greyed under Plain, which is the one dressing with nothing behind the
+          letters to fade — the slider would move and the picture would not,
+          which reads as a broken control rather than as a style that has no
+          backing. Greyed rather than hidden, like every other control in the
+          panel that one setting takes away. */}
+      <Slider
+        icon={<OpacityIcon />}
+        label="BG opacity"
+        {...field("layout", "keysOpacity")}
+        value={layout.keysOpacity}
+        min={0}
+        max={1}
+        format={percent}
+        disabled={!layout.keysVisible || keyPlate(layout.keysPlate) === "plain"}
+        onChange={(value) => set("layout", "keysOpacity", value)}
+      />
+
+      {/* Across the useful range rather than across the frame — see
+          `keySizeSlider`. The leaf underneath is still a fraction of the
+          frame's shorter edge, like every other geometry leaf; it is only the
+          control that is in the units somebody is thinking in. */}
+      <Slider
+        icon={<SizeIcon />}
+        label="Size"
+        {...field("layout", "keysSize")}
+        value={keySizeSlider(layout.keysSize)}
+        min={0}
+        max={1}
+        format={percent}
+        disabled={!layout.keysVisible}
+        onChange={(value) => set("layout", "keysSize", keySizeLeaf(value))}
+      />
+
+      <Field icon={<PlaceIcon />} label="Position" {...field("layout", "keysPosition")}>
+        <Segmented<KeyPosition>
+          value={layout.keysPosition}
+          disabled={!layout.keysVisible}
+          options={[
+            { value: "top", label: "Top" },
+            { value: "bottom", label: "Bottom" },
+          ]}
+          onChange={(value) => set("layout", "keysPosition", value)}
+        />
+      </Field>
+    </Section>
+  );
+}
+
 function CursorPanel({
   settings,
   field,
@@ -3489,6 +3645,21 @@ function CursorPanel({
                 onChange={(value) => {
                   if (value === cursorStyle(layout.cursorStyle).id) return;
                   set("layout", "cursorStyle", value);
+
+                  // A tag with nothing on it draws nothing — see `cursorName`
+                  // — so picking one of the labelled pointers with no name
+                  // set lands a pointer that looks exactly like the plain one
+                  // beside it, and the control that would say why is three
+                  // rows further down. It arrives named instead, and named
+                  // the one thing that is true of every recording.
+                  //
+                  // Only when there is nothing there: a name typed once is
+                  // kept through every style change, and writing over it
+                  // would make this the one picker that throws work away.
+                  if (cursorTag(value) !== null && layout.cursorName.trim() === "") {
+                    set("layout", "cursorName", DEFAULT_CURSOR_NAME);
+                  }
+
                   const arrives = cursorArrivesWith(value);
                   if (!arrives) return;
                   set("layout", "clickEffect", arrives.mark);
@@ -3499,14 +3670,16 @@ function CursorPanel({
               />
             </Field>
 
-            {/* Only under a style that wears one. The name is kept when the style
-            changes — see `cursorName` — so this comes back filled in. */}
+            {/* Only under a style that wears one. The name is kept when the
+            style changes — see `cursorName` — so this comes back filled in,
+            and a style picked with nothing in it arrives named.
+
+            No label: the box is a text box with the name already in it, and a
+            word over it said the same thing twice. The trade is the one the
+            `Field` note describes — nowhere to show the clip overrides it, the
+            panel's Reset being the tell instead. */}
             {cursorTag(layout.cursorStyle) !== null && (
-              <Field
-                icon={<PersonIcon />}
-                label="Name on the tag"
-                {...field("layout", "cursorName")}
-              >
+              <Field icon={<TextIcon />} {...field("layout", "cursorName")}>
                 <input
                   value={layout.cursorName}
                   placeholder="Who is pointing"
@@ -4150,6 +4323,42 @@ function BackgroundPanel({
  * Every value here is a fraction of the frame's shorter edge, so a look
  * survives 16:9 becoming 9:16.
  */
+
+/**
+ * What Cursor owns of `layout`, and what Keyboard does.
+ *
+ * Spelled out rather than left as the whole section, which is what Cursor used
+ * to take: the two panels now sit over the same section, and a Reset that put
+ * the whole of it back would take the other one's settings with it — along
+ * with the arrangement, the camera and everything else in `layout`.
+ */
+const CURSOR_KEYS: (keyof LayoutSettings)[] = [
+  "cursorVisible",
+  "cursorSize",
+  "cursorSmoothing",
+  "cursorMotionBlur",
+  "cursorTilt",
+  "cursorShadowOpacity",
+  "cursorShadowBlur",
+  "cursorShadowY",
+  "cursorStyle",
+  "cursorName",
+  "cursorAutoHide",
+  "cursorHideAfter",
+  "cursorHideWhileTyping",
+  "clickEffect",
+  "clickColor",
+  "clickSize",
+];
+
+const KEYBOARD_KEYS: (keyof LayoutSettings)[] = [
+  "keysVisible",
+  "keysSize",
+  "keysPosition",
+  "keysPlate",
+  "keysColor",
+  "keysOpacity",
+];
 
 /** What Focus owns of `layout`, for its Reset and its apply-to-all. */
 const FOCUS_KEYS: (keyof LayoutSettings)[] = [
@@ -5361,28 +5570,6 @@ function ZoomMotionPanel({
         </Field>
       )}
 
-      {/* Only under Loupe, and above Level for the same reason the Area map is
-          where it is: how big the glass is comes before how far into it you are
-          looking. A camera move has no size — it fills the frame. */}
-      {isLens(zoom.method) && (
-        <Slider
-          icon={<GlassIcon />}
-          label="Lens"
-          value={zoom.loupeSize}
-          min={0.15}
-          // The fisheye's ceiling is past the frame, where the circle runs off
-          // the edges and only the corners are left outside it. That is the
-          // look; a loupe stops where there is still a screen around it.
-          max={maxLensSize(zoom.method)}
-          step={0.01}
-          // Against the frame's shorter edge, which is what the setting is a
-          // fraction of — "a third of the frame across" is the thing anyone has
-          // an opinion about.
-          format={percent}
-          onChange={(loupeSize) => onChange({ loupeSize })}
-        />
-      )}
-
       <Slider
         icon={<LevelIcon />}
         label="Level"
@@ -5594,18 +5781,24 @@ function ZoomPerspectivePanel({
 /**
  * What sort of glass the lens is.
  *
- * Its own tab rather than three more rows under the motion controls, for the
- * reason Angle is one: these are set once and rarely returned to, while `Lens`
- * and `Level` are what a loupe is adjusted by — and a column that mixes the two
- * makes the frequent controls something to scroll past.
+ * Its own tab rather than more rows under the motion controls, for the reason
+ * Angle is one: the Zoom tab is where a zoom is aimed, and every control here
+ * exists only under a lens. A column that mixed the two put rows in front of
+ * everyone that apply to one method in three.
  *
- * Five controls: the glass is four decisions — its shape, what it does to
- * colour, what it reflects and what it throws back onto the frame — and how much
- * it smears when it moves. Every one of them is physical — the shader refracts,
+ * `Lens size` leads, and it is the one control here reached for often. It
+ * sat under Method on the Zoom tab, appearing and vanishing as the method
+ * changed — a row that moves everything below it whenever a segment is pressed.
+ * Size is the first thing said about a piece of glass, so it says it here, at
+ * the top of the tab that is only there when there is glass to size.
+ *
+ * Then the glass itself: four decisions — its shape, what it does to colour,
+ * what it reflects and what it throws back onto the frame — and how much it
+ * smears when it moves. Every one of them is physical — the shader refracts,
  * disperses, reflects and casts rather than drawing an effect — which is why
  * none of them has an "amount".
  *
- * The first is renamed under a fisheye, and that is not cosmetic: the two
+ * The shape is renamed under a fisheye, and that is not cosmetic: the two
  * surfaces have one number each to describe them and it is not the same number.
  * On a magnifier it is how much of the radius is rolled over at the rim; on a
  * fisheye there is no rolled rim at all and it is how wide the thing sees. One
@@ -5621,6 +5814,23 @@ function ZoomGlassPanel({
 }) {
   return (
     <Section>
+      <Slider
+        icon={<GlassIcon />}
+        label="Lens size"
+        value={zoom.loupeSize}
+        min={0.15}
+        // The fisheye's ceiling is past the frame, where the circle runs off
+        // the edges and only the corners are left outside it. That is the
+        // look; a loupe stops where there is still a screen around it.
+        max={maxLensSize(zoom.method)}
+        step={0.01}
+        // Against the frame's shorter edge, which is what the setting is a
+        // fraction of — "a third of the frame across" is the thing anyone has
+        // an opinion about.
+        format={percent}
+        onChange={(loupeSize) => onChange({ loupeSize })}
+      />
+
       <Slider
         icon={zoom.method === "fisheye" ? <FisheyeIcon /> : <GlassIcon />}
         label={zoom.method === "fisheye" ? "Angle" : "Curvature"}

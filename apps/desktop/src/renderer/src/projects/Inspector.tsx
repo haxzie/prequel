@@ -4,6 +4,7 @@ import type { ProjectComposition, ProjectDetails, ProjectSummary } from "../../.
 import { CloseIcon, FolderIcon, TrashIcon } from "../editor/icons";
 import { formatElapsed, formatFileSize, formatTimeAgo } from "../lib/format";
 import { cn } from "../lib/cn";
+import { PencilIcon } from "./icons";
 import { Preview } from "./Preview";
 
 /**
@@ -109,11 +110,13 @@ export function Inspector({
           <button
             type="button"
             className={cn(
-              "flex h-9 flex-1 items-center justify-center rounded-lg text-[13px] font-medium",
+              "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-[13px]",
+              "font-medium [&_svg]:size-3.5",
               "bg-editor-accent text-black transition-[filter] hover:brightness-105",
             )}
             onClick={() => onOpen(dir)}
           >
+            <PencilIcon />
             {project.still ? "Edit screenshot" : "Edit recording"}
           </button>
 

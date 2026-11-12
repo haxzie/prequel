@@ -1222,6 +1222,36 @@ impl Compositor {
                 ))
             }
 
+            PlanItem::Frame { path, rect, motion } => {
+                let Some(held) = self.images.get(path) else {
+                    // Not loaded, or missing — a recording opened before the
+                    // shelf was seeded. Skipped for the reason a missing
+                    // watermark is: no plate looks like no plate, and a
+                    // rectangle where one should be looks like a fault.
+                    return Ok(None);
+                };
+                // A radius of nought, like a mask's: the art carries its own
+                // outline in its alpha, so there is no shape to interpolate.
+                let now = rect_at(motion, at as i64, *rect, 0.0);
+                Some((
+                    Uniforms {
+                        rect: rect_of(&now.rect),
+                        // Turned with the bubble it frames, which is why it is
+                        // a quad rather than a rectangle on a leaning camera.
+                        quad: corners_of(&now.quad, 0.0),
+                        // The whole picture, undistorted, and square — exactly
+                        // a watermark's two reasons.
+                        src: [0.0, 0.0, 1.0, 1.0],
+                        shape: [0.0, 2.0],
+                        mode: MODE_IMAGE,
+                        ..base
+                    },
+                    // Already held by `self.images`, so it needs no entry in
+                    // this frame's keep-alive list.
+                    Some(held.texture.as_ref()),
+                ))
+            }
+
             PlanItem::Loupe { keys } => {
                 // Away, or not yet arrived — most of a recording, even one with a
                 // lens in it. Skipped rather than drawn at nothing, which would

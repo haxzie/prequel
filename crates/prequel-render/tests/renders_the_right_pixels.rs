@@ -1421,7 +1421,168 @@ fn every_click_mark_in_the_catalogue_lands_on_the_click_and_then_goes() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Writes a pixel buffer out as a PNG, so the exporter has a real file to
+/// A plate with a hole in it: opaque but for the box in the middle.
+///
+/// Stands in for the artwork the app ships, which this crate has never heard
+/// of — the exporter draws a picture at a rectangle, and which picture is the
+/// editor's business. What is being checked is the one thing this side owns:
+/// that the plate goes over the camera, that its hole lets the camera through,
+/// and that it reaches no further than the rectangle it was given.
+fn plate_with_a_hole(size: u32, hole: Rect, colour: [u8; 3]) -> arc::R<cv::PixelBuf> {
+    let mut buf = cv::PixelBuf::new(
+        size as usize,
+        size as usize,
+        cv::PixelFormat::_32_BGRA,
+        None,
+    )
+    .expect("allocate a pixel buffer");
+
+    unsafe {
+        buf.lock_base_addr(cv::pixel_buffer::LockFlags::DEFAULT)
+            .result()
+            .expect("lock");
+
+        let stride = buf.bytes_per_row();
+        let base = buf.base_address_mut().cast::<u8>();
+        for y in 0..size as usize {
+            for x in 0..size as usize {
+                let inside = (x as f64) >= hole.x
+                    && (x as f64) < hole.x + hole.width
+                    && (y as f64) >= hole.y
+                    && (y as f64) < hole.y + hole.height;
+                let at = y * stride + x * 4;
+                // Premultiplied nowhere: the decoder hands straight alpha to
+                // the shader, so a cleared pixel is simply cleared.
+                let alpha = if inside { 0u8 } else { 255u8 };
+                *base.add(at) = if inside { 0 } else { colour[2] };
+                *base.add(at + 1) = if inside { 0 } else { colour[1] };
+                *base.add(at + 2) = if inside { 0 } else { colour[0] };
+                *base.add(at + 3) = alpha;
+            }
+        }
+
+        buf.unlock_lock_base_addr(cv::pixel_buffer::LockFlags::DEFAULT)
+            .result()
+            .expect("unlock");
+    }
+
+    buf
+}
+
+#[test]
+fn a_camera_frame_covers_the_picture_but_not_its_hole() {
+    let dir = scratch("prequel-pixels-camera-frame");
+    // White camera, black screen: "the picture is still there" and "the plate
+    // is here" are then one pixel each, in two colours neither of which is the
+    // other.
+    record(&dir, "screen.mp4", 200, 200, &solid(200, [0, 0, 0]));
+    record(&dir, "camera.mp4", 200, 200, &solid(200, [255, 255, 255]));
+
+    // The art: 200 square, with a 100 square hole a quarter of the way in.
+    const ART: u32 = 200;
+    let hole = Rect {
+        x: 50.0,
+        y: 40.0,
+        width: 100.0,
+        height: 100.0,
+    };
+    write_png_with_alpha(
+        &dir.join("plate.png"),
+        &plate_with_a_hole(ART, hole, [255, 0, 0]),
+    );
+
+    // Where the plate lands, and the hole in it worked out the way
+    // `plated` in `shared/layout.ts` works it out backwards.
+    let plate = Rect {
+        x: 60.0,
+        y: 20.0,
+        width: 200.0,
+        height: 200.0,
+    };
+    let aperture = Rect {
+        x: plate.x + hole.x * plate.width / f64::from(ART),
+        y: plate.y + hole.y * plate.height / f64::from(ART),
+        width: hole.width * plate.width / f64::from(ART),
+        height: hole.height * plate.height / f64::from(ART),
+    };
+
+    let plan = RenderPlan {
+        frame: Size {
+            width: OUT_W as f64,
+            height: OUT_H as f64,
+        },
+        items: vec![
+            PlanItem::Image {
+                source: PlanSource::Camera,
+                src_rect: Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 200.0,
+                    height: 200.0,
+                },
+                dst_rect: aperture,
+                shape: Shape {
+                    radius: 0.0,
+                    exponent: 2.0,
+                },
+                mirror: false,
+                matte: false,
+                blobs: Vec::new(),
+                grade: None,
+                rim: 0.0,
+                fringe: 0.0,
+                motion: Vec::new(),
+            },
+            PlanItem::Frame {
+                path: "plate.png".to_owned(),
+                rect: plate,
+                motion: Vec::new(),
+            },
+        ],
+        filter: None,
+    };
+
+    let output = dir.join("framed.mp4");
+    export(
+        &request(&dir, &output, vec![slice(plan)]),
+        &CancelFlag::new(),
+        &mut |_| {},
+    )
+    .expect("export");
+
+    let drawn = frame_at(&output, 0);
+    let at = |x: f64, y: f64| drawn.at(x as u32, y as u32);
+
+    // The camera, through the hole.
+    let (r, g, b) = at(
+        aperture.x + aperture.width / 2.0,
+        aperture.y + aperture.height / 2.0,
+    );
+    assert!(
+        r > 200 && g > 200 && b > 200,
+        "the hole did not show the camera: {r},{g},{b}"
+    );
+
+    // The plate, in the margin above the hole — where the camera is not.
+    let (r, g, b) = at(plate.x + plate.width / 2.0, plate.y + 8.0);
+    assert!(
+        r > 150 && g < 90 && b < 90,
+        "the plate was not drawn over its own margin: {r},{g},{b}"
+    );
+
+    // And nothing outside the rectangle it was given: the far corner is the
+    // black screen. A plate drawn at the wrong size is a red frame somewhere
+    // else, which every assertion above would still pass.
+    let (r, g, b) = at(4.0, 4.0);
+    assert!(
+        r < 40 && g < 40 && b < 40,
+        "the plate reached the corner of the frame: {r},{g},{b}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Writes a pixel buffer out as a PNG, so the exporter has a real file to/// Writes a pixel buffer out as a PNG, so the exporter has a real file to
 /// decode rather than one this test hand-rolled.
 fn write_png(path: &Path, buffer: &arc::R<cv::PixelBuf>) {
     let raw = path.with_extension("rgb");
@@ -2432,7 +2593,7 @@ fn draws_nothing_where_the_outline_has_closed() {
 /// blue on the frame and red through the glass, which no amount of drawing a
 /// circle in the right place could produce.
 ///
-/// `curvature` is the default and `aberration` and `reflection` are off, so what
+/// `curvature` is well up and `aberration` and `reflection` are off, so what
 /// is being measured is the mapping rather than the dressing: the rim darkening
 /// and the highlight both land well outside the point being sampled.
 #[test]

@@ -24,6 +24,7 @@ import {
   type MediaTime,
   type TrackKind,
 } from "../../../shared/manifest";
+import { CAMERA_FRAME_FILES } from "../../../shared/camera-frames";
 import { libraryRef } from "../../../shared/library";
 import { mediaUrl, recordingName } from "../../../shared/media-url";
 import {
@@ -34,6 +35,7 @@ import {
   SOUND_OFF,
   STILL_AT,
   type Background,
+  type LayoutSettings,
   type Project,
   type TextSlice,
   type ZoomSlice,
@@ -99,9 +101,15 @@ import {
 import { useCaptions } from "./useCaptions";
 import { useCaptionImages } from "./useCaptionImages";
 import { useFonts } from "./useFonts";
-import { withCameraLookPreview, withFontPreview, type FontPreview } from "./fontPreview";
+import {
+  withCameraLookPreview,
+  withCameraShapePreview,
+  withFontPreview,
+  type FontPreview,
+} from "./fontPreview";
 import { useTextBitmaps } from "./useTextBitmaps";
 import { useCursorTags } from "./useCursorTags";
+import { useKeystrokes } from "./useKeystrokes";
 import { useTranscription } from "./useTranscription";
 import { transcriptForShare } from "./shareTranscript";
 import {
@@ -476,6 +484,14 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const [fontPreview, setFontPreview] = useState<FontPreview | null>(null);
   /** The camera look under the pointer in the Effects list, if any. */
   const [lookPreview, setLookPreview] = useState<string | null>(null);
+  /**
+   * The camera shape a row of the shape list is hovering, as the leaves it
+   * would write — see `cameraShapePatch`.
+   *
+   * The leaves rather than the choice, so this file needs no table of shapes
+   * and the preview is literally what the click commits.
+   */
+  const [shapePreview, setShapePreview] = useState<Partial<LayoutSettings> | null>(null);
 
   /**
    * The project as the preview draws it, which is not quite the project.
@@ -491,8 +507,12 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * nearly always; see `withFontPreview`.
    */
   const drawnProject = useMemo(
-    () => withCameraLookPreview(withFontPreview(state.project, fontPreview), lookPreview),
-    [state.project, fontPreview, lookPreview],
+    () =>
+      withCameraShapePreview(
+        withCameraLookPreview(withFontPreview(state.project, fontPreview), lookPreview),
+        shapePreview,
+      ),
+    [state.project, fontPreview, lookPreview, shapePreview],
   );
 
   /** `previewSettings`, with the hovered face standing in. What is on screen. */
@@ -1206,6 +1226,9 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const fonts = useFonts();
   const textBitmaps = useTextBitmaps(session, drawnProject, captionFrame, fonts);
   const cursorTags = useCursorTags(session, state.project, setImages);
+  // The shortcut chords, drawn once each. Nothing is rasterised while the row
+  // is switched off, which is most recordings.
+  const keystrokes = useKeystrokes(session, drawnProject, fonts, setImages);
   /**
    * Every text's bitmaps by when it is on screen, for the image cache.
    *
@@ -1437,6 +1460,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     captions,
     textBitmaps,
     cursorTags,
+    keystrokes,
     // Present only for a screenshot, which is what sends the export down the
     // still path: one frame drawn here rather than a video rendered by the
     // addon. Null while the shot is still decoding, so Export cannot write a
@@ -2237,6 +2261,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 images={images}
                 cursor={session.cursor}
                 clicks={session.clicks}
+                chords={keystrokes.chords}
                 blobs={session.blobs}
                 zooms={state.project.zooms}
                 cues={captions.byLook}
@@ -2354,6 +2379,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               present={present}
               still={still}
               hasCursor={session.cursor !== null}
+              hasShortcuts={session.shortcuts.length > 0}
               hasClicks={session.clicks.length > 0}
               hasSounds={hasSounds}
               hasSpeech={hasSpeech}
@@ -2406,6 +2432,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               onPreviewZoom={previewZoom}
               onPreviewText={previewText}
               onPreviewCameraLook={setLookPreview}
+              onPreviewCameraShape={setShapePreview}
               onPreviewFont={setFontPreview}
               // Deselects both kinds, rather than working out which one the
               // panel is showing: only one can be set at a time, and clearing
@@ -3260,6 +3287,9 @@ function useSoundBanks(media: ReturnType<typeof useEditorPlayback>, project: Pro
  * which is how a single bad download turned into a dozen backgrounds that
  * "do not get set".
  */
+/** Every frame's artwork, by the path a plan names it with. */
+const FRAME_ART = CAMERA_FRAME_FILES.map((file) => libraryRef("frames", file));
+
 function useEditorImages(
   session: EditorSession | null,
   project: ReturnType<typeof newProject>,
@@ -3271,7 +3301,20 @@ function useEditorImages(
 ) {
   // Joined so the effect re-runs when the set changes rather than on every
   // edit — a project object is new on each keystroke.
-  const paths = imagePaths(project, cursors).join("\u0000");
+  // The frame artwork beside what the composition names.
+  //
+  // Every frame, not only the one that is on: which plate is drawn is a
+  // setting that changes on a click, and loading one then would mean the
+  // camera lost its frame for as long as the picture took to arrive — the same
+  // reason every pointer image is collected. They come off the shelf, so this
+  // is a local read whatever the project names.
+  //
+  // Here rather than in `imagePaths`, which is also what the reveal waits on.
+  // A frame is a decoration: holding "Loading the recording…" up while three
+  // megabytes of paper decode — or worse, through a retry ladder because the
+  // shelf was never seeded — would let a camera frame delay the whole editor,
+  // which nothing about it earns.
+  const paths = [...imagePaths(project, cursors), ...FRAME_ART].join("\u0000");
 
   useEffect(() => {
     if (!session || !paths) return;
@@ -3370,6 +3413,13 @@ function imagePaths(project: ReturnType<typeof newProject>, cursors: readonly st
   for (const track of project.tracks) {
     for (const slice of track.slices) mark(slice.overrides.watermark?.watermark);
   }
+
+  // Every frame's artwork, not only the one that is on. Which plate is drawn
+  // is a setting that changes on a click, and loading one then would mean the
+  // camera lost its frame for as long as the picture took to arrive — the same
+  // reason every pointer image is collected above. They come off the shelf,
+  // so this is a local read whatever the project names.
+  for (const file of CAMERA_FRAME_FILES) paths.add(libraryRef("frames", file));
 
   return [...paths];
 }

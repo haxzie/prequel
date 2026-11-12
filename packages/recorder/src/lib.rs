@@ -297,6 +297,11 @@ fn write_manifest(
         // The same type on both sides of the crate boundary, so it passes
         // straight through; empty when the switch was off.
         key_presses: screen.map(|s| s.key_presses.clone()).unwrap_or_default(),
+        // The shortcut chords, for the editor to draw on the picture. The same
+        // type on both sides of the crate boundary, so it passes straight
+        // through; empty when the switch was off, and empty of anything
+        // anybody typed either way — see `clicks::shortcut`.
+        shortcuts: screen.map(|s| s.shortcuts.clone()).unwrap_or_default(),
         // Bounds of whatever field had keyboard focus, never a keystroke.
         // Empty without the Accessibility grant.
         typing: screen
@@ -697,6 +702,12 @@ pub struct RecordRequest {
     /// `prequel-capture`'s `clicks.rs`; the typing spans that hide the pointer
     /// are recorded whatever this says.
     pub capture_keys: Option<bool>,
+    /// Keep the shortcut chords, so the editor can show them on the picture.
+    ///
+    /// Defaults to true. Only chords — a press carrying Command, Control or
+    /// Option — so nothing anybody types is recorded. `clicks::shortcut` is
+    /// the whole of the rule.
+    pub capture_shortcuts: Option<bool>,
 }
 
 #[napi(object)]
@@ -809,6 +820,7 @@ impl Task for StartRecording {
         options.capture_microphone = request.microphone.unwrap_or(false);
         options.excluded_windows = request.excluded_window_ids.clone().unwrap_or_default();
         options.capture_keys = request.capture_keys.unwrap_or(true);
+        options.capture_shortcuts = request.capture_shortcuts.unwrap_or(true);
 
         // One clock, handed to both pipelines. Two clocks would produce two
         // files that cannot be lined up, which is the entire failure mode

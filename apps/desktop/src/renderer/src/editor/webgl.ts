@@ -2651,6 +2651,32 @@ export class WebGlCompositor {
         break;
       }
 
+      case "frame": {
+        const image = images.get(item.path);
+        // Not loaded yet, or missing — a recording opened before the shelf was
+        // seeded. Nothing drawn, for the reason a missing watermark draws
+        // nothing: no plate looks like no plate, and a placeholder looks like
+        // a fault.
+        if (!image) break;
+        if (!this.upload(gl, item.path, image, false)) break;
+
+        // Its own line rather than `moving`, like the mask above: the art
+        // carries its own outline in its alpha, so there is no shape to carry
+        // and a radius of nought is the whole of the geometry.
+        const now = rectAt(item.motion ?? [], at, item.rect, 0);
+        set(gl, p, {
+          rect: { x: now.x, y: now.y, width: now.width, height: now.height },
+          shape: { radius: 0, exponent: 2 },
+          // Turned with the bubble it frames, which is why it is a quad rather
+          // than a rectangle on a leaning camera.
+          ...(now.quad ? { quad: now.quad } : {}),
+          src: [0, 0, 1, 1],
+          mode: MODE_IMAGE,
+        });
+        drawQuad(gl);
+        break;
+      }
+
       case "watermark": {
         const image = images.get(item.path);
         // Not loaded yet, or missing. Nothing drawn, for the reason a missing
@@ -3376,11 +3402,12 @@ export class WebGlCompositor {
 
 /** The item's rectangle and shape at a moment, honouring a zoom's motion. */
 function moving(
-  // A mask carries `motion` too and has no `shape` — it is square-cornered by
-  // definition. Excluded rather than branched on: the mask case above samples
-  // its own movement, because it also has to copy the backdrop at the place it
-  // has moved to, which nothing else here needs.
-  item: Exclude<Extract<PlanItem, { motion?: RectKey[] }>, { kind: "mask" }>,
+  // A mask and a frame carry `motion` too and have no `shape` — a mask is
+  // square-cornered by definition and a frame carries its outline in its
+  // artwork's alpha. Excluded rather than branched on: each of those cases
+  // above samples its own movement, because each has something else to do
+  // with it that nothing here needs.
+  item: Exclude<Extract<PlanItem, { motion?: RectKey[] }>, { kind: "mask" | "frame" }>,
   at: number,
 ): {
   rect: Rect;

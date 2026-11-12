@@ -65,6 +65,7 @@ function session(): EditorSession {
     media: media(),
     cursor: null,
     clicks: [],
+    shortcuts: [],
     blobs: null,
     project: project(),
     transcript: null,

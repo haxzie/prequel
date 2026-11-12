@@ -621,6 +621,10 @@ fn plan_images(slices: &[SliceRender]) -> Vec<String> {
                 // One per session like the background, not one per cue like a
                 // caption — so it is preloaded rather than fetched on demand.
                 crate::plan::PlanItem::Watermark { path, .. } => push(path, &mut paths),
+                // The camera's frame, one per clip and usually one per edit —
+                // preloaded with the background rather than decoded per frame,
+                // which for a 900px plate would be most of the export.
+                crate::plan::PlanItem::Frame { path, .. } => push(path, &mut paths),
                 // Captions and text overlays are deliberately not here. They
                 // are decoded on demand by `Compositor::load_bitmaps`, because
                 // there is one per cue or field rather than one per session,
