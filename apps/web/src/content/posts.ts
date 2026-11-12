@@ -73,6 +73,95 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "loom-price-increase",
+    title: "Loom's price increase: what a team actually pays in 2026",
+    excerpt:
+      "Loom moved existing customers onto list price and discontinued the free Creator Lite seat. Here is what each plan costs now, what a team of five, ten and twenty-five pays after the change, and what is still negotiable.",
+    date: "2026-11-11",
+    tag: "Guide",
+    readingMinutes: 8,
+    faq: [
+      {
+        question: "How much does Loom cost per user in 2026?",
+        answer:
+          "Loom Business is $18 per user, per month, and Business + AI is $24 per user, per month. There is a free Starter plan capped at 25 videos a person, five minutes a recording and 720p. Annual billing saves up to 17%. Prices checked on 11 November 2026.",
+      },
+      {
+        question: "Why did Loom increase its prices in 2026?",
+        answer:
+          "Loom moved existing customers onto its current list prices as each workspace was migrated into Atlassian's billing system. Loom had already repriced for new customers in 2024 and left existing customers on their old rates, and the Atlassian migration ended that. The change arrives per workspace on an integration date, so teams hit it at different points through the year.",
+      },
+      {
+        question: "What happened to Loom's Creator Lite seats?",
+        answer:
+          "Creator Lite was Loom's free role for people who watch, comment and react without recording much, and it has been discontinued. Every Creator Lite user is automatically upgraded to a full paid Creator on their workspace's integration date, with a grace period that ends on the next billing date. This is why teams report bills growing six and ten times without the per-seat rate changing.",
+      },
+      {
+        question: "How much does Loom cost for a team of 10?",
+        answer:
+          "Ten paid seats on Loom Business is $180 a month at list price. The catch is that paid seats now include everyone with access: a team where ten people record and fifty watch is billed for sixty seats, which is $1,080 a month. A hundred seats on Business is $21,600 a year before any volume discount.",
+      },
+      {
+        question: "Can I keep my old Loom pricing?",
+        answer:
+          "No. Atlassian's migration documentation answers this directly: pricing moves to current list prices as part of the integration and you cannot stay on your current rate. Switching to annual billing saves up to 17% on the new price but does not freeze the old one. The one lever that works is deactivating the people who never record, before your billing date.",
+      },
+      {
+        question: "What is the cheapest alternative to Loom's per-seat pricing?",
+        answer:
+          "Prequel is $9 a month, or $39 once with nothing to renew, and it is a licence for the app with no per-person seat, so the people who watch your videos never cost anything. It records and exports on your Mac at up to 4K and 120 fps with no watermark. It needs an Apple Silicon Mac on macOS 14 or later. OBS Studio and QuickTime Player are free, with no editor and no automatic zooms.",
+      },
+    ],
+    pillar: "product-demo-videos",
+  },
+  {
+    slug: "screen-recorders-without-per-seat-pricing",
+    title: "Screen recorders without per-seat pricing",
+    excerpt:
+      "A hundred people on Loom Business is $21,600 a year, and since 2026 that counts everyone with access. We checked the Mac recorders you pay for once, or per app, and ranked the seven worth moving to.",
+    date: "2026-11-11",
+    tag: "Comparison",
+    readingMinutes: 15,
+    faq: [
+      {
+        question: "What is per-seat pricing in screen recording software?",
+        answer:
+          "Per-seat pricing charges a fixed amount for every person with access, so the bill is the seat price times your headcount. Loom, Tella, Descript, Vidyard and Screencastify are all sold this way. The alternatives are a one-off licence tied to you or your machine, a subscription for the app that does not multiply by your colleagues, and free software with no licence to count.",
+      },
+      {
+        question: "Which Mac screen recorders do not charge per user?",
+        answer:
+          "Prequel at $39 once or $9 a month, Screen Charm at $99 once for up to three Macs, CleanShot X at $35 once, ScreenFlow at $199.99 once, Cap at $58 once for commercial use and free for personal use, and OBS Studio and QuickTime Player for nothing at all. Prices checked between August and November 2026.",
+      },
+      {
+        question: "What is the cheapest screen recorder with a one-time payment?",
+        answer:
+          "Of the paid Mac recorders, CleanShot X at $35 once is the lowest price, though it includes only a year of updates and is built around screenshots. Prequel is $39 once with nothing to renew, records and exports 4K at up to 120 fps and hands back a video with the zooms, camera framing and audio balance already done. OBS Studio and QuickTime Player cost nothing.",
+      },
+      {
+        question: "Do people who watch my screen recordings need a paid seat?",
+        answer:
+          "That depends on the tool. On a per-seat recorder like Loom, everyone with workspace access counts as a billed seat since the free Creator Lite role was discontinued in 2026. With Prequel, Screen Charm, ScreenFlow, OBS Studio and QuickTime Player, what you hand over is a video file or a link, so the people who watch it need no account and cost nothing.",
+      },
+      {
+        question: "How much does Loom cost for 100 users?",
+        answer:
+          "A hundred paid seats on Loom Business at $18 per user, per month is $1,800 a month, or $21,600 a year at list price before any volume discount. On Business + AI at $24 a seat it is $28,800 a year. Monthly plans above 100 paid seats are eligible for volume discounts, and annual plans are priced in user tiers.",
+      },
+      {
+        question: "Is there a free screen recorder for Mac with no licence limits?",
+        answer:
+          "OBS Studio is free under GPLv2 with no account, no seat and no limit on any number of machines, though it has no editor and no automatic zooms. QuickTime Player is free with macOS and records at screen size with no settings, no system audio without a third-party driver and no camera over the screen. Cap is free for personal use, with a licence needed for commercial work.",
+      },
+      {
+        question: "Is Loom still the right choice for some teams?",
+        answer:
+          "Yes, if the video is for colleagues and the link is the point. The comments on the timeline, the view counts and the integrations into Slack and Jira are a real product and no recorder on this list replaces them. The teams that leave are the ones sending video to customers, where the recording has to look finished, and the ones paying creator prices for an audience.",
+      },
+    ],
+    pillar: "screen-recording-on-mac",
+  },
+  {
     slug: "mac-screen-recorder-no-subscription",
     title: "The best Mac screen recorders with no subscription in 2026",
     excerpt:
