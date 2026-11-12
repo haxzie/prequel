@@ -1023,7 +1023,42 @@ export type SliceOverrides = {
 
 /** Bounds a slice's speed is clamped to — wide enough for slow-mo and a fast montage. */
 export const MIN_SPEED = 0.25;
-export const MAX_SPEED = 4;
+export const MAX_SPEED = 10;
+
+/** The quick-select stops under the speed slider, and what it snaps to. */
+export const SPEED_STOPS = [0.25, 0.5, 1, 2, 4, 10] as const;
+
+/**
+ * The speed slider's travel, and back.
+ *
+ * Logarithmic, because the range is forty to one and the part of it anybody
+ * drags through is the bottom of it — 0.5× to 2×. Laid out linearly, 1× sits a
+ * fourteenth of the way along and the whole of slow motion is a few pixels
+ * wide: raising the ceiling to 10× would have made the control unusable at the
+ * speeds it is used at, which is the ceiling breaking the slider rather than
+ * the ceiling being wrong. Here 1× is a bit over a third of the way along, and
+ * a step is the same *proportion* of the speed under it wherever it is taken —
+ * which is how a change of speed is actually heard and seen.
+ *
+ * The same trick `keySizeSlider` plays, for the same reason, and converted
+ * here rather than at the panel so the two directions cannot drift apart.
+ */
+export function speedSlider(speed: number): number {
+  return Math.log(speed / MIN_SPEED) / Math.log(MAX_SPEED / MIN_SPEED);
+}
+
+/**
+ * Snapped to the stops, because a logarithmic track lands on a round number
+ * almost never and a slider that reads 1.02× when it was dragged to the middle
+ * is one nobody can set to 1. Within a fortieth of the stop, which is wider
+ * than one step of the control — so every stop is reachable by dragging and
+ * not only by pressing the button under it.
+ */
+export function speedLeaf(slider: number): number {
+  const raw = MIN_SPEED * (MAX_SPEED / MIN_SPEED) ** slider;
+  const stop = SPEED_STOPS.find((value) => Math.abs(raw - value) < value / 40);
+  return stop ?? Number(raw.toFixed(2));
+}
 
 /** Shortest stretch of footage a cut may leave behind. Below this it cannot be grabbed. */
 export const MIN_SLICE_NS: Ns = 100_000_000;

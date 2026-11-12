@@ -103,7 +103,7 @@ import { useCaptionImages } from "./useCaptionImages";
 import { useFonts } from "./useFonts";
 import {
   withCameraLookPreview,
-  withCameraShapePreview,
+  withLayoutPreview,
   withFontPreview,
   type FontPreview,
 } from "./fontPreview";
@@ -452,12 +452,17 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
     [session],
   );
 
-  // Off the manifest rather than off `session.sound`: the panel is offered on
-  // the strength of what the recording noted, and a plan that failed to be
+  // Off the manifest rather than off `session.sound`: the control is offered
+  // on the strength of what the recording noted, and a plan that failed to be
   // made — the addon still loading — is a warning in the log, not a missing
   // section. The gallery, which has no addon, gets the section the same way.
-  const hasSounds =
-    (session.manifest.key_presses?.length ?? 0) > 0 || (session.manifest.clicks?.length ?? 0) > 0;
+  //
+  // Presses, not chords. The Keyboard panel draws the chords and makes a sound
+  // for every press, and the two are different questions of the manifest: a
+  // recording of somebody typing prose has hundreds of presses and not one
+  // chord. Asked separately, because reading `shortcuts` for both is how the
+  // key sound would go missing on exactly the recording it is for.
+  const hasKeys = (session.manifest.key_presses?.length ?? 0) > 0;
 
   // Off the manifest for the same reason, and through the one function that
   // answers it: a microphone, or a clip imported into this recording. The
@@ -485,13 +490,15 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   /** The camera look under the pointer in the Effects list, if any. */
   const [lookPreview, setLookPreview] = useState<string | null>(null);
   /**
-   * The camera shape a row of the shape list is hovering, as the leaves it
-   * would write — see `cameraShapePatch`.
+   * Whatever list is being hovered, as the layout leaves a click there would
+   * write — the camera shape, the pointer style.
    *
    * The leaves rather than the choice, so this file needs no table of shapes
-   * and the preview is literally what the click commits.
+   * or pointers and the preview is literally what the click commits. One
+   * channel rather than one per list, because they are all the same statement:
+   * draw the project with these leaves standing in.
    */
-  const [shapePreview, setShapePreview] = useState<Partial<LayoutSettings> | null>(null);
+  const [layoutPreview, setLayoutPreview] = useState<Partial<LayoutSettings> | null>(null);
 
   /**
    * The project as the preview draws it, which is not quite the project.
@@ -508,11 +515,11 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    */
   const drawnProject = useMemo(
     () =>
-      withCameraShapePreview(
+      withLayoutPreview(
         withCameraLookPreview(withFontPreview(state.project, fontPreview), lookPreview),
-        shapePreview,
+        layoutPreview,
       ),
-    [state.project, fontPreview, lookPreview, shapePreview],
+    [state.project, fontPreview, lookPreview, layoutPreview],
   );
 
   /** `previewSettings`, with the hovered face standing in. What is on screen. */
@@ -2381,7 +2388,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               hasCursor={session.cursor !== null}
               hasShortcuts={session.shortcuts.length > 0}
               hasClicks={session.clicks.length > 0}
-              hasSounds={hasSounds}
+              hasKeys={hasKeys}
               hasSpeech={hasSpeech}
               denoise={{ working: clean.working, error: clean.error }}
               onAudition={media.audition}
@@ -2432,7 +2439,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
               onPreviewZoom={previewZoom}
               onPreviewText={previewText}
               onPreviewCameraLook={setLookPreview}
-              onPreviewCameraShape={setShapePreview}
+              onPreviewLayout={setLayoutPreview}
               onPreviewFont={setFontPreview}
               // Deselects both kinds, rather than working out which one the
               // panel is showing: only one can be set at a time, and clearing

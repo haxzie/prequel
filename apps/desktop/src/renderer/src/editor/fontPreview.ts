@@ -141,23 +141,28 @@ export function withCameraLookPreview(project: Project, look: string | null): Pr
 }
 
 /**
- * The project as the preview should draw it, with a hovered camera shape on.
+ * The project as the preview should draw it, with a hovered row's leaves on.
  *
  * The third of these, and the same shape as the two above for the same
- * reason — but a patch of leaves rather than one value, because a shape is not
- * one leaf: picking a frame moves the bubble's proportions as well as its
- * outline, and picking a plain shape moves its roundness too. The patch is
- * `cameraShapePatch`'s, so what is previewed is exactly what a click writes.
+ * reason — but a patch of leaves rather than one value, because the things
+ * these lists pick are not one leaf each: a camera shape moves the bubble's
+ * proportions as well as its outline, and a pointer style that arrives with a
+ * mark writes that too. The patch is the picker's own, so what is previewed is
+ * exactly what a click writes.
+ *
+ * Named for the leaves rather than for any one list, because it is now two —
+ * the camera shapes and the pointer styles — and will be more. A function per
+ * list would be this body copied with a different field name in it.
  *
  * Returns the project itself when nothing is hovered — identity, not a copy,
  * because everything downstream is keyed on it.
  *
  * Clips follow where they override *any* leaf the patch touches. The looks'
  * rule said "the clip that sets its own look", which is the same idea: without
- * it, hovering the list does nothing on exactly the clip whose shape you
+ * it, hovering the list does nothing on exactly the clip whose look you
  * opened the list to change.
  */
-export function withCameraShapePreview(
+export function withLayoutPreview(
   project: Project,
   patch: Partial<LayoutSettings> | null,
 ): Project {

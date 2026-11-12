@@ -31,6 +31,10 @@ import {
   type SliceOverrides,
   type TextSlice,
   type TextTrack,
+  MIN_SPEED,
+  SPEED_STOPS,
+  speedLeaf,
+  speedSlider,
 } from "./project.js";
 import { placement } from "./layout.js";
 import { AUTO_PRESET_ID } from "./presets.js";
@@ -1182,5 +1186,56 @@ describe("a fresh project for a screenshot", () => {
     });
 
     expect(project.defaults.layout.preset).toBe("screen-padded");
+  });
+});
+
+describe("the speed the slider shows", () => {
+  it("puts the speeds anybody drags through across most of the travel", () => {
+    // The whole reason the track is logarithmic. Laid out linearly against a
+    // ceiling of 10×, 1× sits at a fourteenth of the way along and slow motion
+    // is a few pixels of it — so the slider would have been ruined by raising
+    // the ceiling rather than helped. Asserted as the thing somebody feels:
+    // getting from half speed to double takes a third of the control.
+    expect(speedSlider(1)).toBeGreaterThan(0.3);
+    expect(speedSlider(1)).toBeLessThan(0.45);
+    expect(speedSlider(2) - speedSlider(0.5)).toBeGreaterThan(0.3);
+  });
+
+  it("ends at the ends", () => {
+    expect(speedSlider(MIN_SPEED)).toBeCloseTo(0, 10);
+    expect(speedSlider(MAX_SPEED)).toBeCloseTo(1, 10);
+    expect(speedLeaf(0)).toBe(MIN_SPEED);
+    expect(speedLeaf(1)).toBe(MAX_SPEED);
+  });
+
+  it("round-trips, so a drag writes back what it showed", () => {
+    // Two directions that disagree is a slider that walks as it is dragged.
+    // Taken away from the stops, which snap on purpose — see below.
+    for (const at of [0.1, 0.3, 0.62, 0.9]) {
+      expect(speedSlider(speedLeaf(at))).toBeCloseTo(at, 1);
+    }
+  });
+
+  it("can be dragged onto every stop, not only pressed onto one", () => {
+    // A logarithmic track lands on a round number almost never, so without the
+    // snap the slider could read 1.02× in the middle and 1× would be reachable
+    // only by the button under it. Every stop has to be within reach of some
+    // step of the control.
+    const step = 0.005;
+    for (const stop of SPEED_STOPS) {
+      const landed = new Set<number>();
+      for (let at = 0; at <= 1 + 1e-9; at += step) landed.add(speedLeaf(Math.min(at, 1)));
+      expect(landed.has(stop)).toBe(true);
+    }
+  });
+
+  it("never writes a speed outside what the exporter will play", () => {
+    // `timeline.rs` clamps to the same two numbers, so a leaf past them is a
+    // preview and an export that disagree about how long the clip is.
+    for (let at = 0; at <= 1 + 1e-9; at += 0.01) {
+      const speed = speedLeaf(Math.min(at, 1));
+      expect(speed).toBeGreaterThanOrEqual(MIN_SPEED);
+      expect(speed).toBeLessThanOrEqual(MAX_SPEED);
+    }
   });
 });

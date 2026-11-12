@@ -20,7 +20,7 @@ import {
   type TextSlice,
   type TextTrack,
 } from "../../../shared/project";
-import { withCameraShapePreview, withFontPreview } from "./fontPreview";
+import { withLayoutPreview, withFontPreview } from "./fontPreview";
 
 const S = 1_000_000_000;
 
@@ -145,16 +145,16 @@ describe("withFontPreview", () => {
   });
 });
 
-describe("withCameraShapePreview", () => {
+describe("withLayoutPreview", () => {
   it("hands back the project itself when nothing is hovered", () => {
     // Identity, not a copy: everything downstream is keyed on it, and a copy
     // made per render is a preview that costs a frame to show nothing.
     const edit = project();
-    expect(withCameraShapePreview(edit, null)).toBe(edit);
+    expect(withLayoutPreview(edit, null)).toBe(edit);
   });
 
   it("puts the hovered shape on the defaults", () => {
-    const shown = withCameraShapePreview(project(), { cameraFrame: "crt", cameraWidth: 0.4 });
+    const shown = withLayoutPreview(project(), { cameraFrame: "crt", cameraWidth: 0.4 });
 
     expect(shown.defaults.layout.cameraFrame).toBe("crt");
     expect(shown.defaults.layout.cameraWidth).toBe(0.4);
@@ -175,7 +175,7 @@ describe("withCameraShapePreview", () => {
       ],
     };
 
-    const shown = withCameraShapePreview(scoped, { cameraShape: "circle" });
+    const shown = withLayoutPreview(scoped, { cameraShape: "circle" });
 
     expect(shown.tracks[0]!.slices[0]!.overrides.layout?.cameraShape).toBe("circle");
   });
@@ -196,7 +196,7 @@ describe("withCameraShapePreview", () => {
       ],
     };
 
-    const shown = withCameraShapePreview(scoped, { cameraShape: "circle" });
+    const shown = withLayoutPreview(scoped, { cameraShape: "circle" });
 
     expect(shown.tracks[0]!.slices[0]).toBe(scoped.tracks[0]!.slices[0]);
   });

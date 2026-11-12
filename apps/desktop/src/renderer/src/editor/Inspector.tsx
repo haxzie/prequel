@@ -46,8 +46,9 @@ import {
   LENS_FIGURES,
   isLens,
   maxLensSize,
-  MAX_SPEED,
-  MIN_SPEED,
+  SPEED_STOPS,
+  speedLeaf,
+  speedSlider,
   SHAPE_RADIUS,
   SOUND_OFF,
   overriddenKeys,
@@ -59,6 +60,7 @@ import {
   type CaptionSettings,
   type FocusMode,
   type LayoutPreset,
+  type AudioSettings,
   type LayoutSettings,
   type MicDenoise,
   type SettingsSection,
@@ -107,6 +109,7 @@ import {
   BoxToolIcon,
   CameraIcon,
   CaptionsIcon,
+  ClickMarkIcon,
   CircleIcon,
   ClockIcon,
   CloseIcon,
@@ -163,6 +166,7 @@ import {
   SizeIcon,
   SmoothingIcon,
   SpeakerIcon,
+  WaveformIcon,
   SpeedIcon,
   SquircleIcon,
   BlobIcon,
@@ -255,11 +259,15 @@ export interface InspectorProps {
    */
   still: boolean;
   /**
-   * Whether the recording noted any presses or clicks, so there are sounds to
-   * offer. False for a take made with the Keyboard switch off and no clicks,
-   * and for every take made before presses were noted.
+   * Whether the recording noted any key presses, so there is a keyboard sound
+   * to offer. False for a take made with the Keyboard switch off, and for
+   * every take made before presses were noted.
+   *
+   * Not `hasShortcuts`. That one is the chords, which are what the Keyboard
+   * panel *draws*; this is every press, which is what it makes a sound for.
+   * Somebody typing prose has the second and none of the first.
    */
-  hasSounds: boolean;
+  hasKeys: boolean;
   /**
    * Whether there is anything here to caption: a microphone, or a clip imported
    * into the recording — see `speechSegments`. Never the system audio of a take
@@ -334,15 +342,19 @@ export interface InspectorProps {
   /** The camera look to draw instead of the chosen one while a row is hovered. */
   onPreviewCameraLook: (id: string | null) => void;
   /**
-   * The camera shape to draw instead of the chosen one while a row is hovered,
-   * as the leaves picking it would write — see `cameraShapePatch`.
+   * What to draw instead of the chosen thing while a row of a list is hovered,
+   * as the leaves picking it would write.
    *
-   * A patch rather than a name, unlike the look's: a shape is not one leaf. A
-   * frame moves the bubble's proportions as well as its outline, and a plain
-   * shape its roundness too, so what the preview has to show is the whole
+   * A patch rather than a name, unlike the look's: these are not one leaf
+   * each. A camera frame moves the bubble's proportions as well as its
+   * outline, a plain shape its roundness too, and a pointer that arrives with
+   * a mark writes that mark — so what the preview has to show is the whole
    * write and not the choice behind it.
+   *
+   * One prop for every such list. The camera shapes and the pointer styles
+   * both come through here.
    */
-  onPreviewCameraShape: (patch: Partial<LayoutSettings> | null) => void;
+  onPreviewLayout: (patch: Partial<LayoutSettings> | null) => void;
   onPreviewFont: (preview: FontPreview | null) => void;
   onPickWallpaper: () => void;
   onPickImage: () => void;
@@ -971,19 +983,27 @@ function InspectorPanels(props: InspectorProps) {
     ...(props.present.has("camera")
       ? [{ id: "camera" as const, label: "Camera", Icon: CameraIcon }]
       : []),
-    // Or sounds to synthesise: a silent take with typing in it has an Audio
-    // panel's worth of choices even with no track to fade.
-    ...(props.present.has("microphone") || props.present.has("system_audio") || props.hasSounds
+    // Tracks only. The synthetic sounds used to open this panel too — a silent
+    // take with typing in it had an Audio panel's worth of choices with no
+    // track to fade — and they have gone to the panels they belong to: the
+    // click to Cursor, the keyboard to Keyboard. This is faders for what was
+    // recorded again.
+    ...(props.present.has("microphone") || props.present.has("system_audio")
       ? [{ id: "audio" as const, label: "Audio", Icon: AudioIcon }]
       : []),
     ...(props.hasCursor || props.hasClicks
       ? [{ id: "cursor" as const, label: "Cursor", Icon: CursorIcon }]
       : []),
-    // Only where the recording kept a chord to draw. The same rule the two
+    // A chord to draw, or a press to make a sound for. The same rule the two
     // above follow, and for the reason Captions gives: a panel whose every
     // control is dead reads as something broken rather than as something this
     // take has nothing for.
-    ...(props.hasShortcuts
+    //
+    // Either, not both. The two halves of the panel answer to different
+    // questions of the manifest — see `hasKeys` — and a recording of somebody
+    // typing prose has presses and no chords, which is exactly the recording
+    // the keyboard sound is for.
+    ...(props.hasShortcuts || props.hasKeys
       ? [{ id: "keyboard" as const, label: "Keyboard", Icon: KeyboardIcon }]
       : []),
     // Only where there is a voice to caption. A recording with no microphone
@@ -1045,9 +1065,23 @@ function InspectorPanels(props: InspectorProps) {
     filters: [{ section: "effects" }],
     watermark: [{ section: "watermark" }],
     camera: [{ section: "layout" }],
-    audio: [{ section: "audio" }],
-    cursor: [{ section: "layout", keys: CURSOR_KEYS }],
-    keyboard: [{ section: "layout", keys: KEYBOARD_KEYS }],
+    // The faders for the recorded tracks, and no longer the whole section:
+    // the two synthetic sounds live in Cursor and Keyboard now, and an Audio
+    // Reset that put them back would undo an edit made in a panel this one
+    // does not show.
+    audio: [{ section: "audio", keys: TRACK_KEYS }],
+    // Two sections each, for the same reason Recording has two: the panel is
+    // everything about the pointer, and where a value happens to be stored —
+    // `layout` for what is drawn, `audio` for what is heard — is not something
+    // a Reset should make the reader think about.
+    cursor: [
+      { section: "layout", keys: CURSOR_KEYS },
+      { section: "audio", keys: CLICK_SOUND_KEYS },
+    ],
+    keyboard: [
+      { section: "layout", keys: KEYBOARD_KEYS },
+      { section: "audio", keys: KEY_SOUND_KEYS },
+    ],
     captions: [{ section: "captions" }],
     // Owns no `SliceSettings` section, like `presets`: covers are a list on the
     // project rather than settings on a clip, so Reset and apply-to-all have
@@ -1393,7 +1427,7 @@ function InspectorPanels(props: InspectorProps) {
                     field={field}
                     set={set}
                     onPreviewCameraLook={props.onPreviewCameraLook}
-                    onPreviewCameraShape={props.onPreviewCameraShape}
+                    onPreviewLayout={props.onPreviewLayout}
                   />
                 )}
 
@@ -1401,14 +1435,11 @@ function InspectorPanels(props: InspectorProps) {
                   <AudioPanel
                     settings={settings}
                     present={props.present}
-                    hasSounds={props.hasSounds}
                     field={field}
                     set={set}
                     denoise={props.denoise}
                     micDenoise={state.project.micDenoise}
                     onMicDenoise={(level) => dispatch({ type: "setMicDenoise", level })}
-                    onAudition={props.onAudition}
-                    onPlaySample={props.onPlaySample}
                   />
                 )}
 
@@ -1420,11 +1451,22 @@ function InspectorPanels(props: InspectorProps) {
                     cursorUrl={props.fileUrl}
                     hasCursor={props.hasCursor}
                     hasClicks={props.hasClicks}
+                    onPreviewLayout={props.onPreviewLayout}
+                    onAudition={props.onAudition}
+                    onPlaySample={props.onPlaySample}
                   />
                 )}
 
                 {active === "keyboard" && (
-                  <KeyboardPanel settings={settings} field={field} set={set} />
+                  <KeyboardPanel
+                    settings={settings}
+                    field={field}
+                    set={set}
+                    hasShortcuts={props.hasShortcuts}
+                    hasKeys={props.hasKeys}
+                    onAudition={props.onAudition}
+                    onPlaySample={props.onPlaySample}
+                  />
                 )}
 
                 {active === "captions" && !editingCaptions && (
@@ -2187,7 +2229,7 @@ function CameraPanel({
   field,
   set,
   onPreviewCameraLook,
-  onPreviewCameraShape,
+  onPreviewLayout,
 }: {
   settings: SliceSettings;
   frame: Size;
@@ -2202,7 +2244,7 @@ function CameraPanel({
   /** The look to draw instead of the chosen one while a row is hovered. */
   onPreviewCameraLook: (id: string | null) => void;
   /** The shape to draw instead of the chosen one while a row is hovered. */
-  onPreviewCameraShape: (patch: Partial<LayoutSettings> | null) => void;
+  onPreviewLayout: (patch: Partial<LayoutSettings> | null) => void;
 }) {
   const { layout } = settings;
   // Disabled rather than hidden. Controls that vanish take the panel's shape
@@ -2312,7 +2354,7 @@ function CameraPanel({
                   },
             }}
             onPreview={(choice) =>
-              onPreviewCameraShape(
+              onPreviewLayout(
                 choice === null ? null : cameraShapePatch(choice, layout, cameraSource),
               )
             }
@@ -3448,14 +3490,31 @@ function KeyboardPanel({
   settings,
   field,
   set,
+  hasShortcuts,
+  hasKeys,
+  onAudition,
+  onPlaySample,
 }: {
   settings: SliceSettings;
   field: FieldProps;
   set: Setter;
+  /** Whether the recording kept a chord worth drawing. */
+  hasShortcuts: boolean;
+  /** Whether it kept a press worth making a sound for — see `hasKeys`. */
+  hasKeys: boolean;
+  onAudition: (bus: "keys" | "clicks", profile: string) => void;
+  onPlaySample: (profile: string, volume: number) => void;
 }) {
-  const { layout } = settings;
+  const { layout, audio } = settings;
 
-  return (
+  // Through the same fallback the preview and the export use, so a keyboard
+  // this build does not know shows as Off rather than as a blank menu.
+  const keySound = keySoundId(audio.keySound);
+
+  // The caps on the picture, which a recording with no chord in it has nothing
+  // to draw. The sound below applies to every press, so it stands whether or
+  // not this does — see the rail's note.
+  const caps = hasShortcuts && (
     <Section>
       <ToggleField
         icon={<KeyboardIcon />}
@@ -3537,6 +3596,121 @@ function KeyboardPanel({
       </Field>
     </Section>
   );
+
+  return (
+    <>
+      {caps}
+
+      {/* The sound every press makes.
+          Here rather than under Audio, where it lived with the click's: this
+          panel is what the keyboard does in the video, and what it does is
+          show the chords and make a noise. Audio is the faders for the tracks
+          the recording actually caught.
+
+          Its own section under the caps, because it answers to a different
+          question of the recording — every press, not the chords — and on a
+          take of somebody typing prose it is the only thing in the panel.
+
+          Headed even when it is the only section, unlike the usual rule that a
+          heading over one control is the panel's name said twice. The row
+          below has no label of its own now, so without this a panel called
+          Keyboard would offer a waveform and the word "Off" and nothing
+          saying which of the keyboard's several properties that is.
+
+          "Typing sound" rather than "Sound", because what it makes a noise for
+          is every press — not the chords the section above draws. The two
+          halves of this panel answer to different questions of the recording,
+          and the heading is where that is said. */}
+      {hasKeys && (
+        <Section title="Typing sound">
+          <Field icon={<WaveformIcon />} {...field("audio", "keySound")}>
+            <Dropdown
+              label="Typing sound"
+              value={keySound}
+              options={[
+                { value: SOUND_OFF, label: "Off" },
+                ...KEY_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
+              ]}
+              // The keyboard again on every row, the way the field above the
+              // list carries it: once the list has taken the panel over, the
+              // header is the only thing left saying what these ten names are
+              // names of. Off is the one row that is not a keyboard.
+              icon={(option) => (option.value === SOUND_OFF ? <NoneIcon /> : <KeyboardIcon />)}
+              // Every row but Off, which has nothing to play.
+              action={(option) =>
+                option.value === SOUND_OFF ? null : (
+                  <PlaySampleButton
+                    label={option.label}
+                    onClick={() => onPlaySample(option.value, audio.keySoundVolume)}
+                  />
+                )
+              }
+              onChange={(value) => {
+                set("audio", "keySound", value);
+                if (value !== SOUND_OFF) onAudition("keys", value);
+              }}
+            />
+          </Field>
+
+          <Slider
+            icon={<SpeakerIcon />}
+            label="Volume"
+            {...field("audio", "keySoundVolume")}
+            value={audio.keySoundVolume}
+            min={0}
+            max={2}
+            format={percent}
+            disabled={keySound === SOUND_OFF}
+            onChange={(value) => set("audio", "keySoundVolume", value)}
+          />
+        </Section>
+      )}
+    </>
+  );
+}
+
+/**
+ * The layout leaves picking a pointer style writes.
+ *
+ * One function, read by both the commit and the hover preview, so what a tile
+ * shows under the pointer is exactly what pressing it does. That is the rule
+ * `withLayoutPreview` exists to keep: a preview computed separately from the
+ * write is a preview that will eventually lie, and the lie is only found after
+ * the click.
+ *
+ * The sound is **not** here, and that is deliberate rather than an omission:
+ * it is an audio leaf, and a grid that played a sound for every tile the
+ * pointer crossed on the way to the one being aimed at would be unusable. The
+ * commit writes it separately.
+ */
+function cursorStyleLeaves(id: string, layout: LayoutSettings): Partial<LayoutSettings> {
+  const patch: Partial<LayoutSettings> = { cursorStyle: id };
+
+  // A tag with nothing on it draws nothing — see `cursorName` — so picking one
+  // of the labelled pointers with no name set lands a pointer that looks
+  // exactly like the plain one beside it, and the control that would say why
+  // is a row further down. It arrives named instead, and named the one thing
+  // that is true of every recording.
+  //
+  // Only when there is nothing there: a name typed once is kept through every
+  // style change, and writing over it would make this the one picker that
+  // throws work away.
+  if (cursorTag(id) !== null && layout.cursorName.trim() === "") {
+    patch.cursorName = DEFAULT_CURSOR_NAME;
+  }
+
+  // A style that arrives with a mark writes it — the stick is a prop, and a
+  // prop that lands on the picture and leaves nothing behind is half of one.
+  // The mark's own colour goes with it, the way choosing that mark directly
+  // would write it.
+  const arrives = cursorArrivesWith(id);
+  if (arrives) {
+    patch.clickEffect = arrives.mark;
+    const spec = clickEffect(arrives.mark);
+    if (spec) patch.clickColor = spec.color;
+  }
+
+  return patch;
 }
 
 function CursorPanel({
@@ -3546,6 +3720,9 @@ function CursorPanel({
   cursorUrl,
   hasCursor,
   hasClicks,
+  onPreviewLayout,
+  onAudition,
+  onPlaySample,
 }: {
   settings: SliceSettings;
   field: FieldProps;
@@ -3559,16 +3736,31 @@ function CursorPanel({
   hasCursor: boolean;
   /** Whether there is a press for a mark to land on. */
   hasClicks: boolean;
+  /** The pointer style under the cursor in the style grid, as leaves. */
+  onPreviewLayout: (patch: Partial<LayoutSettings> | null) => void;
+  /** Plays a sound on the bus it belongs to, so a choice is heard in place. */
+  onAudition: (bus: "keys" | "clicks", profile: string) => void;
+  /** Plays one sample on its own, for a row of the list. */
+  onPlaySample: (profile: string, volume: number) => void;
 }) {
-  const { layout } = settings;
+  const { layout, audio } = settings;
   const off = !layout.cursorVisible;
   const noMark = layout.clickEffect === "none";
+
+  // Through the same fallback the preview and the export use, so a sound this
+  // build does not know shows as Off rather than as a blank menu — and a
+  // choice made here is always one the addon can render.
+  const clickSound = clickSoundId(audio.clickSound);
 
   // Under the pointer's own group when there is one, on its own when there is
   // not. One value in two places rather than two copies of the controls.
   const marks = hasClicks && (
     <Section title="Click">
-      <Field icon={<MouseIcon />} label="Mark" {...field("layout", "clickEffect")}>
+      {/* No label: the row names the mark it is showing, under a heading that
+          already says Click. The trade is the one the `Field` note describes —
+          nowhere to show the clip overrides it, the panel's Reset being the
+          tell instead. Same as the pointer's row above. */}
+      <Field icon={<ClickMarkIcon />} {...field("layout", "clickEffect")}>
         <ClickEffectPicker
           // Resolved rather than passed straight through, for the reason the
           // pointer style is: a project naming a mark this build no longer
@@ -3607,6 +3799,51 @@ function CursorPanel({
         format={percent}
         onChange={(value) => set("layout", "clickSize", value)}
       />
+
+      {/* The sound a press makes, beside the mark it makes.
+          It lived under Audio, with the keyboard's, on the grounds that both
+          are sounds. They are — and so is the music row, which is not there
+          either. What somebody is doing when they reach for this is dressing
+          a click: the mark, its colour, its size and its sound are one
+          decision taken in one sitting, and two of them being a panel away
+          made the pair of them something to go and find. Audio is the faders
+          for what the recording actually caught. */}
+      <Field icon={<WaveformIcon />} {...field("audio", "clickSound")}>
+        <Dropdown
+          label="Click sound"
+          value={clickSound}
+          options={[
+            { value: SOUND_OFF, label: "Off" },
+            ...CLICK_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
+          ]}
+          icon={(option) => (option.value === SOUND_OFF ? <NoneIcon /> : <MouseIcon />)}
+          // Every row but Off, which has nothing to play.
+          action={(option) =>
+            option.value === SOUND_OFF ? null : (
+              <PlaySampleButton
+                label={option.label}
+                onClick={() => onPlaySample(option.value, audio.clickSoundVolume)}
+              />
+            )
+          }
+          onChange={(value) => {
+            set("audio", "clickSound", value);
+            if (value !== SOUND_OFF) onAudition("clicks", value);
+          }}
+        />
+      </Field>
+
+      <Slider
+        icon={<SpeakerIcon />}
+        label="Volume"
+        {...field("audio", "clickSoundVolume")}
+        value={audio.clickSoundVolume}
+        min={0}
+        max={2}
+        format={percent}
+        disabled={clickSound === SOUND_OFF}
+        onChange={(value) => set("audio", "clickSoundVolume", value)}
+      />
     </Section>
   );
 
@@ -3626,7 +3863,11 @@ function CursorPanel({
               onChange={(value) => set("layout", "cursorVisible", value)}
             />
 
-            <Field icon={<CursorIcon />} label="Style" {...field("layout", "cursorStyle")}>
+            {/* No label: the row names the pointer it is showing, and a word
+            over it said the same thing twice. The trade is the one the `Field`
+            note describes — nowhere to show the clip overrides it, the panel's
+            Reset being the tell instead. */}
+            <Field icon={<CursorIcon />} {...field("layout", "cursorStyle")}>
               <CursorPicker
                 // Resolved rather than passed straight through, so a project naming a
                 // style this build no longer ships shows the one actually being drawn
@@ -3634,39 +3875,24 @@ function CursorPanel({
                 value={cursorStyle(layout.cursorStyle).id}
                 imageUrl={cursorUrl}
                 disabled={off}
-                // A style that arrives with a mark and a sound writes both
-                // with it — the stick is a prop, and a prop that lands on the
-                // picture in silence and leaves nothing behind is half of
-                // one. Same shape as the mark picker below, and for the same
-                // reasons: only on a *different* style, so pressing the tile
-                // already on does not undo a mark dialled in afterwards, and
-                // the mark's own colour goes with it the way choosing that
-                // mark directly would write it.
+                // Only on a *different* style, so pressing the tile already on
+                // does not undo a mark dialled in afterwards. Same shape as
+                // the mark picker below, and for the same reason.
                 onChange={(value) => {
                   if (value === cursorStyle(layout.cursorStyle).id) return;
-                  set("layout", "cursorStyle", value);
-
-                  // A tag with nothing on it draws nothing — see `cursorName`
-                  // — so picking one of the labelled pointers with no name
-                  // set lands a pointer that looks exactly like the plain one
-                  // beside it, and the control that would say why is three
-                  // rows further down. It arrives named instead, and named
-                  // the one thing that is true of every recording.
-                  //
-                  // Only when there is nothing there: a name typed once is
-                  // kept through every style change, and writing over it
-                  // would make this the one picker that throws work away.
-                  if (cursorTag(value) !== null && layout.cursorName.trim() === "") {
-                    set("layout", "cursorName", DEFAULT_CURSOR_NAME);
+                  for (const [key, leaf] of Object.entries(cursorStyleLeaves(value, layout))) {
+                    set("layout", key, leaf);
                   }
 
+                  // The sound, which is the one thing a style brings that is
+                  // not a layout leaf — and the one thing the hover preview
+                  // deliberately leaves out. See `cursorStyleLeaves`.
                   const arrives = cursorArrivesWith(value);
-                  if (!arrives) return;
-                  set("layout", "clickEffect", arrives.mark);
-                  const spec = clickEffect(arrives.mark);
-                  if (spec) set("layout", "clickColor", spec.color);
-                  set("audio", "clickSound", arrives.sound);
+                  if (arrives) set("audio", "clickSound", arrives.sound);
                 }}
+                onPreview={(value) =>
+                  onPreviewLayout(value === null ? null : cursorStyleLeaves(value, layout))
+                }
               />
             </Field>
 
@@ -4351,6 +4577,27 @@ const CURSOR_KEYS: (keyof LayoutSettings)[] = [
   "clickSize",
 ];
 
+/**
+ * What each panel owns of `audio`, now that the section is shared out.
+ *
+ * Three panels write to it: Audio the faders for what was recorded, Cursor the
+ * click's sound, Keyboard the keyboard's. Spelled out rather than left as
+ * whole-section ownership, because a Reset is the one control that acts on
+ * things the panel is not showing — and the first version of this gave Audio
+ * the lot, so resetting a microphone fader also silenced a keyboard chosen
+ * two panels away.
+ */
+const TRACK_KEYS: (keyof AudioSettings)[] = [
+  "micVolume",
+  "micMuted",
+  "systemVolume",
+  "systemMuted",
+];
+
+const CLICK_SOUND_KEYS: (keyof AudioSettings)[] = ["clickSound", "clickSoundVolume"];
+
+const KEY_SOUND_KEYS: (keyof AudioSettings)[] = ["keySound", "keySoundVolume"];
+
 const KEYBOARD_KEYS: (keyof LayoutSettings)[] = [
   "keysVisible",
   "keysSize",
@@ -4525,9 +4772,6 @@ function ScreenFocusPanel({
   );
 }
 
-/** Quick-select stops under the speed slider. */
-const SPEED_PRESETS = [0.25, 0.5, 1, 2, 4] as const;
-
 /** Drops the trailing zeros `toFixed` leaves — `1.00×` reads as a typo, `1×` doesn't. */
 function formatSpeed(value: number): string {
   return `${String(Number(value.toFixed(2)))}×`;
@@ -4573,24 +4817,28 @@ function RecordingPanel({
           apply rather than one that does not exist here. */}
       {!still && (
         <Section title="Speed">
+          {/* Along the slider's own travel rather than along the speed — see
+              `speedSlider`. The leaf underneath is still the rate, and it is
+              the rate the control shows; it is only where the handle sits that
+              is logarithmic. */}
           <Slider
             icon={<SpeedIcon />}
             label="Speed"
-            value={speed ?? 1}
-            min={MIN_SPEED}
-            max={MAX_SPEED}
-            step={0.05}
-            format={formatSpeed}
+            value={speedSlider(speed ?? 1)}
+            min={0}
+            max={1}
+            step={0.005}
+            format={(value) => formatSpeed(speedLeaf(value))}
             disabled={speed === undefined}
-            onChange={onChangeSpeed}
+            onChange={(value) => onChangeSpeed(speedLeaf(value))}
           />
 
           {/* Stops for the common cases, so reaching for 2x is a click rather
               than a drag landing near enough. Highlighted only on an exact
               match — a value the slider carried to, say, 0.73x is not "close
               to 0.5x", and a preset lit for it would say otherwise. */}
-          <div className="grid grid-cols-5 gap-1">
-            {SPEED_PRESETS.map((preset) => (
+          <div className="grid grid-cols-6 gap-1">
+            {SPEED_STOPS.map((preset) => (
               <button
                 key={preset}
                 type="button"
@@ -4868,44 +5116,32 @@ const FRAME_KEYS: (keyof BackgroundSettings)[] = [
 function AudioPanel({
   settings,
   present,
-  hasSounds,
   field,
   set,
   denoise,
   micDenoise,
   onMicDenoise,
-  onAudition,
-  onPlaySample,
 }: {
   settings: SliceSettings;
   present: Set<TrackKind>;
-  hasSounds: boolean;
   field: FieldProps;
   set: Setter;
   denoise: { working: boolean; error: string | null };
   micDenoise: MicDenoise;
   onMicDenoise: (level: MicDenoise) => void;
-  onAudition: (bus: "keys" | "clicks", profile: string) => void;
-  onPlaySample: (profile: string, volume: number) => void;
 }) {
   const { audio } = settings;
   const hasTracks = present.has("microphone") || present.has("system_audio");
 
   // A silent track writes no file and no manifest entry, so its absence is the
   // honest answer to "was the mic on?" — and a fader for it would be a lie.
-  if (!hasTracks && !hasSounds) {
+  if (!hasTracks) {
     return (
       <Section>
         <p className="text-[11px] text-editor-muted">This recording has no audio tracks.</p>
       </Section>
     );
   }
-
-  // Stored values pass through the same fallback the preview and the export
-  // use, so a keyboard this build does not know shows as Off rather than as a
-  // blank menu — and a choice made here is always one the addon can render.
-  const keySound = keySoundId(audio.keySound);
-  const clickSound = clickSoundId(audio.clickSound);
 
   // A group per source. The two used to be one list of four, where each row had
   // to name its own track — "Microphone volume" under a switch called
@@ -4989,87 +5225,6 @@ function AudioPanel({
             max={2}
             format={percent}
             onChange={(value) => set("audio", "systemVolume", value)}
-          />
-        </Section>
-      )}
-
-      {hasSounds && (
-        <Section title="Sounds">
-          <p className="text-[11px] leading-relaxed text-editor-muted">
-            Synthetic sounds for clicks.
-          </p>
-          <Field icon={<KeyboardIcon />} label="Keyboard" {...field("audio", "keySound")}>
-            <Dropdown
-              label="Keyboard"
-              value={keySound}
-              options={[
-                { value: SOUND_OFF, label: "Off" },
-                ...KEY_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
-              ]}
-              // The keyboard again on every row, the way the field above the
-              // list carries it: once the list has taken the panel over, the
-              // header is the only thing left saying what these ten names are
-              // names of. Off is the one row that is not a keyboard.
-              icon={(option) => (option.value === SOUND_OFF ? <NoneIcon /> : <KeyboardIcon />)}
-              // Every row but Off, which has nothing to play.
-              action={(option) =>
-                option.value === SOUND_OFF ? null : (
-                  <PlaySampleButton
-                    label={option.label}
-                    onClick={() => onPlaySample(option.value, audio.keySoundVolume)}
-                  />
-                )
-              }
-              onChange={(value) => {
-                set("audio", "keySound", value);
-                if (value !== SOUND_OFF) onAudition("keys", value);
-              }}
-            />
-          </Field>
-          <Slider
-            icon={<SpeakerIcon />}
-            label="Volume"
-            {...field("audio", "keySoundVolume")}
-            value={audio.keySoundVolume}
-            min={0}
-            max={2}
-            format={percent}
-            disabled={keySound === SOUND_OFF}
-            onChange={(value) => set("audio", "keySoundVolume", value)}
-          />
-          <Field icon={<MouseIcon />} label="Mouse clicks" {...field("audio", "clickSound")}>
-            <Dropdown
-              label="Mouse clicks"
-              value={clickSound}
-              options={[
-                { value: SOUND_OFF, label: "Off" },
-                ...CLICK_SOUNDS.map((sound) => ({ value: sound.id, label: sound.label })),
-              ]}
-              icon={(option) => (option.value === SOUND_OFF ? <NoneIcon /> : <MouseIcon />)}
-              action={(option) =>
-                option.value === SOUND_OFF ? null : (
-                  <PlaySampleButton
-                    label={option.label}
-                    onClick={() => onPlaySample(option.value, audio.clickSoundVolume)}
-                  />
-                )
-              }
-              onChange={(value) => {
-                set("audio", "clickSound", value);
-                if (value !== SOUND_OFF) onAudition("clicks", value);
-              }}
-            />
-          </Field>
-          <Slider
-            icon={<SpeakerIcon />}
-            label="Volume"
-            {...field("audio", "clickSoundVolume")}
-            value={audio.clickSoundVolume}
-            min={0}
-            max={2}
-            format={percent}
-            disabled={clickSound === SOUND_OFF}
-            onChange={(value) => set("audio", "clickSoundVolume", value)}
           />
         </Section>
       )}

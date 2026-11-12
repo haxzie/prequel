@@ -420,6 +420,31 @@ export function MouseIcon() {
   );
 }
 
+/**
+ * Tabler `click-filled`, MIT — https://tabler.io/icons
+ *
+ * The mark a press leaves: a pointer with the lines a click throws off it.
+ *
+ * `MouseIcon` sat here, and `MouseIcon` is a bare arrow cursor — so the row
+ * that chooses what a *click* draws wore the same glyph as the row above it
+ * that chooses what the *pointer* looks like, two rows apart, meaning two
+ * different things. This one is still an arrow, and the radiating lines are
+ * the whole of the difference: they are what says a press happened rather than
+ * that a pointer is somewhere.
+ *
+ * Filled rather than stroked, unlike almost everything else here. At sixteen
+ * pixels the four spokes are a couple of pixels each, and an outlined arrow
+ * with hairlines coming off it closes up into a smudge — the solid one keeps
+ * its shape all the way down, which is the reason `PersonIcon` gives too.
+ */
+export function ClickMarkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M7 12a1 1 0 0 1-1 1H3a1 1 0 0 1 0-2h3a1 1 0 0 1 1 1m6-9v3a1 1 0 0 1-2 0V3a1 1 0 0 1 2 0M6.307 4.893l2.2 2.2a1 1 0 0 1-1.414 1.414l-2.2-2.2a1 1 0 0 1 1.414-1.414m12.8 0a1 1 0 0 1 0 1.414l-2.2 2.2a1 1 0 0 1-1.414-1.414l2.2-2.2a1 1 0 0 1 1.414 0m-10.6 10.6a1 1 0 0 1 0 1.414l-2.2 2.2a1 1 0 1 1-1.414-1.414l2.2-2.2a1 1 0 0 1 1.414 0m3.42-4.49l.049-.003l.098.003l.097.012l.097.022l9.048 3.014c.845.282.928 1.445.131 1.843l-3.702 1.851l-1.85 3.702c-.399.797-1.562.714-1.844-.13l-3.003-9.011l-.033-.135l-.012-.097v-.148l.012-.097l.022-.097l.03-.094l.04-.09l.05-.084l.086-.117l.067-.07l.037-.034l.076-.06l.081-.052l.087-.043l.103-.04l.135-.033z" />
+    </svg>
+  );
+}
+
 /** Lucide `keyboard`. The keyboard whose sound is chosen, not a shortcut. */
 export function KeyboardIcon() {
   return (
@@ -1453,6 +1478,22 @@ export function AngleIcon() {
     <svg {...STROKE} aria-hidden="true">
       <path d="M4 20h16M4 20 16 5" />
       <path d="M12 20a8 8 0 0 0-1.6-4.8" strokeOpacity="0.45" />
+    </svg>
+  );
+}
+
+/**
+ * Lucide `audio-lines`. The sound itself, for the two rows that choose one.
+ *
+ * Not `SpeakerIcon`, which is right above it on the volume underneath and
+ * means loudness — see its own note. These rows pick *which* sample a press
+ * plays, which is a different question, and the same glyph on both made the
+ * pair read as one control with two faders.
+ */
+export function WaveformIcon() {
+  return (
+    <svg {...STROKE} aria-hidden="true">
+      <path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3" />
     </svg>
   );
 }

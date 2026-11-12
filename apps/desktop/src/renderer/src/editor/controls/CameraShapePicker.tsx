@@ -96,6 +96,20 @@ export function CameraShapePicker({
   preview.current = onPreview;
   useEffect(() => () => preview.current?.(null), [open]);
 
+  /**
+   * A control that cannot be used cannot keep the panel.
+   *
+   * `PushedView` draws nothing while disabled and the inspector hides its body
+   * whenever anything is pushed, so the two together are exactly the empty
+   * body `PushedView`'s own note warns about — a header and a back arrow over
+   * nothing. Reachable: open this, then select a clip that switches the thing
+   * off. The control stays mounted across that, so the unmount cleanup there
+   * does not fire.
+   */
+  useEffect(() => {
+    if (disabled && open) close();
+  }, [disabled, open, close]);
+
   const chosen = CAMERA_SHAPES.find((option) => option.value === value);
 
   return (

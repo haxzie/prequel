@@ -26,7 +26,7 @@ const NS_PER_SECOND: u64 = 1_000_000_000;
 /// `shared/project.ts`. `pub` so `export.rs`'s audio decode — the other place
 /// a slice's speed is divided by — clamps to the same range.
 pub const MIN_SPEED: f64 = 0.25;
-pub const MAX_SPEED: f64 = 4.0;
+pub const MAX_SPEED: f64 = 10.0;
 
 /// Which file a slice plays for one kind, and where that file's zero sits.
 #[derive(Debug, Clone, PartialEq, Eq)]

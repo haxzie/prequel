@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import {
   CLICK_EFFECTS,
@@ -7,9 +7,13 @@ import {
   type ClickEffectId,
 } from "../../../../shared/click-effects";
 import { cn } from "../../lib/cn";
+import { ChevronRightIcon } from "../icons";
+import { CONTROL_H } from "./inputs";
+import { PushedView, usePushed } from "./PushedView";
 
 /**
- * The click marks, as a grid of tiles with a glyph each.
+ * The click marks, as a grid of tiles with a glyph each, in a list that takes
+ * the panel over.
  *
  * A name alone asks the reader to know what "Sonar" looks like before picking
  * it. The real mark is a shader arm and plays for half a second, which is the
@@ -21,6 +25,20 @@ import { cn } from "../../lib/cn";
  *
  * Four across. The pointer picker is five because a pointer is small; a
  * glyph with a label under it needs the width.
+ *
+ * **Pushed rather than inline**, for the pointer styles' reason and one of its
+ * own. Fourteen tiles is four rows, which on its own is survivable — but this
+ * sits in the same panel as that list, and the two are the same kind of thing:
+ * a catalogue visited occasionally, over controls dialled often. One of them
+ * inline beside the other pushed would read as an oversight rather than a
+ * judgement.
+ *
+ * **No hover preview here, unlike the pointer's**, and the asymmetry is the
+ * honest one. A pointer is on the picture at almost every frame, so hovering a
+ * style shows something. A mark exists for half a second at a press, so unless
+ * the playhead is sitting on one there is nothing for a preview to draw — a
+ * control that does nothing most of the time reads as broken. The hand-drawn
+ * still is what this list has instead, and why it has one.
  */
 export function ClickEffectPicker({
   value,
@@ -31,64 +49,121 @@ export function ClickEffectPicker({
   disabled?: boolean;
   onChange: (id: ClickEffectId | typeof NO_CLICK_EFFECT) => void;
 }) {
-  return (
-    <div className="grid grid-cols-4 gap-1">
-      <Tile
-        label="None"
-        title="No mark"
-        chosen={value === NO_CLICK_EFFECT}
-        disabled={disabled}
-        onClick={() => onChange(NO_CLICK_EFFECT)}
-      >
-        <svg viewBox="0 0 32 32" className="h-full w-full">
-          <circle cx="16" cy="16" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M10 22 22 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      </Tile>
+  const { open, toggle, close } = usePushed("Click");
 
-      {CLICK_EFFECT_IDS.map((id) => (
-        <Tile
-          key={id}
-          label={CLICK_EFFECTS[id].label}
-          title={CLICK_EFFECTS[id].hint}
-          chosen={value === id}
-          disabled={disabled}
-          onClick={() => onChange(id)}
-        >
-          {GLYPHS[id]}
-        </Tile>
-      ))}
+  /**
+   * A control that cannot be used cannot keep the panel.
+   *
+   * `PushedView` draws nothing while disabled and the inspector hides its body
+   * whenever anything is pushed, so the two together are exactly the empty
+   * body `PushedView`'s own note warns about — a header and a back arrow over
+   * nothing. Reachable: open this, then select a clip that switches the thing
+   * off. The control stays mounted across that, so the unmount cleanup there
+   * does not fire.
+   */
+  useEffect(() => {
+    if (disabled && open) close();
+  }, [disabled, open, close]);
+
+  const chosen = value === NO_CLICK_EFFECT ? null : CLICK_EFFECTS[value];
+
+  return (
+    <div className={cn("flex flex-col", disabled && "pointer-events-none opacity-40")}>
+      {/* The chosen mark's own glyph beside its name, for the reason the
+          pointer's trigger carries a swatch: the glyphs are what the grid is
+          read by, and a trigger showing only a word would be read differently
+          from the list it opens. */}
+      <button
+        type="button"
+        // Named by attribute for the documentation screenshots. See the
+        // pointer picker's, which says why.
+        data-control="click-mark"
+        aria-expanded={open}
+        className={cn(
+          "flex items-center justify-between gap-2 rounded-full bg-white/5 px-2.5 text-left",
+          CONTROL_H,
+          open && "bg-white/12",
+        )}
+        onClick={toggle}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="block size-4 flex-none text-editor-text" aria-hidden>
+            {chosen ? GLYPHS[value as ClickEffectId] : NO_MARK}
+          </span>
+          <span className="truncate text-[13px] text-white">{chosen?.label ?? "None"}</span>
+        </span>
+        <span className="flex-none text-editor-muted [&_svg]:size-3" aria-hidden>
+          <ChevronRightIcon />
+        </span>
+      </button>
+
+      <PushedView open={open && !disabled}>
+        <div className="grid grid-cols-4 gap-1" role="radiogroup">
+          <Tile
+            label="None"
+            title="No mark"
+            chosen={value === NO_CLICK_EFFECT}
+            onClick={() => {
+              onChange(NO_CLICK_EFFECT);
+              close();
+            }}
+          >
+            {NO_MARK}
+          </Tile>
+
+          {CLICK_EFFECT_IDS.map((id) => (
+            <Tile
+              key={id}
+              label={CLICK_EFFECTS[id].label}
+              title={CLICK_EFFECTS[id].hint}
+              chosen={value === id}
+              onClick={() => {
+                onChange(id);
+                close();
+              }}
+            >
+              {GLYPHS[id]}
+            </Tile>
+          ))}
+        </div>
+      </PushedView>
     </div>
   );
 }
+
+/** The one glyph that is not a mark: drawn here so the trigger and the grid
+    cannot come to show two different pictures of "none". */
+const NO_MARK = (
+  <svg viewBox="0 0 32 32" className="h-full w-full">
+    <circle cx="16" cy="16" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M10 22 22 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
 
 function Tile({
   label,
   title,
   chosen,
-  disabled,
   onClick,
   children,
 }: {
   label: string;
   title: string;
   chosen: boolean;
-  disabled?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
+      role="radio"
       title={title}
       aria-label={`${label} — ${title}`}
-      aria-pressed={chosen}
-      disabled={disabled}
+      aria-checked={chosen}
       className={cn(
         // The filter grid's surface: a hairline-free plate with a barely-there
         // fill, so the two grids read as one family of thing.
         "flex flex-col items-center gap-1 rounded-lg bg-white/5 p-1.5",
-        "disabled:pointer-events-none disabled:opacity-30",
         chosen ? "ring-2 ring-selected ring-inset" : "hover:bg-white/10",
       )}
       onClick={onClick}
