@@ -1,5 +1,18 @@
 # @prequel/desktop
 
+## 0.14.1
+
+### Patch Changes
+
+- d65caf3: Export at 4K, now the default, with Full still there for the frame's own size.
+- e408063: Sliders, zooms and titles respond straight away on a long recording.
+- d65caf3: A long recording exports instead of closing the editor the moment you pick where to save it.
+
+  <!-- highlight: Long recordings export -->
+
+- e408063: Video quality lists only the sizes that would change the file.
+- e408063: Export on a screenshot saves it straight away.
+
 ## 0.14.0
 
 ### Minor Changes
