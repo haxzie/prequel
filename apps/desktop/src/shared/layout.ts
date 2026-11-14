@@ -1285,6 +1285,164 @@ export function watermarkRect(frame: Size, mark: SliceSettings["watermark"]): Re
 }
 
 /**
+ * How far outside its own span a plan still reads a recording-long track.
+ *
+ * Four things reach past a clip's ends, and this clears all of them. A zoom's
+ * move in or out is `speed` seconds long and `sanitiseProject` clamps that to
+ * five, so the picture can be travelling — and so sampling the pointer — five
+ * seconds either side of the slice it belongs to. `smoothPath`'s spring settles
+ * in four time constants, which is under half a second. A click's mark is at
+ * most 800ms and a chord's plate 1.4s.
+ *
+ * Ten seconds is comfortably past the longest of those, and the slack is free:
+ * at 30 samples a second it is three hundred entries on each end of a clip.
+ *
+ * It is deliberately *not* derived from those numbers with a `Math.max`. Each
+ * of them is a different thing that happens to be short, and a constant that
+ * silently tracked the zoom speed slider's ceiling would turn a change to that
+ * control into a change to what the exporter draws.
+ */
+const PLAN_REACH_NS = 10_000_000_000;
+
+/** A stretch of the recording, in source time, that a plan is built for. */
+export interface SourceSpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * The recording-long tracks, cut down to what one clip can draw.
+ *
+ * Every one of these is handed to `buildRenderPlan` whole, because whether a
+ * press or a cue falls inside this clip is a question the plan already answers
+ * per frame. That is right for the preview, which builds one plan and samples
+ * it; it is ruinous for an export, which builds one plan *per run* — a cut
+ * timeline is a dozen of them — and each one expanded the whole recording's
+ * pointer track into drawn geometry all over again.
+ *
+ * A two-hour take came out at 138MB of JSON for a single slice and 443,000
+ * drawn points. Four slices of it reached 3.4GB resident; eight put the
+ * renderer over the heap limit and killed it, which is a window that vanishes
+ * between the save sheet and the first frame with nothing in the log but
+ * `renderer gone: crashed`. Reported twice.
+ *
+ * So the inputs are narrowed here instead, and the plan comes out the size of
+ * the clip rather than the size of the recording. Nothing about *how* anything
+ * is drawn changes: every consumer of these tracks holds the last value before
+ * the moment it is asked about, so what is kept is the window plus `PLAN_REACH`
+ * either side plus — and this is the part that cannot be dropped — the one
+ * entry immediately beyond each end, which is what those lookups bracket
+ * against. `narrowing a plan to one clip` in `layout.test.ts` builds both
+ * plans and asserts every key either side of the clip is identical, which is
+ * every moment in between.
+ */
+export function narrowToSpan(
+  span: SourceSpan,
+  tracks: {
+    cursor?: CursorTrack | null;
+    clicks?: readonly ClickEvent[] | null;
+    chords?: readonly RenderedChord[] | null;
+    cues?: readonly RenderedCue[];
+    zooms?: readonly ZoomSlice[];
+    blobs?: BlobTrack | null;
+  },
+): {
+  cursor: CursorTrack | null | undefined;
+  clicks: readonly ClickEvent[] | null | undefined;
+  chords: readonly RenderedChord[] | null | undefined;
+  cues: readonly RenderedCue[] | undefined;
+  zooms: readonly ZoomSlice[] | undefined;
+  blobs: BlobTrack | null | undefined;
+} {
+  const from = span.start - PLAN_REACH_NS;
+  const to = span.end + PLAN_REACH_NS;
+
+  return {
+    cursor: tracks.cursor && {
+      ...tracks.cursor,
+      samples: bracketed(tracks.cursor.samples, from, to),
+      // Press *times*, for the dip in the pointer's size. Bracketing rather
+      // than a plain window for the reason the samples are: `pressScale` reads
+      // the nearest press on either side.
+      ...(tracks.cursor.clicks
+        ? { clicks: bracketed(toAts(tracks.cursor.clicks), from, to).map((entry) => entry.at) }
+        : {}),
+      ...(tracks.cursor.typing ? { typing: bracketed(tracks.cursor.typing, from, to) } : {}),
+      // Stretches rather than moments, so overlap is the exact test and no
+      // reach is needed: a span that touches this clip is kept whole however
+      // long it is, and one that does not cannot be read inside it.
+      ...(tracks.cursor.keys ? { keys: overlapping(tracks.cursor.keys, span) } : {}),
+      ...(tracks.cursor.typed ? { typed: overlapping(tracks.cursor.typed, span) } : {}),
+    },
+    clicks: tracks.clicks && bracketed(tracks.clicks, from, to),
+    chords: tracks.chords && bracketed(tracks.chords, from, to),
+    // By overlap, like the typing spans: a cue is a stretch with a length of
+    // its own, and a long one that opens before the clip is still read inside
+    // it.
+    cues: tracks.cues?.filter((cue) => cue.end > span.start && cue.at < span.end),
+    // By *reach* rather than by the slice, because a zoom's travel is outside
+    // it — and `zoomSpans` is the one place that already knows how far, the
+    // shared move of a morphed pair included. A zoom whose reach misses this
+    // clip leaves the picture at rest throughout it, which is what dropping it
+    // leaves behind.
+    zooms: tracks.zooms && reaching(tracks.zooms, span),
+    // The fitted outline, which `placeBlobs` turns into one key per sample —
+    // so a camera that follows the person carries the whole recording's worth
+    // of them into every clip's plan, exactly as the pointer did. `blobAt`
+    // holds the first and last past either end, so the bracketing is the same
+    // and `bentShapes` reads each sample on its own: no window to lead in.
+    blobs: tracks.blobs && { ...tracks.blobs, samples: bracketed(tracks.blobs.samples, from, to) },
+  };
+}
+
+/** Press times as things with an `at`, so one window function serves both. */
+function toAts(ats: readonly number[]): { at: number }[] {
+  return ats.map((at) => ({ at }));
+}
+
+/**
+ * Everything in the window, plus the one entry immediately either side of it.
+ *
+ * The neighbours are the whole point. `cursorAt`, `pressScale` and
+ * `withHeldParks` all answer a moment by holding the entry before it, so a
+ * window cut exactly at the clip's edge would open the clip with the pointer
+ * at the first sample *inside* it rather than where the hand actually was.
+ *
+ * The list is sorted by `at`, which every caller's is — the manifest writes
+ * them in order and nothing reorders them.
+ */
+function bracketed<T extends { at: number }>(entries: readonly T[], from: number, to: number): T[] {
+  let first = entries.findIndex((entry) => entry.at >= from);
+  if (first === -1) first = entries.length;
+  // One before, where there is one.
+  if (first > 0) first -= 1;
+
+  let last = first;
+  while (last < entries.length && entries[last]!.at <= to) last += 1;
+  // And one after, by leaving `last` one past the window rather than at it.
+  if (last < entries.length) last += 1;
+
+  return entries.slice(first, last);
+}
+
+/** The stretches that touch the span at all. */
+function overlapping<T extends { start: number; end: number }>(
+  spans: readonly T[],
+  span: SourceSpan,
+): T[] {
+  return spans.filter((entry) => entry.end > span.start && entry.start < span.end);
+}
+
+/** The zooms whose whole life — the moves either side included — touches the span. */
+function reaching(zooms: readonly ZoomSlice[], span: SourceSpan): ZoomSlice[] {
+  const spans = zoomSpans(zooms);
+  return zooms.filter((_, index) => {
+    const reach = spans[index]!;
+    return reach.to > span.start && reach.from < span.end;
+  });
+}
+
+/**
  * Turns settings into a flat list of things to draw.
  *
  * `sources.camera` being null, or the camera being switched off, simply omits

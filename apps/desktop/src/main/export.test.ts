@@ -49,7 +49,7 @@ vi.mock("./media-protocol.js", () => ({ publishExport: () => "prequel-media://ex
 vi.mock("./recorder.js", () => ({ getRecorder: async () => ({}) }));
 vi.mock("./library.js", () => ({ libraryDir: () => SCRATCH }));
 
-const { saveStill } = await import("./export.js");
+const { saveStill, progressLine } = await import("./export.js");
 
 describe("a finished export", () => {
   beforeEach(() => {
@@ -74,5 +74,49 @@ describe("a finished export", () => {
     await saveStill("/takes/two", Buffer.from("two"), null);
 
     expect(recorded.map((entry) => entry.dir)).toEqual(["/takes/one", "/takes/two"]);
+  });
+});
+
+/**
+ * What a running export says about itself, and how often.
+ *
+ * It said nothing at all until now: `export started`, then minutes or hours of
+ * silence, then `export done`. A render that was simply very big and a render
+ * that had stopped dead left an identical log, which is the one failure a user
+ * cannot investigate and the one a bug report cannot answer — and both of the
+ * reports this came out of arrived that way.
+ */
+describe("a running export", () => {
+  const S = 1000;
+  const progress = { framesDone: 9_000, framesTotal: 108_000 };
+
+  it("says nothing until the reporting interval is up", () => {
+    // Per-frame would be eighteen thousand lines for a five-minute export,
+    // which buries the lifecycle breadcrumbs somebody opened the log to find.
+    expect(progressLine(progress, 0, 60 * S, 70 * S)).toBeNull();
+    expect(progressLine(progress, 0, 60 * S, 89 * S)).toBeNull();
+    expect(progressLine(progress, 0, 60 * S, 90 * S)).not.toBeNull();
+  });
+
+  it("says the rate and what is left, not a percentage", () => {
+    // Nine thousand frames in five minutes is 30 a second, so the other
+    // ninety-nine thousand are fifty-five minutes away. That estimate is the
+    // whole diagnosis for an export nobody should wait for.
+    const line = progressLine(progress, 0, 0, 300 * S);
+
+    expect(line?.frames).toBe("9000/108000");
+    expect(line?.fps).toBe(30);
+    expect(line?.elapsed_min).toBe(5);
+    expect(line?.left_min).toBe(55);
+  });
+
+  it("offers no estimate before there is a rate to make one from", () => {
+    // Nothing rendered yet divides by zero, and a `left_min` of `Infinity` in
+    // the log reads as a bug in the logging rather than as an export that has
+    // not started moving.
+    const line = progressLine({ framesDone: 0, framesTotal: 108_000 }, 0, 0, 30 * S);
+
+    expect(line?.fps).toBe(0);
+    expect(line?.left_min).toBeNull();
   });
 });

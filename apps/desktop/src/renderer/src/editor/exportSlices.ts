@@ -19,6 +19,7 @@ import {
 } from "../../../shared/contract";
 import {
   buildRenderPlan,
+  narrowToSpan,
   textOnClip,
   withWholeTimes,
   type CursorTag,
@@ -131,6 +132,39 @@ export function buildSlices(
       camera: sizeOf(media.camera),
     };
     const settings = resolveSettings(project.defaults, slice.overrides);
+    // Everything indexed by the recording's clock, cut down to what this run
+    // can draw. Without it each run's plan expands the *whole* recording's
+    // pointer track, presses and cues into drawn geometry — so a long take cut
+    // into a dozen clips builds a dozen copies of two hours of pointer and
+    // hands them all to main at once, which is the export that killed the
+    // renderer between the save sheet and the first frame. See `narrowToSpan`.
+    const near = narrowToSpan(run.source, {
+      cursor: session.cursor && {
+        ...session.cursor,
+        ...cursorImages(settings.layout.cursorStyle),
+        tag: tag(settings.layout),
+        size: settings.layout.cursorSize,
+        hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
+        // Resolved here rather than in the plan, like `hideAfter`: a track
+        // with no spans and one the user asked to keep the pointer through
+        // are the same thing to draw.
+        keys: settings.layout.cursorHideWhileTyping ? session.cursor.keys : [],
+        // Unresolved: whether the shot looks at a field is not a question
+        // about whether the pointer is drawn.
+        typed: session.cursor.keys,
+      },
+      // Every press, for the click marks — narrowed here rather than filtered
+      // in the plan, where a press outside the clip is skipped by its span.
+      clicks: session.clicks,
+      chords,
+      // This clip's own look. Caption settings are per clip, so a clip that
+      // styles its captions differently is handed the set drawn for it — and
+      // one whose captions are off has no look and gets nothing.
+      cues: cues.get(captionLook(settings.captions)),
+      zooms: project.zooms,
+      // The outline the recording fitted, for a camera shaped by it.
+      blobs: session.blobs,
+    });
     // The clip before this one, so the camera arrives rather than teleports.
     // The first slice has nothing behind it and gets no transition, which is
     // what makes an export open on its composition rather than assembling it.
@@ -160,55 +194,32 @@ export function buildSlices(
           frame,
           sources,
           settings,
-          session.cursor && {
-            ...session.cursor,
-            ...cursorImages(settings.layout.cursorStyle),
-            tag: tag(settings.layout),
-            size: settings.layout.cursorSize,
-            hideAfter: settings.layout.cursorAutoHide ? settings.layout.cursorHideAfter : null,
-            // Resolved here rather than in the plan, like `hideAfter`: a track
-            // with no spans and one the user asked to keep the pointer through
-            // are the same thing to draw.
-            keys: settings.layout.cursorHideWhileTyping ? session.cursor.keys : [],
-            // Unresolved: whether the shot looks at a field is not a question
-            // about whether the pointer is drawn.
-            typed: session.cursor.keys,
-          },
-          project.zooms,
+          near.cursor,
+          near.zooms,
           previous
             ? {
                 from: resolveSettings(project.defaults, previous.overrides),
                 source: run.source,
               }
             : null,
-          // This clip's own look. Caption settings are per clip, so a clip that
-          // styles its captions differently is handed the set drawn for it —
-          // and one whose captions are off has no look and gets nothing.
-          //
-          // Every cue in that set, not only the ones inside this clip: a caption
-          // whose span falls outside simply never draws, and filtering here would
-          // be a second answer to a question `captionAt` already answers per
-          // frame.
-          cues.get(captionLook(settings.captions)),
+          // The cues this clip can reach, in this clip's own look — see
+          // `narrowToSpan`. One whose span falls outside still never draws:
+          // `captionAt` answers that per frame, and narrowing only keeps the
+          // list it answers over the size of a clip.
+          near.cues,
           // Only the texts that reach this clip, each carrying its whole life
           // in this clip's source time so an entrance is timed against its own
           // beginning rather than restarting at every cut it crosses.
           rows,
           texts,
-          // The outline the recording fitted, for a camera shaped by it. Whole
-          // track rather than this clip's slice of it: `blobAt` holds the first
-          // and last sample past either end, so a clip that starts mid-take is
-          // drawn with the shape that was there.
-          session.blobs,
+          near.blobs,
           still ? { at: STILL_AT, masks: maskRegions(frame, project.annotations) } : undefined,
-          // Every press, for the click marks. Whole list rather than this
-          // clip's slice of it: a press outside the clip is skipped by its
-          // span, and filtering here would be a second answer to that.
-          session.clicks,
-          // Every chord, for the same reason: one outside the clip is skipped
-          // by its span, and a clip that does not show the row is answered
-          // inside the plan.
-          chords,
+          near.clicks,
+          // Narrowed like the presses. A chord outside the clip is still
+          // skipped by its span, and a clip that does not show the row is
+          // still answered inside the plan — `keysVisible` is per clip and
+          // the bitmaps are not.
+          near.chords,
         ),
       ),
       speed: slice.speed,

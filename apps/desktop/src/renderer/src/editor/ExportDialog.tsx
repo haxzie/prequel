@@ -18,14 +18,31 @@ import { useShare, type ShareState } from "./useShare";
 const MAX_NOTE = 1_000;
 
 /** How the resolution choice reads. Values are the frame's shorter edge. */
-type Quality = "full" | "1080" | "720" | "480";
+type Quality = "full" | "2160" | "1080" | "720" | "480";
 
 const QUALITIES: { value: Quality; label: string; title: string }[] = [
   { value: "full", label: "Full", title: "The frame's own size" },
+  { value: "2160", label: "4K", title: "Scaled so the shorter edge is 2160px" },
   { value: "1080", label: "1080p", title: "Scaled so the shorter edge is 1080px" },
   { value: "720", label: "720p", title: "Scaled so the shorter edge is 720px" },
   { value: "480", label: "480p", title: "Scaled so the shorter edge is 480px" },
 ];
+
+/**
+ * The frame above which an export is worth warning about, in megapixels.
+ *
+ * A shade over 4K, so a 3840×2160 export — which is a perfectly ordinary thing
+ * to ask for and takes a few minutes — says nothing. A Retina capture of a
+ * 16-inch display at Full is 6014×3074, which is 18.5: nine times a 1080p
+ * frame, and every one of them is decoded, composed on the GPU and encoded in
+ * turn. An hour of that is hours of exporting.
+ *
+ * The note is the whole fix for somebody who already has Full saved on a
+ * project. `DEFAULT_SHORT_EDGE` caps new ones, but a stored setting is the
+ * user's and is not quietly rewritten — so the dialog says what the number
+ * costs instead.
+ */
+const HUGE_MEGAPIXELS = 9;
 
 const FORMATS: { value: ExportFormat; label: string; title: string }[] = [
   { value: "h264", label: "MP4", title: "H.264 — plays everywhere" },
@@ -222,6 +239,14 @@ export function ExportDialog({
               note={`${frame.width} × ${frame.height}${
                 isStill ? " · PNG" : output.format === "gif" ? " · silent" : ""
               }`}
+              // And what that number costs, where it is large enough to be
+              // worth saying before the press rather than after it. A still is
+              // one frame and a GIF is already capped, so neither gets this.
+              warning={
+                !isStill && output.format !== "gif" && huge(frame)
+                  ? "Very large — this will take a long time to export"
+                  : undefined
+              }
               onChange={(quality) => onChange({ ...output, shortEdge: shortEdgeOf(quality) })}
             />
 
@@ -457,6 +482,7 @@ function Spinner() {
 function Choices<T extends string>({
   label,
   note,
+  warning,
   value,
   options,
   disabled,
@@ -465,6 +491,14 @@ function Choices<T extends string>({
   label: string;
   /** A read-out beside the label — what the choice below works out to. */
   note?: string;
+  /**
+   * A line under the tiles, for a choice that is allowed and expensive.
+   *
+   * Under rather than in place of the note: the note is the number and this is
+   * what it costs, and somebody checking the frame size should not have it
+   * replaced by a sentence.
+   */
+  warning?: string;
   value: T;
   options: { value: T; label: string; title?: string }[];
   disabled?: boolean;
@@ -504,6 +538,8 @@ function Choices<T extends string>({
           </button>
         ))}
       </div>
+
+      {warning && <p className="text-[11px] text-editor-muted">{warning}</p>}
     </div>
   );
 }
@@ -976,6 +1012,11 @@ function qualityOf(shortEdge: number | null): Quality {
 
 function shortEdgeOf(quality: Quality): number | null {
   return quality === "full" ? null : Number(quality);
+}
+
+/** Whether this frame is big enough to be worth a word before the press. */
+function huge(frame: { width: number; height: number }): boolean {
+  return (frame.width * frame.height) / 1_000_000 > HUGE_MEGAPIXELS;
 }
 
 function allowedForGif(quality: Quality): boolean {

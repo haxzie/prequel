@@ -295,6 +295,76 @@ type ExportShape = {
 let runningShape: ExportShape | null = null;
 
 /**
+ * How often a running export says where it has got to, in milliseconds.
+ *
+ * Every export used to be two lines: `export started`, and — minutes or hours
+ * later — `export done`. Between them the log said nothing at all, so a render
+ * that was simply big and a render that had stopped dead produced an identical
+ * file, which is a bug report nobody can answer. One of the two reports this
+ * exists for had 26 minutes of silence after `export started` and no way to
+ * tell which it was.
+ *
+ * Half a minute, because this is read after the fact rather than watched: the
+ * editor has the progress bar, and a line a second would bury the lifecycle
+ * breadcrumbs either side of it in a log somebody is scrolling through to find
+ * out why their export failed.
+ */
+const PROGRESS_EVERY_MS = 30_000;
+
+/** When the running export last said anything, so it says it at a rate. */
+let reportedAt = 0;
+
+/** What a progress line says, or null when it is not yet time for one. */
+export interface ProgressLine {
+  frames: string;
+  fps: number;
+  elapsed_min: number;
+  /** Null until a rate can be measured, which is anything but the first tick. */
+  left_min: number | null;
+}
+
+/**
+ * How far along a render is, as one line — or null to say nothing yet.
+ *
+ * Pure, and exported, because the arithmetic is the part worth pinning: the
+ * rate and the estimate are both worth more than a percentage. "4.2 fps"
+ * beside a frame size already in the log is the whole diagnosis for an export
+ * that is going to take six hours, and it is the number that says whether it
+ * is going to finish at all.
+ */
+export function progressLine(
+  progress: Pick<ExportProgress, "framesDone" | "framesTotal">,
+  began: number,
+  since: number,
+  now: number,
+): ProgressLine | null {
+  if (now - since < PROGRESS_EVERY_MS) return null;
+
+  const elapsed = (now - began) / 1000;
+  const rate = elapsed > 0 ? progress.framesDone / elapsed : 0;
+  const left = rate > 0 ? (progress.framesTotal - progress.framesDone) / rate : null;
+
+  return {
+    frames: `${String(progress.framesDone)}/${String(progress.framesTotal)}`,
+    fps: Math.round(rate * 10) / 10,
+    // Minutes, because the exports worth logging about are the long ones and
+    // nobody reads four thousand seconds as an hour.
+    elapsed_min: Math.round(elapsed / 6) / 10,
+    left_min: left === null ? null : Math.round(left / 6) / 10,
+  };
+}
+
+/** The same, against the running export's clock, written to the log. */
+function logProgress(progress: ExportProgress): void {
+  const now = Date.now();
+  const line = progressLine(progress, startedAt, reportedAt, now);
+  if (!line) return;
+
+  reportedAt = now;
+  log("info", "export: rendering", line);
+}
+
+/**
  * Starts an export.
  *
  * Rejects a second one rather than queueing: there is one GPU and one encoder,
@@ -313,6 +383,9 @@ export async function startExport(request: ExportRequest): Promise<void> {
   const output = request.output;
   running = request.dir;
   startedAt = Date.now();
+  // Zero rather than `startedAt`, so the first line lands a reporting interval
+  // in rather than one interval after the render actually began.
+  reportedAt = 0;
   runningFps = request.fps;
   runningShape = {
     format: request.format,
@@ -405,6 +478,11 @@ export async function startExport(request: ExportRequest): Promise<void> {
           finish(update);
           return;
         }
+
+        // Rate-limited inside, so this is every progress event and the log
+        // gets one every half minute. Only while rendering: `preparing` and
+        // `finalising` carry no frame count worth a line.
+        if (update.stage === "rendering") logProgress(update);
 
         broadcast(update);
       },

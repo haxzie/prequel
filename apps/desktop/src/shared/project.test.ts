@@ -20,6 +20,7 @@ import {
   MAX_TEXT_TRACKS,
   hasOverrides,
   newProject,
+  DEFAULT_SHORT_EDGE,
   outputFrame,
   overriddenKeys,
   PROJECT_VERSION,
@@ -187,6 +188,26 @@ describe("outputFrame", () => {
 
     expect(scaled.width % 2).toBe(0);
     expect(scaled.height % 2).toBe(0);
+  });
+
+  it("caps a Retina capture at 4K and leaves everything smaller alone", () => {
+    // The reason the default is a number rather than `null`. A 16-inch
+    // display captured at 2x is 6014×3074 — 18.5 megapixels, nine times a
+    // 1080p frame — and exporting an hour of it took hours.
+    const retina = outputFrame({ width: 6014, height: 3074 }, DEFAULT_SHORT_EDGE);
+    expect(retina.height).toBe(2160);
+    expect((retina.width * retina.height) / 1_000_000).toBeLessThan(10);
+
+    // And the cap is only ever a cap: a smaller capture comes out at its own
+    // size, exactly as it did when the default was "the frame's own size".
+    expect(outputFrame({ width: 1512, height: 982 }, DEFAULT_SHORT_EDGE)).toEqual({
+      width: 1512,
+      height: 982,
+    });
+    expect(outputFrame({ width: 2560, height: 1440 }, DEFAULT_SHORT_EDGE)).toEqual({
+      width: 2560,
+      height: 1440,
+    });
   });
 });
 

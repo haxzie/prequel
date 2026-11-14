@@ -1923,6 +1923,27 @@ export interface OutputSettings {
 export const GIF_MAX_SHORT_EDGE = 720;
 
 /**
+ * The shorter edge a new project exports at, and in practice a 4K ceiling.
+ *
+ * `outputFrame` never upscales, so this is only ever a *cap*: a 1512×982
+ * capture has a shorter edge of 982 and comes out at its own size exactly as
+ * it did when the default was `null`. It bites on one thing, which is the one
+ * thing it is for — a Retina capture of a large display, where "the frame's
+ * own size" is 6014×3074. That is 18.5 megapixels, nine times a 1080p frame,
+ * and the exporter decodes, composes and encodes every one of them in turn: an
+ * hour of footage is hours of export, which is what it was reported as.
+ *
+ * Full is still on the row and still means what it says. It is the default
+ * that changed, because the default is what somebody gets without choosing —
+ * and a frame twice the area of 4K is not something to be given unasked.
+ *
+ * Only for projects made from here on. A stored `shortEdge` is read back as it
+ * was written, `null` included: a setting somebody picked is theirs, and the
+ * export dialog warns about the size instead of overruling it.
+ */
+export const DEFAULT_SHORT_EDGE = 2160;
+
+/**
  * The frame an export is actually written at.
  *
  * Scaling here rather than anywhere downstream is what keeps the look intact:
@@ -2645,7 +2666,7 @@ export function newProject(
         ),
       },
     ],
-    output: { fps: 60, format: "h264", shortEdge: null },
+    output: { fps: 60, format: "h264", shortEdge: DEFAULT_SHORT_EDGE },
     micDenoise: "off",
     transcript: null,
   };

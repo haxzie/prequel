@@ -37,6 +37,7 @@ import {
   type RenderedChord,
   type RenderedCue,
   type RenderPlan,
+  narrowToSpan,
   restingForDrawn,
   screenYawFor,
   SHADOW_SPREAD,
@@ -8151,5 +8152,313 @@ describe("the camera cut out in the corner", () => {
 
   it("clears the padding when it is picked, like every full-bleed arrangement", () => {
     expect(fillsTheFrame("over-cutout")).toBe(true);
+  });
+});
+
+/**
+ * The one thing that makes `narrowToSpan` safe to have done at all.
+ *
+ * A plan built from the narrowed tracks has to draw what a plan built from the
+ * whole recording draws, everywhere inside the clip — and the failure if it
+ * does not is the worst shape there is: a pointer that holds the wrong
+ * position for the first second of every clip, or a caption that stops
+ * appearing, in the exported file only, with nothing on screen or in the log.
+ *
+ * Asserted on the arrays rather than by re-interpolating them, because that is
+ * the stronger claim and needs no second copy of the arithmetic: every
+ * consumer of a plan's keys — `rectAt`, `cursorAt`, `captionAt`, `loupeAt` and
+ * their four counterparts in `plan.rs` — answers a moment from the two entries
+ * bracketing it. So if the kept entries from the last one at or before the
+ * clip's start to the first one at or after its end are identical, every
+ * moment in between is identical, whatever the rasteriser does with them.
+ */
+describe("narrowing a plan to one clip", () => {
+  const S = 1_000_000_000;
+  /** Ten minutes, which is long enough for the narrowing to throw most away. */
+  const TAKE = 600 * S;
+  /** The clip, well inside the take so there is something to cut on both sides. */
+  const SPAN = { start: 300 * S, end: 330 * S };
+
+  /**
+   * Presses every five seconds, and two more either side of the clip's edges.
+   *
+   * The straddling pair is the point: a mark lasts up to 800ms and the dip it
+   * puts in the pointer 180ms, so a press a quarter of a second before the
+   * clip opens is drawn inside it — and a window cut at the clip's own edge
+   * loses it.
+   */
+  const PRESSES = [
+    ...Array.from({ length: 120 }, (_, index) => index * 5 * S),
+    SPAN.start - S / 4,
+    SPAN.end - S / 4,
+  ].sort((first, second) => first - second);
+
+  /** Typing that begins before the clip and ends inside it. */
+  const TYPING = [
+    { start: 100 * S, end: 140 * S },
+    { start: SPAN.start - 5 * S, end: SPAN.start + 5 * S },
+  ];
+
+  const cursor = (): CursorTrack => ({
+    shapes: {
+      arrow: { path: "cursors/arrow.png", hotspot: { x: 0, y: 0 } },
+    },
+    // Thirty a second, as the sampler writes them, with a park every ten
+    // seconds so `withHeldParks` and the idle gaps have something to find.
+    samples: Array.from({ length: Math.floor(TAKE / 33_000_000) }, (_, index) => {
+      const at = index * 33_000_000;
+      // Held exactly still through the typing stretch, because that is what
+      // the hide is looking for: `hiddenSpans` takes the pointer off the
+      // picture only where it is both typed-into and parked, so a track that
+      // never stops moving tests the typing narrowing not at all.
+      const parked = TYPING.some((span) => at >= span.start - S && at <= span.end + S);
+      return {
+        at,
+        x: parked ? 0.42 : 0.3 + Math.sin(index / 20) * 0.2,
+        y: parked ? 0.58 : 0.5 + Math.cos(index / 17) * 0.2,
+      };
+    }).filter((sample) => sample.at % (10 * S) > 2 * S),
+    clicks: PRESSES,
+    size: DEFAULT_SETTINGS.layout.cursorSize,
+    hideAfter: 2,
+    // One of them lying across the clip's start, so the pointer is already
+    // hidden for typing when the clip opens: a stretch dropped because it
+    // began outside would put the pointer back on screen in the exported file
+    // and nowhere else.
+    keys: TYPING,
+    typed: TYPING,
+  });
+
+  const clicks = PRESSES.map((at) => ({ at, x: 0.4, y: 0.6 }));
+
+  const chord = (at: number, name: string): RenderedChord => ({
+    at,
+    style: keyStyleId(DEFAULT_SETTINGS.layout),
+    path: `keys/${name}.png`,
+    bitmap: { width: 300, height: 180 },
+  });
+
+  const chords: RenderedChord[] = [
+    ...Array.from({ length: 200 }, (_, index) => chord(index * 3 * S, String(index))),
+    // Pressed just before the clip opens, so its plate is still fading when
+    // the clip does — the press itself is outside and the picture is not.
+    chord(SPAN.start - S, "straddles-the-start"),
+    // And one just past the end, which is what cuts the last chord inside the
+    // clip short: a chord's plate runs to the next press, wherever that is.
+    chord(SPAN.end + S / 2, "cuts-the-last-one-short"),
+  ].sort((first, second) => first.at - second.at);
+
+  const cue = (at: number, end: number, name: string): RenderedCue => ({
+    at,
+    end,
+    layers: [{ path: `captions/${name}.png`, words: [] }],
+    bitmap: { width: 800, height: 120 },
+    size: { width: 0.5, height: 0.1 },
+    drawnSize: 1,
+  });
+
+  const cues: RenderedCue[] = [
+    // Long ones lying across both edges. A caption is a stretch, so the one
+    // being read as the clip opens began before it — narrowing by the moment
+    // a cue starts rather than by overlap drops exactly these, and the clip
+    // exports with its first and last caption missing.
+    cue(SPAN.start - 4 * S, SPAN.start + 4 * S, "straddles-the-start"),
+    cue(SPAN.end - 4 * S, SPAN.end + 4 * S, "straddles-the-end"),
+    ...Array.from({ length: 300 }, (_, index) => ({
+      at: index * 2 * S,
+      end: index * 2 * S + 1900000000,
+      // One layer with no words, which `captionItems` draws as a whole line —
+      // enough for a caption item to exist and be narrowed.
+      layers: [{ path: `captions/${String(index)}.png`, words: [] }],
+      bitmap: { width: 800, height: 120 },
+      size: { width: 0.5, height: 0.1 },
+      drawnSize: 1,
+    })),
+  ].sort((first, second) => first.at - second.at);
+
+  const zooms: ZoomSlice[] = Array.from({ length: 40 }, (_, index) => ({
+    ...DEFAULT_ZOOM,
+    id: `zoom-${String(index)}`,
+    source: { start: index * 15 * S, end: index * 15 * S + 6 * S },
+  }));
+
+  /**
+   * The outline the camera is fitted to, sampled like the recorder writes it.
+   *
+   * One key per sample lands in the plan — so without narrowing, a camera that
+   * follows the person carries the whole recording's worth into every clip.
+   */
+  const blobs: BlobTrack = {
+    samples: Array.from({ length: Math.floor(TAKE / 33_000_000) }, (_, index) => ({
+      at: index * 33_000_000,
+      x: 0.5 + Math.sin(index / 30) * 0.05,
+      y: 0.5,
+      h: [0.1, 0.05, 0.02, 0.01],
+      presence: 1,
+    })),
+  };
+
+  /** The settings the narrowing has the most to do under: everything drawn. */
+  const look = settings({
+    captions: { ...DEFAULT_SETTINGS.captions, captionsOn: true },
+    layout: {
+      ...DEFAULT_SETTINGS.layout,
+      // What `cameraFollows` asks for, so the outline above reaches the plan.
+      cameraCutout: false,
+      cameraFrame: "none",
+      cameraShape: "blob",
+      cursorVisible: true,
+      cursorAutoHide: true,
+      cursorHideAfter: 2,
+      cursorHideWhileTyping: true,
+      keysVisible: true,
+      // Not the default, which is `none` — and a plan with no marks in it
+      // would never narrow the press list at all.
+      clickEffect: "ripple",
+    },
+  });
+
+  const planFrom = (tracks: ReturnType<typeof narrowToSpan>) =>
+    withWholeTimes(
+      buildRenderPlan(
+        LANDSCAPE,
+        { screen: SCREEN, camera: CAMERA },
+        look,
+        tracks.cursor,
+        tracks.zooms,
+        null,
+        tracks.cues,
+        [],
+        undefined,
+        tracks.blobs,
+        undefined,
+        tracks.clicks,
+        tracks.chords,
+      ),
+    );
+
+  const whole = { cursor: cursor(), clicks, chords, cues, zooms, blobs };
+  const full = planFrom({ ...whole, cursor: cursor() });
+  const near = planFrom(narrowToSpan(SPAN, whole));
+
+  /**
+   * The entries that decide every moment in the clip: the window, plus the one
+   * either side that a held lookup reads at its edges.
+   */
+  const bracket = <T extends { at: number }>(entries: readonly T[]): T[] => {
+    let first = entries.findIndex((entry) => entry.at > SPAN.start);
+    if (first === -1) first = entries.length;
+    if (first > 0) first -= 1;
+
+    let last = entries.findIndex((entry) => entry.at >= SPAN.end);
+    if (last === -1) last = entries.length - 1;
+
+    return entries.slice(first, last + 1);
+  };
+
+  /** What identifies an item across the two plans. */
+  const idOf = (item: PlanItem): string =>
+    [
+      item.kind,
+      "path" in item ? item.path : "",
+      "effect" in item ? item.effect : "",
+      "source" in item ? item.source : "",
+      spanOf(item) ? `${String(spanOf(item)?.start)}-${String(spanOf(item)?.end)}` : "",
+    ].join("|");
+
+  /** The stretch an item is on screen for, where it has one. */
+  const spanOf = (item: PlanItem): { start: number; end: number } | undefined =>
+    "span" in item ? item.span : undefined;
+
+  /**
+   * Whether this item can draw anywhere inside the clip at all.
+   *
+   * An item with no span of its own — the picture, the pointer — is on screen
+   * throughout and always reaches.
+   */
+  const reaches = (item: PlanItem): boolean => {
+    const span = spanOf(item);
+    return !span || (span.end > SPAN.start && span.start < SPAN.end);
+  };
+
+  /**
+   * Every time-indexed array on an item, by the name it carries.
+   *
+   * All four, not whichever one is found first: a picture has `motion`, a
+   * camera fitted to the person has `blobs`, a pointer has `points` and an
+   * overlay has `keys` — and an item can hold more than one of them. Checking
+   * only the first silently stopped checking the other three, which is how the
+   * outline and the zoom motion went untested the first time this was written.
+   */
+  const timed = (item: PlanItem): Record<string, readonly { at: number }[]> => {
+    const named: Record<string, readonly { at: number }[]> = {};
+    for (const field of ["points", "keys", "blobs", "motion"] as const) {
+      const value = (item as Record<string, unknown>)[field];
+      if (Array.isArray(value)) named[field] = value as readonly { at: number }[];
+    }
+    return named;
+  };
+
+  it("is built over something worth narrowing", () => {
+    // Guards the three below. Every assertion in this block is a loop over the
+    // items, so a composition that quietly stopped drawing one of these would
+    // leave them passing while testing nothing about it.
+    const kinds = new Set(full.items.map((item) => item.kind));
+    for (const kind of ["image", "cursor", "click", "overlay", "caption"]) {
+      expect(kinds.has(kind as PlanItem["kind"]), `no ${kind} to narrow`).toBe(true);
+    }
+
+    // And the picture has to be moving, or the pointer is sampled at its own
+    // moments alone and the zooms are never narrowed against.
+    const picture = full.items.find((item) => item.kind === "image");
+    expect(picture && "motion" in picture ? picture.motion?.length : 0).toBeGreaterThan(100);
+
+    // And the camera has to be wearing the fitted outline, or the blob track
+    // is narrowed against nothing.
+    const face = full.items.find((item) => item.kind === "image" && item.source === "camera");
+    expect(face && "blobs" in face ? face.blobs?.length : 0).toBeGreaterThan(100);
+  });
+
+  it("keeps every item that reaches the clip", () => {
+    const kept = new Set(near.items.map(idOf));
+    for (const item of full.items) {
+      if (!reaches(item)) continue;
+      expect(kept.has(idOf(item)), `${idOf(item)} was dropped`).toBe(true);
+    }
+  });
+
+  it("draws every one of them identically across the clip", () => {
+    const byId = new Map(near.items.map((item) => [idOf(item), item]));
+
+    for (const item of full.items) {
+      if (!reaches(item)) continue;
+      const mine = byId.get(idOf(item));
+      if (!mine) throw new Error(`${idOf(item)} was dropped`);
+
+      // The keys either side of the clip, which is what every lookup on both
+      // sides interpolates between — so matching here is matching at every
+      // moment in between.
+      const theirs = timed(item);
+      const ours = timed(mine);
+      expect(Object.keys(ours).sort(), idOf(item)).toEqual(Object.keys(theirs).sort());
+
+      for (const [field, entries] of Object.entries(theirs)) {
+        expect(bracket(ours[field] ?? []), `${idOf(item)} ${field}`).toEqual(bracket(entries));
+      }
+    }
+  });
+
+  it("adds nothing the whole recording's plan did not have", () => {
+    const whole = new Set(full.items.map(idOf));
+    for (const item of near.items) {
+      expect(whole.has(idOf(item)), `${idOf(item)} is new`).toBe(true);
+    }
+  });
+
+  it("is very much smaller, which is the whole point", () => {
+    // A ten-minute take cut to thirty seconds. The plan should be about the
+    // size of the clip rather than of the recording, and the margin here is
+    // wide enough that it is testing the shape of the fix rather than a ratio.
+    expect(JSON.stringify(near).length * 4).toBeLessThan(JSON.stringify(full).length);
   });
 });
