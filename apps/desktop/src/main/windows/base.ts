@@ -201,3 +201,26 @@ export function windowId(window: BrowserWindow): number | null {
   const parsed = Number.parseInt(window.getMediaSourceId().split(":")[1] ?? "", 10);
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+/**
+ * The window, but only while it is actually usable.
+ *
+ * `this.window?.isVisible()` looks like it covers everything and covers half
+ * of it. `?.` answers "was one ever opened"; it says nothing about one Electron
+ * has since destroyed, because the reference is still there — and *every*
+ * method on a destroyed `BrowserWindow` throws `TypeError: Object has been
+ * destroyed`, a getter included. In main, that throw is not caught by anything.
+ *
+ * It is a quit that leaves one behind, and the throw lands wherever the next
+ * thing to ask happens to be. The one we have is closing the app window during
+ * a quit: `workspaceClosed` brings the panel back, `showDock` asks whether the
+ * panel is up, and the panel is gone — five users, and it had been arriving
+ * since September.
+ *
+ * So the rule is written down once here rather than as an `isDestroyed()`
+ * beside each call. Three of these wrappers already guarded by hand and the
+ * other two did not, which is the shape of a rule that lives in five places.
+ */
+export function live(window: BrowserWindow | null): BrowserWindow | null {
+  return window && !window.isDestroyed() ? window : null;
+}

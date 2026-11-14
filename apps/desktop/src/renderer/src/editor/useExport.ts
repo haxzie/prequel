@@ -9,13 +9,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isImageExport, type EditorSession, type ExportProgress } from "../../../shared/contract";
 import type { RenderedChord, RenderedCue, RenderedText, Size } from "../../../shared/layout";
-import {
-  outputFrame,
-  playedSpan,
-  type OutputSettings,
-  type Project,
-} from "../../../shared/project";
+import { playedSpan, type OutputSettings, type Project } from "../../../shared/project";
 import { buildMusic, buildSlices } from "./exportSlices";
+import { exportFrame } from "./quality";
 import { slicesOf } from "./state";
 import { renderStillPng } from "./stillPng";
 import { tagFor, type CursorTags } from "./useCursorTags";
@@ -62,6 +58,17 @@ export interface ExportState {
   /** The frame this export would be written at, once the format is applied. */
   frame: Size;
   /**
+   * The composition's own frame, before any quality is applied.
+   *
+   * The dialog needs it to work out what the *other* choices would write, and
+   * `frame` cannot answer that: it is already scaled and rounded to an even
+   * size, so the original is not recoverable from it. Without this the row
+   * offered 4K and Full as separate tiles on a recording where they are the
+   * same picture — `outputFrame` never upscales, so every capture whose
+   * shorter edge is under 2160 resolves both to the same thing.
+   */
+  source: Size;
+  /**
    * How long the finished file runs, in milliseconds.
    *
    * Summed over the kept slices rather than taken from the recording, because
@@ -99,9 +106,10 @@ export function useExport(
 
   useEffect(() => window.prequel.editor.export.onProgress(setProgress), []);
 
+  /** The frame this export is written at — see `exportFrame` for the rule. */
   const frame = useMemo(
-    () => outputFrame(project.frame, output.shortEdge),
-    [project.frame, output.shortEdge],
+    () => exportFrame(project.frame, output.shortEdge, shot !== null),
+    [project.frame, output.shortEdge, shot],
   );
 
   // Read through a ref because `start` runs long after it was created, and the
@@ -164,7 +172,7 @@ export function useExport(
       // would simply have no titles in it.
       await settled(drawing);
 
-      const size = outputFrame(project.frame, output.shortEdge);
+      const size = exportFrame(project.frame, output.shortEdge, true);
       // Through `buildSlices`, exactly as a video export is, so a still's
       // geometry comes out of the one plan builder rather than a second one
       // written for the simpler case. A still has one slice by construction —
@@ -268,7 +276,7 @@ export function useExport(
       );
     }
 
-    const size = outputFrame(project.frame, output.shortEdge);
+    const size = exportFrame(project.frame, output.shortEdge, false);
 
     const result = await window.prequel.editor.export.start({
       dir: session.dir,
@@ -336,6 +344,7 @@ export function useExport(
 
   return {
     progress,
+    source: project.frame,
     running:
       progress !== null &&
       (progress.stage === "preparing" ||

@@ -62,7 +62,7 @@ import {
 import type { ScenePreset } from "../../../shared/scene-presets";
 import type { MediaTime } from "../../../shared/manifest";
 import type { TranscriptWord } from "../../../shared/transcript";
-import { presetFitsFrame } from "../../../shared/layout";
+import { presetFitsFrame, type SourceSpan } from "../../../shared/layout";
 import {
   place,
   spanInProject,
@@ -2559,6 +2559,26 @@ export function selectedSlice(state: EditorState): Slice | undefined {
 export function settingsOf(project: Project, sliceId: string | null): SliceSettings {
   const slice = slicesOf(project).find((candidate) => candidate.id === sliceId);
   return resolveSettings(project.defaults, slice?.overrides);
+}
+
+/**
+ * The stretch of recording the clip under the playhead covers, or null.
+ *
+ * For `narrowToSpan`, which the preview's plan goes through for the reason the
+ * export's does: `buildRenderPlan` re-smooths the entire pointer track every
+ * time one of its inputs changes, and on a two-hour take that is over a second
+ * of dragging a slider with nothing moving.
+ *
+ * The clip's own range, holes and all — which is exactly what the warning in
+ * `AGENTS.md` says not to read. It is sound here and only here, because this is
+ * not mapping between two clocks: it is a window to keep *more* than, and a
+ * clip's range is a superset of every run inside it. Narrowing to the runs
+ * would be smaller and would have to agree with `playedSpan` about where they
+ * are, which is the second answer that warning exists to prevent.
+ */
+export function spanOf(project: Project, sliceId: string | null): SourceSpan | null {
+  const slice = slicesOf(project).find((candidate) => candidate.id === sliceId);
+  return slice ? { start: slice.source.start, end: slice.source.end } : null;
 }
 
 /**

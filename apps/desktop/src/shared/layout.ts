@@ -1443,6 +1443,83 @@ function reaching(zooms: readonly ZoomSlice[], span: SourceSpan): ZoomSlice[] {
 }
 
 /**
+ * `buildRenderPlan`, over one clip's stretch of the recording.
+ *
+ * The way both rasterisers' callers should reach it. `buildRenderPlan` takes
+ * every recording-long track whole, and that is the right contract for it —
+ * whether a press falls inside this clip is a question it answers per frame —
+ * but no caller actually wants a plan the size of the recording. The export
+ * builds one per run and ran the renderer out of memory doing it; the preview
+ * builds one per edit, and on a two-hour take that was a second of re-smoothing
+ * the whole pointer track for every drag of every slider — measured at 1005ms
+ * against 3ms for one clip of it.
+ *
+ * So the narrowing lives here, on the path, rather than at the call sites. It
+ * was at one of them for a commit, and the moment the preview wanted it too it
+ * became a thing to remember in two places — which is worth avoiding because
+ * forgetting it is invisible: the plan is correct, just enormous.
+ *
+ * A null span is the whole recording, unnarrowed. That is what a caller with
+ * no clip to speak of gets, and it is what this did before any of them passed
+ * one.
+ */
+export function buildRenderPlanWithin(
+  span: SourceSpan | null,
+  frame: Size,
+  sources: SourceSizes,
+  settings: SliceSettings,
+  cursor?: CursorTrack | null,
+  zooms?: readonly ZoomSlice[],
+  enter?: EnterTransition | null,
+  cues?: readonly RenderedCue[],
+  texts?: readonly (readonly PlacedText[])[],
+  rendered?: ReadonlyMap<string, RenderedText>,
+  blobs?: BlobTrack | null,
+  still?: {
+    at: number;
+    masks?: readonly { rect: Rect; mode: "blur" | "pixelate"; strength: number }[];
+  },
+  clicks?: readonly ClickEvent[] | null,
+  chords?: readonly RenderedChord[] | null,
+): RenderPlan {
+  if (!span) {
+    return buildRenderPlan(
+      frame,
+      sources,
+      settings,
+      cursor,
+      zooms,
+      enter,
+      cues,
+      texts,
+      rendered,
+      blobs,
+      still,
+      clicks,
+      chords,
+    );
+  }
+
+  const near = narrowToSpan(span, { cursor, clicks, chords, cues, zooms, blobs });
+
+  return buildRenderPlan(
+    frame,
+    sources,
+    settings,
+    near.cursor,
+    near.zooms,
+    enter,
+    near.cues,
+    texts,
+    rendered,
+    near.blobs,
+    still,
+    near.clicks,
+    near.chords,
+  );
+}
+
+/**
  * Turns settings into a flat list of things to draw.
  *
  * `sources.camera` being null, or the camera being switched off, simply omits

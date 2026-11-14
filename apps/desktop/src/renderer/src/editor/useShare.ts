@@ -70,7 +70,12 @@ export function useShare(
         width: frame.width,
         height: frame.height,
         fps: output.fps,
-        shortEdge: output.shortEdge,
+        // Null for a screenshot, which is written at the composition's own
+        // frame whatever a video was last exported at — the dialog does not
+        // offer the control for one. Sending the video's setting here would
+        // put a number on the library row that disagrees with the width and
+        // height beside it.
+        shortEdge: result.isImage ? null : output.shortEdge,
         transcript,
       });
 

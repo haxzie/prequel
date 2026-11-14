@@ -23,7 +23,7 @@ import type { ExportFormat, ExportProgress, ExportRequest } from "../shared/cont
 import { IPC_CHANNELS } from "../shared/contract.js";
 import { track } from "./analytics.js";
 import { toEveryWindow } from "./broadcast.js";
-import { redact, reportError } from "./errors.js";
+import { noteDoing, redact, reportError } from "./errors.js";
 import { recordExport } from "./exports.js";
 import { libraryDir } from "./library.js";
 import { log } from "./log.js";
@@ -402,6 +402,12 @@ export async function startExport(request: ExportRequest): Promise<void> {
     slices: request.slices.length,
   });
 
+  // Before the render thread starts, so a crash inside it is recognisable as
+  // one that happened during an export — see `noteDoing`. An OOM there kills
+  // the process without reaching `finish`, so this is the only thing that
+  // will still be true when the event is assembled.
+  noteDoing("exporting", runningShape);
+
   log("info", "export started", {
     dir: request.dir,
     frame: `${request.width}×${request.height}`,
@@ -543,6 +549,9 @@ function finish(update: ExportProgress): void {
   // recording's Exports tab was empty whatever had been exported from it.
   const from = running;
   running = null;
+  // Cleared on every terminal path, so a crash minutes later is not filed
+  // against an export that finished.
+  noteDoing("exporting", null);
 
   // Read here, once, while the path is certainly still what was written. The
   // dialog names the file's size beside it, and a renderer cannot ask: it can

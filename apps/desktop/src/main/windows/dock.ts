@@ -16,7 +16,7 @@ import {
   type DockMenuPick,
   type DockView,
 } from "../../shared/contract.js";
-import { createPanel, loadRoute, pinZoom } from "./base.js";
+import { createPanel, live, loadRoute, pinZoom } from "./base.js";
 import { watchCursor } from "./cursor.js";
 import { DockMenuPopup } from "./dock-menu.js";
 
@@ -182,12 +182,12 @@ export class DockWindow {
   }
 
   toggle(): void {
-    if (this.window?.isVisible()) this.hide();
+    if (live(this.window)?.isVisible()) this.hide();
     else this.show();
   }
 
   get isVisible(): boolean {
-    return this.window?.isVisible() ?? false;
+    return live(this.window)?.isVisible() ?? false;
   }
 
   /** Resizes the panel between its setup and recording shapes. */

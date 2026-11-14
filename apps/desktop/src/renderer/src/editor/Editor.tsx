@@ -114,6 +114,7 @@ import { useTranscription } from "./useTranscription";
 import { transcriptForShare } from "./shareTranscript";
 import {
   settingsOf,
+  spanOf,
   canUndo,
   editorReducer,
   findText,
@@ -526,6 +527,20 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
   const drawnSettings = useMemo(
     () => settingsOf(drawnProject, media.sliceId),
     [drawnProject, media.sliceId],
+  );
+
+  /**
+   * The stretch of recording the clip under the playhead covers.
+   *
+   * What the preview's plan is narrowed to — see `buildRenderPlanWithin`. Off
+   * `state.project` rather than `drawnProject`: a hovered face or a font
+   * preview changes how the clip is drawn and not which part of the recording
+   * it is, and taking it from the previewed project would rebuild the plan on
+   * every hover for an identical pair of numbers.
+   */
+  const drawnSpan = useMemo(
+    () => spanOf(state.project, media.sliceId),
+    [state.project, media.sliceId],
   );
 
   /**
@@ -1619,11 +1634,47 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
    * holds anything. Opening first rather than awaiting first is deliberate: the
    * grab resolves on the next drawn frame, and a preview that is not drawing
    * would otherwise mean a button that does nothing at all.
+   *
+   * **A screenshot skips the dialog and exports.** Every control on that sheet
+   * is for a video: a format, a rate and a size, and a PNG has none of them —
+   * see `ExportDialog`. What was left was a dialog containing one button
+   * called Export, opened by a button called Export. So the press does the
+   * thing: the file is drawn, the save sheet asks where, and the dialog comes
+   * back by itself once there is a finished picture to offer.
    */
+  const { start: startExport } = exportState;
+
   const showExport = useCallback(async () => {
+    if (still) {
+      // Closed first, for the press that lands while the last screenshot's
+      // finished card is still up. Without it the dialog would sit there
+      // through the render showing the one-button sheet this exists to skip.
+      setExportOpen(false);
+      void startExport();
+      setPoster((await grab.current?.()) ?? null);
+      return;
+    }
+
     setExportOpen(true);
     setPoster((await grab.current?.()) ?? null);
-  }, []);
+    // `exportState` itself is a fresh object every render; `start` is the
+    // memoised callback inside it, so this stays stable between edits.
+  }, [still, startExport]);
+
+  /**
+   * The dialog, once a screenshot has something to show.
+   *
+   * It is not opened by the press any more, so this is what brings it back:
+   * the finished picture, with Copy, Show in Finder and the share link on it,
+   * or the one failure a user cannot otherwise see. A dismissed save sheet
+   * leaves `progress` null and opens nothing, which is right — choosing not to
+   * save is not an outcome worth a dialog.
+   */
+  const stillStage = still ? exportState.progress?.stage : undefined;
+
+  useEffect(() => {
+    if (stillStage === "done" || stillStage === "failed") setExportOpen(true);
+  }, [stillStage]);
 
   /**
    * The upgrade dialog getting out of the way.
@@ -1676,7 +1727,19 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
         // Nothing to correct if the dialog has already been closed — the press
         // this answers is over, and an upgrade prompt appearing by itself
         // seconds later belongs to no click at all.
-        if (known && !exportOpenNow.current) return;
+        //
+        // Except for a screenshot, which never opened one: the press exports
+        // straight away, so there is no dialog for this answer to correct and
+        // the test above would swallow every refusal. This check is the only
+        // gate there is — main does not re-check — so swallowing it would let
+        // an expired licence keep taking screenshots for as long as the
+        // cached answer stayed stale.
+        //
+        // The picture already written is the cost of starting optimistically,
+        // and it is one file rather than a standing permission: the prompt is
+        // up, and the next press meets a cache that now agrees with the
+        // server.
+        if (known && !exportOpenNow.current && !still) return;
 
         setExportOpen(false);
         setUpgradeOpen(true);
@@ -2092,7 +2155,11 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
           {/* No plate under this one. Export is the only thing on the bar that
               is already a surface — a filled button in the app's own green —
               and putting it on another would be a button on a button. */}
-          <ExportButton busy={checking} onOpen={openExport} />
+          {/* The spinner carries a screenshot's whole render now that no
+              dialog opens over it: the press draws the file and only then
+              asks where to put it, and `settled` can hold that for as long as
+              the text bitmaps take. */}
+          <ExportButton busy={checking || (still && exportState.running)} onOpen={openExport} />
         </>
       }
     >
@@ -2205,6 +2272,7 @@ export function Editor({ session, onBack }: { session: EditorSession; onBack: ()
                 // hovered one would miss the key and fall through to the stale
                 // set — the hover would cost the work and show nothing.
                 settings={drawnSettings}
+                span={drawnSpan}
                 enter={previewEnter}
                 media={media}
                 shot={shot}

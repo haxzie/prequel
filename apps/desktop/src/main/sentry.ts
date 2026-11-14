@@ -29,7 +29,7 @@ import { app } from "electron";
 import * as Sentry from "@sentry/electron/main";
 import { env } from "@prequel/env";
 
-import { redact, setErrorSink } from "./errors.js";
+import { redact, setErrorSink, setStateSink } from "./errors.js";
 import { installId } from "./install-id.js";
 
 /**
@@ -92,6 +92,17 @@ export function initSentry(): void {
   // SDK that is actually configured — a `captureException` before `init` is
   // dropped, and dropped silently.
   setErrorSink(captureError);
+
+  // And the same for what the app is in the middle of. This is what makes a
+  // native crash during an export recognisable as one: the crashes that land
+  // while the tag is set are filterable as a group, and the context beside it
+  // says at what frame and rate. Four users have hit that crash and the first
+  // question every time — how big was the frame — was the one thing the event
+  // did not carry.
+  setStateSink((what, shape) => {
+    Sentry.setTag(what, shape ? "yes" : "no");
+    Sentry.setContext(what, shape);
+  });
 }
 
 /**

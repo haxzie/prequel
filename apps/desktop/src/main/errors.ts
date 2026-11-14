@@ -72,6 +72,45 @@ export function setErrorSink(next: ErrorSink | null): void {
 }
 
 /**
+ * A place to note what the app is in the middle of, or nothing.
+ *
+ * Handed in for exactly the reason the sink above is, and the reason is worth
+ * repeating because the obvious thing to do is import `sentry.js` from
+ * `export.ts` and that breaks four test files: `@sentry/electron` reaches for
+ * the real `electron` the moment it loads, and `export.ts` is imported by the
+ * CLI commands, the quick export and the file-name tests, none of which have
+ * an Electron to give it.
+ */
+type StateSink = (what: string, shape: Record<string, string | number> | null) => void;
+
+let state: StateSink | null = null;
+
+export function setStateSink(next: StateSink | null): void {
+  state = next;
+}
+
+/**
+ * Says the app has started or finished something long enough to crash inside.
+ *
+ * For the failures that reach neither `reportError` nor a log: an export that
+ * runs the process out of memory is killed inside the addon's render thread by
+ * the allocator, so there is no exception, no terminal progress event and no
+ * line written anywhere. What arrives is a native crash whose frames are Metal
+ * and `partition_alloc`, and the only way we knew the last four of those
+ * happened during an export was reading the click breadcrumbs before them.
+ *
+ * Shapes and switches only, like everything else that goes out: a property
+ * here is never a file name.
+ */
+export function noteDoing(what: string, shape: Record<string, string | number> | null): void {
+  try {
+    state?.(what, shape);
+  } catch {
+    // Noting what we were doing must never be why a thing failed.
+  }
+}
+
+/**
  * Whether a report is already being built.
  *
  * `track` cannot throw, but everything around it can, and the handler this file

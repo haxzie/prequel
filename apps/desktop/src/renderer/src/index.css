@@ -88,6 +88,7 @@
   --color-editor-accent: var(--editor-accent);
   --color-editor-danger: var(--editor-danger);
   --color-editor-record: var(--editor-record);
+  --color-editor-warn: var(--editor-warn);
   --color-layout-plate: var(--layout-plate);
   --color-layout-screen: var(--layout-screen);
   --color-layout-person: var(--layout-person);
@@ -691,6 +692,19 @@ body {
      time either moved. Same hex today; two names because they answer two
      questions. */
   --editor-record: #e5484d;
+
+  /* A caution, which is not a refusal: the choice is allowed and is going to
+     cost. The panel's amber, restated here for the third time and for the
+     reason the two above are restated once each — `--dock-warn` is defined
+     inside `dock-theme`, so `text-dock-warn` under this scope resolves to
+     nothing and the line renders in the body colour, which is exactly the
+     muted grey it needs to be louder than.
+
+     Its own token rather than `--editor-danger` because the two say different
+     things. Red is "this will not work"; this is "this will work and take
+     hours". An export nobody warned about is the complaint; an export the app
+     coloured as broken would be the next one. */
+  --editor-warn: #f0b429;
 
   /* A layout thumbnail: the plate the arrangement is drawn on, and the two
      blocks standing in for the pictures.

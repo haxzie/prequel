@@ -2,6 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { AuthState, ExportFormat, ShareTranscript } from "../../../shared/contract";
 import { GIF_MAX_SHORT_EDGE, type OutputSettings } from "../../../shared/project";
+import {
+  allowedForGif,
+  cheaperThan,
+  huge,
+  offeredFor,
+  selectedIn,
+  QUALITIES,
+  shortEdgeOf,
+} from "./quality";
 import { cn } from "../lib/cn";
 import { formatFileSize } from "../lib/format";
 import { useAuth } from "../hooks/useAuth";
@@ -16,33 +25,6 @@ import { useShare, type ShareState } from "./useShare";
  * rather than a refusal arriving after Send.
  */
 const MAX_NOTE = 1_000;
-
-/** How the resolution choice reads. Values are the frame's shorter edge. */
-type Quality = "full" | "2160" | "1080" | "720" | "480";
-
-const QUALITIES: { value: Quality; label: string; title: string }[] = [
-  { value: "full", label: "Full", title: "The frame's own size" },
-  { value: "2160", label: "4K", title: "Scaled so the shorter edge is 2160px" },
-  { value: "1080", label: "1080p", title: "Scaled so the shorter edge is 1080px" },
-  { value: "720", label: "720p", title: "Scaled so the shorter edge is 720px" },
-  { value: "480", label: "480p", title: "Scaled so the shorter edge is 480px" },
-];
-
-/**
- * The frame above which an export is worth warning about, in megapixels.
- *
- * A shade over 4K, so a 3840×2160 export — which is a perfectly ordinary thing
- * to ask for and takes a few minutes — says nothing. A Retina capture of a
- * 16-inch display at Full is 6014×3074, which is 18.5: nine times a 1080p
- * frame, and every one of them is decoded, composed on the GPU and encoded in
- * turn. An hour of that is hours of exporting.
- *
- * The note is the whole fix for somebody who already has Full saved on a
- * project. `DEFAULT_SHORT_EDGE` caps new ones, but a stored setting is the
- * user's and is not quietly rewritten — so the dialog says what the number
- * costs instead.
- */
-const HUGE_MEGAPIXELS = 9;
 
 const FORMATS: { value: ExportFormat; label: string; title: string }[] = [
   { value: "h264", label: "MP4", title: "H.264 — plays everywhere" },
@@ -111,8 +93,25 @@ export function ExportDialog({
   onChange: (output: OutputSettings) => void;
   onClose: () => void;
 }) {
-  const { progress, running, frame, result } = state;
+  const { progress, running, frame, source, result } = state;
   const failed = progress?.stage === "failed";
+
+  // A GIF's options stop where the format stops being sensible, rather than
+  // being offered and then quietly overridden. A PNG has no such ceiling — it
+  // is written at whatever the frame is.
+  const sensible =
+    output.format === "gif"
+      ? QUALITIES.filter((quality) => allowedForGif(quality.value))
+      : QUALITIES;
+  // And then only the ones that would write something different — see
+  // `offeredFor`.
+  const offered = offeredFor(source, sensible);
+
+  const smaller = cheaperThan(source, frame, offered);
+  const warning =
+    output.format !== "gif" && huge(frame) && smaller
+      ? `Very large. ${smaller} exports far quicker.`
+      : undefined;
 
   const share = useShare(result, frame, output);
 
@@ -221,34 +220,35 @@ export function ExportDialog({
               </div>
             )}
 
-            <Choices
-              label={isStill ? "Image size" : "Video quality"}
-              value={qualityOf(output.shortEdge)}
-              disabled={running}
-              options={
-                // A GIF's options stop where the format stops being sensible,
-                // rather than being offered and then quietly overridden. A PNG
-                // has no such ceiling — it is written at whatever the frame is.
-                output.format === "gif" && !isStill
-                  ? QUALITIES.filter((quality) => allowedForGif(quality.value))
-                  : QUALITIES
-              }
-              // What the choices add up to, on the row that names the last of
-              // them: controls that each change one number are much easier to
-              // trust when the result is on screen beside them.
-              note={`${frame.width} × ${frame.height}${
-                isStill ? " · PNG" : output.format === "gif" ? " · silent" : ""
-              }`}
-              // And what that number costs, where it is large enough to be
-              // worth saying before the press rather than after it. A still is
-              // one frame and a GIF is already capped, so neither gets this.
-              warning={
-                !isStill && output.format !== "gif" && huge(frame)
-                  ? "Very large — this will take a long time to export"
-                  : undefined
-              }
-              onChange={(quality) => onChange({ ...output, shortEdge: shortEdgeOf(quality) })}
-            />
+            {/*
+              The third control off the sheet for a screenshot, and the last
+              one. A size is a trade between how long a render takes and how
+              much detail survives it, and a PNG has neither side of that: it
+              is one frame, it is written in the time it takes to draw, and it
+              is lossless at whatever size it is given. The only honest answer
+              is the composition's own frame — so it is taken rather than
+              asked for, and pressing Screenshot writes the file.
+            */}
+            {!isStill && (
+              <Choices
+                label="Video quality"
+                value={selectedIn(source, output.shortEdge, offered)}
+                disabled={running}
+                options={offered}
+                // What the choices add up to, on the row that names the last
+                // of them: controls that each change one number are much
+                // easier to trust when the result is on screen beside them.
+                note={`${frame.width} × ${frame.height}${
+                  output.format === "gif" ? " · silent" : ""
+                }`}
+                // And what that number costs, where it is large enough to be
+                // worth saying before the press rather than after it, naming
+                // the tile that would actually help. A GIF is already capped,
+                // so it never gets this.
+                warning={warning}
+                onChange={(quality) => onChange({ ...output, shortEdge: shortEdgeOf(quality) })}
+              />
+            )}
 
             {failed && (
               <p className="text-[11px] text-dock-record" title={progress?.error?.message}>
@@ -497,6 +497,11 @@ function Choices<T extends string>({
    * Under rather than in place of the note: the note is the number and this is
    * what it costs, and somebody checking the frame size should not have it
    * replaced by a sentence.
+   *
+   * Amber rather than the muted grey it started as. In grey it sat directly
+   * under a grey read-out of the frame size and read as a second line of fine
+   * print, which is the one thing a caution cannot be: the eye went from the
+   * tiles to the Export button straight past it.
    */
   warning?: string;
   value: T;
@@ -539,7 +544,7 @@ function Choices<T extends string>({
         ))}
       </div>
 
-      {warning && <p className="text-[11px] text-editor-muted">{warning}</p>}
+      {warning && <p className="text-[11px] text-editor-warn">{warning}</p>}
     </div>
   );
 }
@@ -996,30 +1001,3 @@ function shareLabel(
  */
 const BLANK_ICON =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
-
-/**
- * The listed option a stored size corresponds to.
- *
- * Matched against the list rather than formatted from the number: a project
- * written by a build that offered a different set of sizes would otherwise
- * select nothing at all, and a row of tiles with none of them outlined looks
- * broken rather than out of date.
- */
-function qualityOf(shortEdge: number | null): Quality {
-  if (shortEdge === null) return "full";
-  return QUALITIES.find((quality) => shortEdgeOf(quality.value) === shortEdge)?.value ?? "full";
-}
-
-function shortEdgeOf(quality: Quality): number | null {
-  return quality === "full" ? null : Number(quality);
-}
-
-/** Whether this frame is big enough to be worth a word before the press. */
-function huge(frame: { width: number; height: number }): boolean {
-  return (frame.width * frame.height) / 1_000_000 > HUGE_MEGAPIXELS;
-}
-
-function allowedForGif(quality: Quality): boolean {
-  const edge = shortEdgeOf(quality);
-  return edge !== null && edge <= GIF_MAX_SHORT_EDGE;
-}

@@ -71,7 +71,7 @@ vi.mock("electron", () => {
   };
 });
 
-const { createPanel, createWindow, pinZoom } = await import("./base.js");
+const { createPanel, createWindow, live, pinZoom } = await import("./base.js");
 
 beforeEach(() => {
   windows.length = 0;
@@ -139,4 +139,41 @@ suite("every window is pinned at 100% zoom", () => {
       expect(contents?.zoomLevel).toBe(0);
     });
   }
+});
+
+/**
+ * A destroyed window is not a missing one, and `?.` cannot tell them apart.
+ *
+ * `TypeError: Object has been destroyed` was the most-reported crash in the
+ * app — five users, arriving since September — and it came from one getter
+ * that asked a window it still held a reference to whether it was visible.
+ * Every method on a destroyed `BrowserWindow` throws, so the guard has to be
+ * `isDestroyed()` and cannot be `?.`.
+ */
+suite("live", () => {
+  it("hands back a window that is still there", () => {
+    const window = { isDestroyed: () => false };
+
+    expect(live(window as never)).toBe(window);
+  });
+
+  it("hands back nothing for one Electron has destroyed", () => {
+    // The case `?.` misses: the reference is non-null, and every call on it
+    // throws. A quit is what leaves one of these behind.
+    const window = {
+      isDestroyed: () => true,
+      isVisible: () => {
+        throw new TypeError("Object has been destroyed");
+      },
+    };
+
+    expect(live(window as never)).toBeNull();
+    // And the point of it: the caller's `?.` now short-circuits instead of
+    // reaching a getter that throws in main, where nothing catches it.
+    expect(() => live(window as never)?.isVisible()).not.toThrow();
+  });
+
+  it("hands back nothing for one that was never opened", () => {
+    expect(live(null)).toBeNull();
+  });
 });

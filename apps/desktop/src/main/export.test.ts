@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const SCRATCH = mkdtempSync(join(tmpdir(), "prequel-export-"));
 let chosen: string | null = null;
@@ -43,13 +43,38 @@ vi.mock("./exports.js", () => ({
 
 vi.mock("./analytics.js", () => ({ track: () => undefined }));
 vi.mock("./broadcast.js", () => ({ toEveryWindow: () => undefined }));
-vi.mock("./errors.js", () => ({ redact: (text: string) => text, reportError: () => undefined }));
+/** Everything the app said it was in the middle of, which is what pins the tag. */
+const doing: { what: string; shape: Record<string, string | number> | null }[] = [];
+
+vi.mock("./errors.js", () => ({
+  redact: (text: string) => text,
+  reportError: () => undefined,
+  noteDoing: (what: string, shape: Record<string, string | number> | null) => {
+    doing.push({ what, shape });
+  },
+}));
 vi.mock("./log.js", () => ({ log: () => undefined }));
 vi.mock("./media-protocol.js", () => ({ publishExport: () => "prequel-media://export/1" }));
-vi.mock("./recorder.js", () => ({ getRecorder: async () => ({}) }));
+/**
+ * A recorder whose export never finishes on its own.
+ *
+ * The progress callback is kept rather than called, so a test can sit in the
+ * middle of a render — which is the state the crash tag exists to describe and
+ * the only state where it is set.
+ */
+let progress: ((error: Error | null, update: unknown) => void) | null = null;
+
+vi.mock("./recorder.js", () => ({
+  getRecorder: async () => ({
+    startExport: (_request: unknown, onProgress: typeof progress) => {
+      progress = onProgress;
+    },
+    cancelExport: () => undefined,
+  }),
+}));
 vi.mock("./library.js", () => ({ libraryDir: () => SCRATCH }));
 
-const { saveStill, progressLine } = await import("./export.js");
+const { saveStill, startExport, progressLine } = await import("./export.js");
 
 describe("a finished export", () => {
   beforeEach(() => {
@@ -118,5 +143,63 @@ describe("a running export", () => {
 
     expect(line?.fps).toBe(0);
     expect(line?.left_min).toBeNull();
+  });
+});
+
+/**
+ * What a crash during an export carries with it.
+ *
+ * An export that runs the process out of memory is killed inside the addon's
+ * render thread: no exception, no terminal progress event, nothing written to
+ * the log. The event that arrives is a native crash in Metal and allocator
+ * frames, and four users have hit it — each time the first question was how
+ * big the frame was, and each time the event could not say. The tag is the
+ * answer, so it has to be set for exactly as long as a render is running.
+ */
+describe("an export in flight", () => {
+  const request = {
+    dir: "/takes/one",
+    output: join(SCRATCH, "out.mp4"),
+    width: 6014,
+    height: 3074,
+    fps: 30,
+    format: "h264" as const,
+    slices: [],
+    sound: null,
+    music: [],
+  };
+
+  beforeEach(() => {
+    doing.length = 0;
+    progress = null;
+  });
+
+  // `running` is module state and one export at a time is the whole point of
+  // it, so a test that leaves a render in flight makes the next one throw
+  // `ALREADY_EXPORTING` rather than fail on its own assertion.
+  afterEach(() => {
+    progress?.(null, { stage: "done", framesDone: 0, framesTotal: 0, outputPath: null });
+  });
+
+  it("says it is exporting, at what frame", async () => {
+    await startExport(request);
+
+    expect(doing).toEqual([
+      { what: "exporting", shape: { format: "h264", frame: "6014×3074", fps: 30, slices: 0 } },
+    ]);
+  });
+
+  it("stops saying so once the render is over", async () => {
+    await startExport(request);
+    progress?.(null, {
+      stage: "done",
+      framesDone: 10,
+      framesTotal: 10,
+      outputPath: null,
+    });
+
+    // Cleared, or a crash an hour later is filed against an export that
+    // finished — which is worse than no tag at all.
+    expect(doing.at(-1)).toEqual({ what: "exporting", shape: null });
   });
 });

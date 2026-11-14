@@ -80,7 +80,11 @@ function fakeWindow() {
 /** The routes windows were created on. */
 const loaded: string[] = [];
 
-vi.mock("./base.js", () => ({
+// Only the two that reach Electron are stood in for. `live` comes through as
+// itself, so what these tests exercise is the real guard rather than a copy of
+// it in a mock that could drift from the one shipping.
+vi.mock("./base.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./base.js")>()),
   createWindow: () => fakeWindow(),
   loadRoute: (_window: unknown, route: string) => {
     loaded.push(route);

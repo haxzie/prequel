@@ -41,7 +41,7 @@ import { MANIFEST_FILE_NAME, parseManifest } from "../../shared/manifest.js";
 import { flushProject } from "../editor-project.js";
 import { mirrorConsole } from "../log.js";
 import { recordingPath } from "../session.js";
-import { createWindow, loadRoute } from "./base.js";
+import { createWindow, live, loadRoute } from "./base.js";
 
 const MIN_WIDTH = 960;
 const MIN_HEIGHT = 640;
@@ -283,9 +283,9 @@ export class WorkspaceWindow {
     this.flush();
     this.current = null;
     this.section = section;
-    this.window?.setTitle(GRID_TITLE);
+    live(this.window)?.setTitle(GRID_TITLE);
     this.navigate("/workspace");
-    this.window?.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
+    live(this.window)?.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
   }
 
   /**
@@ -305,7 +305,7 @@ export class WorkspaceWindow {
 
     if (this.current !== dir) this.flush();
     this.current = dir;
-    this.window?.setTitle(basename(dir));
+    live(this.window)?.setTitle(basename(dir));
     return dir;
   }
 
@@ -320,7 +320,7 @@ export class WorkspaceWindow {
   leaveRecording(): void {
     this.flush();
     this.current = null;
-    this.window?.setTitle(GRID_TITLE);
+    live(this.window)?.setTitle(GRID_TITLE);
   }
 
   /**
@@ -350,7 +350,7 @@ export class WorkspaceWindow {
    * still main's, because the tray's Settings item has no other way in.
    */
   private push(): void {
-    this.window?.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
+    live(this.window)?.webContents.send(IPC_CHANNELS.workspaceSection, this.section);
   }
 
   /**
@@ -361,7 +361,7 @@ export class WorkspaceWindow {
    * clicks in the window navigates there and tells this side afterwards.
    */
   private navigate(route: string): void {
-    this.window?.webContents.send(IPC_CHANNELS.workspaceNavigate, route);
+    live(this.window)?.webContents.send(IPC_CHANNELS.workspaceNavigate, route);
   }
 
   /**

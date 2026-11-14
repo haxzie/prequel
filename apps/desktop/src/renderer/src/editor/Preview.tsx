@@ -17,7 +17,7 @@ import { tagFor, type CursorTags } from "./useCursorTags";
 import {
   arrivingAt,
   type BlobTrack,
-  buildRenderPlan,
+  buildRenderPlanWithin,
   cameraFollows,
   captionAt,
   type EnterTransition,
@@ -32,6 +32,7 @@ import {
   type RenderPlan,
   restingForDrawn,
   type Size,
+  type SourceSpan,
   type SourceSizes,
   watermarkRect,
   textBlockRect,
@@ -149,6 +150,7 @@ export function Preview({
   ready,
   frame,
   settings,
+  span,
   enter,
   media,
   shot,
@@ -189,6 +191,16 @@ export function Preview({
   ready: boolean;
   frame: Size;
   settings: SliceSettings;
+  /**
+   * The stretch of recording the clip under the playhead covers, or null.
+   *
+   * What the pointer track, the presses and the cues are cut down to before
+   * the plan is built — see `buildRenderPlanWithin`. Without it the plan
+   * re-smooths the whole recording's pointer every time one of its inputs
+   * changes: a second on a two-hour take, measured, paid on every drag of
+   * every slider with nothing moving while it runs.
+   */
+  span: SourceSpan | null;
   /**
    * The arrangement this slice is arriving from, or null on the first one.
    *
@@ -569,6 +581,7 @@ export function Preview({
   const latest = useRef({
     frame,
     settings,
+    span,
     enter,
     shot,
     images,
@@ -591,6 +604,7 @@ export function Preview({
   latest.current = {
     frame,
     settings,
+    span,
     enter,
     shot,
     images,
@@ -651,6 +665,7 @@ export function Preview({
       const {
         frame: size,
         settings: current,
+        span: clip,
         enter: arriving,
         shot: frozen,
         images: loaded,
@@ -747,13 +762,25 @@ export function Preview({
         drawnTags,
         blobTrack,
         hidden,
+        // Both ends, not the object: `spanOf` builds a fresh one per render,
+        // so comparing it by identity would miss the cache every frame and
+        // rebuild the plan sixty times a second — which is the cost this is
+        // here to avoid, arrived at from the other side.
+        //
+        // It has to be in the key at all because the narrowing below reads it.
+        // Two clips with the same settings would otherwise share a cached plan
+        // narrowed to the first one's stretch, and the second would draw with
+        // no pointer and no captions at all.
+        clip?.start,
+        clip?.end,
       ] as const;
 
       const previous = cached.current;
       const plan =
         previous && previous.key.length === key.length && previous.key.every((v, i) => v === key[i])
           ? previous.plan
-          : buildRenderPlan(
+          : buildRenderPlanWithin(
+              clip,
               size,
               sizes,
               current,
