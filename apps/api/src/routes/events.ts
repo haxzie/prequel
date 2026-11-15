@@ -18,10 +18,15 @@ import { z } from "zod";
 
 import { schema } from "@prequel/db";
 
+import { isMilestone, MAX_PER_BATCH, milestoneLine, type Milestone } from "../lib/milestones.ts";
 import { capture, environmentOf, toCaptureBatch } from "../lib/posthog.ts";
+import { accountById, configured, notify } from "../lib/slack.ts";
 import { optionalIdentity, type App, type AppContext } from "../middleware.ts";
 
 const events = new Hono<AppContext>();
+
+/** One of the two events worth a Slack line, narrowed off an incoming batch. */
+type Announcement = z.infer<typeof Event> & { event: Milestone };
 
 /**
  * The most events one request may carry.
@@ -95,9 +100,21 @@ events.post("/", async (c) => {
     }
   }
 
+  /**
+   * The events in this batch somebody should be told about within the minute.
+   *
+   * Read off the same batch rather than reported separately by the app, so the
+   * line in Slack and the point on the chart are the one event. See
+   * `lib/milestones.ts`.
+   */
+  const milestones = incoming.filter((event): event is Announcement => isMilestone(event.event));
+  const announcing = milestones.length > 0 && configured(c.env, "events");
+
   // Before any work. An unconfigured deployment should cost a JSON parse and
-  // nothing else — no identity resolution, no D1 read.
-  if (!c.env.POSTHOG_PROJECT_TOKEN) return c.json({ ok: true }, 202);
+  // nothing else — no identity resolution, no D1 read. Both halves are checked:
+  // a deployment with a webhook and no project token still announces, and one
+  // with neither does nothing at all.
+  if (!c.env.POSTHOG_PROJECT_TOKEN && !announcing) return c.json({ ok: true }, 202);
 
   const identity = await optionalIdentity(c);
 
@@ -106,24 +123,49 @@ events.post("/", async (c) => {
   // being something a request body can claim on another install's behalf.
   const installId = c.req.header("x-prequel-install")?.slice(0, 64) ?? null;
 
-  const batch = toCaptureBatch(
-    incoming,
-    context,
-    {
-      userId: identity?.userId ?? null,
-      teamId: identity?.teamId ?? null,
-      installId,
-      // Read only when there is a `$identify` to populate. On every other batch
-      // this would be a D1 query per recording for a value that changes once.
-      person:
-        identity && incoming.some((event) => event.event === "signed_in")
-          ? await person(c, identity.userId)
-          : null,
-    },
-    environmentOf(c.env),
-  );
+  if (c.env.POSTHOG_PROJECT_TOKEN) {
+    const batch = toCaptureBatch(
+      incoming,
+      context,
+      {
+        userId: identity?.userId ?? null,
+        teamId: identity?.teamId ?? null,
+        installId,
+        // Read only when there is a `$identify` to populate. On every other
+        // batch this would be a D1 query per recording for a value that changes
+        // once.
+        person:
+          identity && incoming.some((event) => event.event === "signed_in")
+            ? await person(c, identity.userId)
+            : null,
+      },
+      environmentOf(c.env),
+    );
 
-  capture(c.env, c.executionCtx, batch);
+    capture(c.env, c.executionCtx, batch);
+  }
+
+  /**
+   * Announced only for an account, and only once the account is known.
+   *
+   * An install that has never signed in is a number, and the file this posts
+   * through says why that is not what the feed is for: "a video was shared" is
+   * a number, "Ana shared a video" is something to act on. Those recordings are
+   * in PostHog, where the funnel they belong to is drawn. Dropping them here
+   * also keeps the read off the hot path of every app that is not signed in.
+   */
+  if (announcing && identity) {
+    const account = await accountById(c.get("db"), identity.userId, identity.teamId);
+
+    for (const event of milestones.slice(0, MAX_PER_BATCH)) {
+      notify(
+        c.env,
+        c.executionCtx,
+        "events",
+        milestoneLine(event.event, event.properties, account),
+      );
+    }
+  }
 
   return c.json({ ok: true }, 202);
 });

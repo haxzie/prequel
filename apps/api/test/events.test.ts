@@ -89,7 +89,12 @@ function interceptPostHog(status = 200) {
 
 async function post(
   events: unknown[],
-  { signedIn = false, install = INSTALL as string | null, posthog = TOKEN } = {},
+  {
+    signedIn = false,
+    install = INSTALL as string | null,
+    posthog = TOKEN,
+    slack = undefined as string | undefined,
+  } = {},
 ) {
   const ctx = createExecutionContext();
 
@@ -103,12 +108,35 @@ async function post(
       },
       body: JSON.stringify({ context: CONTEXT, events }),
     }),
-    { ...env, POSTHOG_PROJECT_TOKEN: posthog },
+    { ...env, POSTHOG_PROJECT_TOKEN: posthog, SLACK_EVENTS_WEBHOOK_URL: slack },
     ctx,
   );
 
   await waitOnExecutionContext(ctx);
   return response;
+}
+
+/** The webhook, and only it. Everything else this Worker calls goes through. */
+const WEBHOOK = "https://hooks.slack.test/events";
+
+function interceptSlack() {
+  const sent: string[] = [];
+  const original = globalThis.fetch;
+
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+
+    if (url === WEBHOOK) {
+      sent.push(String(JSON.parse(String(init?.body)).text));
+      return new Response("ok");
+    }
+
+    if (url.includes("i.posthog.com")) return new Response("ok");
+
+    return original(input as RequestInfo, init);
+  });
+
+  return sent;
 }
 
 describe("toCaptureBatch", () => {
@@ -301,5 +329,85 @@ describe("POST /v1/events", () => {
 
     expect(response.status).toBe(202);
     expect(sent).toHaveLength(0);
+  });
+});
+
+/**
+ * The Slack half of the same batch.
+ *
+ * Silent by construction in every direction — an unconfigured feed posts
+ * nothing, an anonymous install posts nothing, and a failed webhook changes no
+ * response — so each of those is asserted rather than left to be noticed as a
+ * channel that went quiet.
+ */
+describe("announcing a milestone", () => {
+  it("posts a line naming the person, their tier and the length", async () => {
+    const sent = interceptSlack();
+
+    await post([{ event: "recording_stopped", properties: { duration_ms: 134_000 } }], {
+      signedIn: true,
+      slack: WEBHOOK,
+    });
+
+    expect(sent).toEqual(["*Recording finished* — Ana (ana@example.com) · Free · 2m 14s"]);
+  });
+
+  it("says nothing about an install that has never signed in", async () => {
+    const sent = interceptSlack();
+
+    // There is no person to name, and the file this posts through exists to
+    // name one. The event is still in PostHog, where the funnel is drawn.
+    await post([{ event: "recording_stopped", properties: { duration_ms: 1_000 } }], {
+      slack: WEBHOOK,
+    });
+
+    expect(sent).toEqual([]);
+  });
+
+  it("says nothing about the events that are not milestones", async () => {
+    const sent = interceptSlack();
+
+    await post([{ event: "app_launched" }, { event: "export_started" }], {
+      signedIn: true,
+      slack: WEBHOOK,
+    });
+
+    expect(sent).toEqual([]);
+  });
+
+  it("caps what one batch can put in the channel", async () => {
+    const sent = interceptSlack();
+
+    await post(
+      Array.from({ length: 20 }, () => ({ event: "export_done", properties: { duration_ms: 1 } })),
+      { signedIn: true, slack: WEBHOOK },
+    );
+
+    expect(sent).toHaveLength(5);
+  });
+
+  it("still announces for a deployment with no PostHog token", async () => {
+    const sent = interceptSlack();
+
+    // The two are configured separately and one missing must not take the other
+    // down — the early return used to be a token check alone.
+    await post([{ event: "export_done", properties: { duration_ms: 8_400 } }], {
+      signedIn: true,
+      posthog: "",
+      slack: WEBHOOK,
+    });
+
+    expect(sent).toEqual(["*Export finished* — Ana (ana@example.com) · Free · 8s"]);
+  });
+
+  it("answers 202 when Slack refuses the message", async () => {
+    vi.stubGlobal("fetch", async () => new Response("gone", { status: 403 }));
+
+    const response = await post([{ event: "export_done", properties: { duration_ms: 1 } }], {
+      signedIn: true,
+      slack: WEBHOOK,
+    });
+
+    expect(response.status).toBe(202);
   });
 });

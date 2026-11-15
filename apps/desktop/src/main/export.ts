@@ -569,6 +569,12 @@ function finish(update: ExportProgress): void {
   track(`export_${update.stage}`, {
     took_ms: startedAt ? Date.now() - startedAt : null,
     frames: update.framesTotal,
+    // How long the file runs, not how long it took to write — the two were one
+    // property away from being read as each other. Added for the Slack line
+    // `apps/api/src/lib/milestones.ts` builds, which is the length somebody
+    // scanning the channel is actually after; `took_ms` beside it is the
+    // encoder's number and means nothing to them.
+    duration_ms: duration(update.framesTotal),
     // The message, and never the path inside it. A failure reason is a bug
     // report; a path is the user's home directory and the name of whatever they
     // recorded — and almost every message that names a file quotes its full

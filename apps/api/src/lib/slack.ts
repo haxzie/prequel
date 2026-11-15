@@ -28,6 +28,7 @@ import { schema } from "@prequel/db";
 
 import type { Env } from "../env.ts";
 import type { Database } from "../db.ts";
+import type { Plan } from "./entitlement.ts";
 
 /** How long to wait on Slack before giving up on a message. */
 const TIMEOUT_MS = 5_000;
@@ -54,6 +55,18 @@ export interface Person {
 function webhookFor(env: Env, feed: SlackFeed): string | undefined {
   const url = feed === "signups" ? env.SLACK_SIGNUPS_WEBHOOK_URL : env.SLACK_EVENTS_WEBHOOK_URL;
   return url && url.length > 0 ? url : undefined;
+}
+
+/**
+ * Whether this deployment has somewhere to post, asked before the work.
+ *
+ * `notify` already returns without a request on an unconfigured feed, which is
+ * enough everywhere a message costs nothing to assemble. `/v1/events` is the
+ * exception: the line it posts needs a D1 read first, and a fork with no
+ * workspace must not pay for that read on every recording anybody makes.
+ */
+export function configured(env: Env, feed: SlackFeed): boolean {
+  return webhookFor(env, feed) !== undefined;
 }
 
 /**
@@ -85,6 +98,45 @@ export async function personById(db: Database, userId: string): Promise<Person |
   const [row] = await db
     .select({ name: schema.user.name, email: schema.user.email })
     .from(schema.user)
+    .where(eq(schema.user.id, userId))
+    .limit(1);
+
+  return row ?? null;
+}
+
+/** A person and what their team pays us, which is how a message is read. */
+export interface Account extends Person {
+  /** Null when they have signed in and not yet made a team. */
+  plan: Plan | null;
+}
+
+/**
+ * The account and its tier, in one read.
+ *
+ * A join rather than `personById` beside a plan lookup: this runs on a
+ * recording and an export, which are the two most frequent things in the
+ * product, and two round trips to D1 for three columns is the sort of cost that
+ * only shows up as latency on every batch the app flushes.
+ *
+ * `organization.plan` rather than `resolvePlan` — the column is what
+ * `applyPlan` keeps current, and it is already the answer every upload check
+ * reads. Recomputing it from the subscription and purchase tables here would be
+ * two more reads for the same word.
+ */
+export async function accountById(
+  db: Database,
+  userId: string,
+  teamId: string | null,
+): Promise<Account | null> {
+  if (!teamId) {
+    const person = await personById(db, userId);
+    return person ? { ...person, plan: null } : null;
+  }
+
+  const [row] = await db
+    .select({ name: schema.user.name, email: schema.user.email, plan: schema.organization.plan })
+    .from(schema.user)
+    .innerJoin(schema.organization, eq(schema.organization.id, teamId))
     .where(eq(schema.user.id, userId))
     .limit(1);
 
