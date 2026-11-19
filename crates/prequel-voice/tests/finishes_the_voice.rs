@@ -163,7 +163,9 @@ fn a_studio_pass_lands_on_the_target_loudness() {
 
     let mut meter = Meter::new(SAMPLE_RATE);
     meter.push(&after);
-    let measured = meter.integrated().expect("the finished track is measurable");
+    let measured = meter
+        .integrated()
+        .expect("the finished track is measurable");
 
     assert!(
         (measured - TARGET_LUFS).abs() < 1.0,

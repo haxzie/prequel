@@ -5212,7 +5212,9 @@ function AudioPanel({
               done nothing. */}
           {denoise.error && !denoise.working && (
             <p className="text-[11px] text-editor-danger">
-              {micDenoise === "studio" ? "Couldn’t finish the voice." : "Couldn’t reduce the noise."}{" "}
+              {micDenoise === "studio"
+                ? "Couldn’t finish the voice."
+                : "Couldn’t reduce the noise."}{" "}
               Playing the microphone as recorded.
             </p>
           )}

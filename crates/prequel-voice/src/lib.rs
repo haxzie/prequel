@@ -153,12 +153,12 @@ pub fn enhance(input: &Path, output: &Path, enhancement: Enhancement) -> Result<
     })?;
 
     let written = drive(input, &mut stages, |samples| {
-        writer.append_pcm(samples, SAMPLE_RATE).map_err(|e| {
-            Error::Write {
+        writer
+            .append_pcm(samples, SAMPLE_RATE)
+            .map_err(|e| Error::Write {
                 path: output.display().to_string(),
                 reason: e.to_string(),
-            }
-        })
+            })
     })?;
 
     writer.finish().map_err(|e| Error::Write {

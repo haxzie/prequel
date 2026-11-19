@@ -154,12 +154,7 @@ impl Studio {
             sample_rate,
             |unit| {
                 unit.unit_mut()
-                    .set_prop(
-                        NUMBER_OF_BANDS,
-                        au::Scope::GLOBAL,
-                        au::Element(0),
-                        &BANDS,
-                    )
+                    .set_prop(NUMBER_OF_BANDS, au::Scope::GLOBAL, au::Element(0), &BANDS)
                     .map_err(crate::Error::unit)
             },
             |effect| {
