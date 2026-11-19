@@ -717,16 +717,23 @@ export interface BackgroundSettings {
 }
 
 /**
- * How hard the microphone is cleaned up before anything hears it.
+ * How much work is done on the microphone before anything hears it.
  *
- * Three states rather than a slider, because each one is a file: the pass runs
+ * Four states rather than a slider, because each one is a file: the pass runs
  * offline and writes a track beside the recording — see `crates/prequel-voice`
  * for why it cannot be a filter on the way out — so a value that moved
  * continuously would be a render per pixel dragged.
+ *
+ * One axis, not two. `light` and `strong` are how hard the room is taken out;
+ * `studio` is that plus the tone, the sibilance, the level and a broadcast
+ * loudness. A separate switch for the finishing would be the more literal
+ * shape and the wrong one: there is no reason to want the shaping without the
+ * cleaning, and two leaves would have to answer what their four combinations
+ * mean.
  */
-export type MicDenoise = "off" | "light" | "strong";
+export type MicDenoise = "off" | "light" | "strong" | "studio";
 
-export const MIC_DENOISE: MicDenoise[] = ["off", "light", "strong"];
+export const MIC_DENOISE: MicDenoise[] = ["off", "light", "strong", "studio"];
 
 export interface AudioSettings {
   micVolume: number;

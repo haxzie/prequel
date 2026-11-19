@@ -380,10 +380,15 @@ export interface Recorder {
    * milliseconds of audio it wrote.
    *
    * A promise rather than `startExport`'s thread-and-callback: it renders
-   * about ninety times faster than real time, so the longest take anyone has
-   * is seconds of work with no fraction worth drawing.
+   * about ninety times faster than real time — half that at `Studio`, which
+   * passes over the track twice — so the longest take anyone has is seconds of
+   * work with no fraction worth drawing.
    */
-  enhanceVoice(input: string, output: string, level: "Light" | "Strong"): Promise<number>;
+  enhanceVoice(
+    input: string,
+    output: string,
+    level: "Light" | "Strong" | "Studio",
+  ): Promise<number>;
 
   /**
    * The loudest sample in each 50 ms of an audio file, raw 0–1 amplitude.

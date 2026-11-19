@@ -48,7 +48,7 @@ import type {
 } from "../shared/contract.js";
 import { IPC_CHANNELS, type DockView } from "../shared/contract.js";
 import type { ScenePreset } from "../shared/scene-presets.js";
-import type { Project } from "../shared/project.js";
+import type { MicDenoise, Project } from "../shared/project.js";
 import type { WallpaperCatalogue } from "../shared/wallpapers.js";
 
 /**
@@ -360,7 +360,7 @@ const api = {
     cleanMic: (
       dir: string,
       file: string,
-      level: "light" | "strong",
+      level: Exclude<MicDenoise, "off">,
     ): Promise<IpcResult<CleanTrack>> =>
       ipcRenderer.invoke(IPC_CHANNELS.editorCleanMic, dir, file, level),
 

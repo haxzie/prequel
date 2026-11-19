@@ -142,6 +142,7 @@ fn a_dry_pass_leaves_the_track_where_it_was() {
         Enhancement {
             amount: 0.0,
             quality: Quality::Strong,
+            studio: false,
         },
     )
     .expect("enhance the track");

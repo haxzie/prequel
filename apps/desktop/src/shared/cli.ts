@@ -807,6 +807,6 @@ export const PROJECT_SCHEMA: readonly ProjectFieldNote[] = [
     path: "micDenoise",
     type: "string",
     values: MIC_DENOISE,
-    summary: "Apple's sound isolation over the microphone track",
+    summary: "How much work is done on the microphone track, up to a studio finish",
   },
 ];

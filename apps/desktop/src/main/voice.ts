@@ -34,6 +34,20 @@ import { insideRecordings } from "./session.js";
 const running = new Map<string, Promise<void>>();
 
 /**
+ * The setting's name, as the addon's enum spells it.
+ *
+ * A record rather than a ternary, so adding a level to `MicDenoise` is a type
+ * error here rather than a silent fall-through to the last branch — which is
+ * how a new level would quietly get the previous one's pass and a filename
+ * claiming otherwise.
+ */
+const LEVELS: Record<Exclude<MicDenoise, "off">, "Light" | "Strong" | "Studio"> = {
+  light: "Light",
+  strong: "Strong",
+  studio: "Studio",
+};
+
+/**
  * The name a cleaned track takes beside its source.
  *
  * `2/mic.m4a` cleans to `2/mic.clean-light.m4a` — beside the take it belongs
@@ -90,11 +104,7 @@ export async function cleanMic(
   const pass = (async () => {
     const started = Date.now();
     const recorder = await getRecorder();
-    const written = await recorder.enhanceVoice(
-      source,
-      output,
-      level === "light" ? "Light" : "Strong",
-    );
+    const written = await recorder.enhanceVoice(source, output, LEVELS[level]);
     log(
       "info",
       `cleaned ${file} at ${level}: ${String(Math.round(written / 1000))}s of audio in ` +

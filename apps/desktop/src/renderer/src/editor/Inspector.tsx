@@ -5174,7 +5174,7 @@ function AudioPanel({
           {/* No override dot and no `field(…)`: this one is the recording's,
               not the clip's — see `Project.micDenoise`. Changing it writes a
               file, which is why it is three buttons and not a fader. */}
-          <Field icon={<WandIcon />} label="Noise reduction">
+          <Field icon={<WandIcon />} label="Voice">
             <Segmented<MicDenoise>
               value={micDenoise}
               disabled={audio.micMuted}
@@ -5190,17 +5190,30 @@ function AudioPanel({
                   label: "Strong",
                   title: "Remove everything that is not your voice",
                 },
+                {
+                  value: "studio",
+                  label: "Studio",
+                  title: "Clean it up, then even out the level and warm up the tone",
+                },
               ]}
               onChange={onMicDenoise}
             />
           </Field>
-          {denoise.working && <p className="text-[11px] text-editor-muted">Reducing the noise…</p>}
+          {/* Named after the setting rather than one line for all of them:
+              "Reducing the noise" under Studio describes a quarter of what is
+              running, and it is the slowest of the four. */}
+          {denoise.working && (
+            <p className="text-[11px] text-editor-muted">
+              {micDenoise === "studio" ? "Finishing the voice…" : "Reducing the noise…"}
+            </p>
+          )}
           {/* Said plainly, because the fallback is the microphone exactly as it
               was recorded — which is indistinguishable from the control having
               done nothing. */}
           {denoise.error && !denoise.working && (
             <p className="text-[11px] text-editor-danger">
-              Couldn’t reduce the noise. Playing the microphone as recorded.
+              {micDenoise === "studio" ? "Couldn’t finish the voice." : "Couldn’t reduce the noise."}{" "}
+              Playing the microphone as recorded.
             </p>
           )}
         </Section>

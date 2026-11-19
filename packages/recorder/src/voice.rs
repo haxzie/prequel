@@ -2,9 +2,10 @@
 //!
 //! An `AsyncTask` rather than the thread-and-callback shape `export.rs` and
 //! `transcribe.rs` use. Those run for minutes and have a fraction worth
-//! reporting; this renders around ninety times faster than real time and has
-//! nothing to say in the middle, so a promise that resolves with the file is
-//! the whole interface.
+//! reporting; this renders around ninety times faster than real time — half
+//! that at `Studio`, which runs the chain twice to measure the loudness before
+//! it corrects it — and has nothing to say in the middle, so a promise that
+//! resolves with the file is the whole interface.
 
 use std::path::PathBuf;
 
@@ -13,9 +14,9 @@ use napi_derive::napi;
 
 use prequel_voice::{Enhancement, Quality};
 
-/// How hard to clean, as the editor's control names it.
+/// How much work to do on the voice, as the editor's control names it.
 ///
-/// Two settings rather than a slider: the pass writes a file, so every value
+/// Three settings rather than a slider: the pass writes a file, so every value
 /// is a render, and the unit's own useful range is two points rather than a
 /// continuum — see `prequel_voice::Quality`.
 #[napi(string_enum)]
@@ -26,6 +27,8 @@ pub enum DenoiseLevel {
     Light,
     /// Everything that is not a voice, gone.
     Strong,
+    /// Cleaned, then shaped and levelled into a finished track.
+    Studio,
 }
 
 impl DenoiseLevel {
@@ -38,14 +41,28 @@ impl DenoiseLevel {
             Self::Light if prequel_voice::natural_is_available() => Enhancement {
                 amount: 1.0,
                 quality: Quality::Natural,
+                studio: false,
             },
             Self::Light => Enhancement {
                 amount: 0.5,
                 quality: Quality::Strong,
+                studio: false,
             },
             Self::Strong => Enhancement {
                 amount: 1.0,
                 quality: Quality::Strong,
+                studio: false,
+            },
+            // `Natural` rather than `Strong`, which is the surprise here and
+            // not a slip. `Strong` thins the voice slightly to remove the last
+            // of the room, and the shaping that follows then has less of a
+            // voice to work with — the presence lift pulls up what the model
+            // left rather than what was recorded. The gentler model and a full
+            // chain beat the harder model and the same chain.
+            Self::Studio => Enhancement {
+                amount: 1.0,
+                quality: Quality::Natural,
+                studio: true,
             },
         }
     }

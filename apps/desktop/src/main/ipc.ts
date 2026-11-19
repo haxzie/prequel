@@ -33,7 +33,7 @@ import type {
   ExportRequest,
   ShareRequest,
 } from "../shared/contract.js";
-import type { Project } from "../shared/project.js";
+import type { MicDenoise, Project } from "../shared/project.js";
 import { authState, beginSignIn, openDashboard, signOut } from "./auth.js";
 import type { CaptureFlow } from "./capture-flow.js";
 import { chooseVideo, importVideo } from "./import-video.js";
@@ -304,7 +304,7 @@ export function registerIpc({
   // why the project does not live in main.
   ipcMain.handle(
     IPC_CHANNELS.editorCleanMic,
-    (_event, dir: string, file: string, level: "light" | "strong") =>
+    (_event, dir: string, file: string, level: Exclude<MicDenoise, "off">) =>
       attempt(() => cleanMic(dir, file, level)),
   );
 
