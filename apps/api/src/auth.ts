@@ -152,6 +152,7 @@ export function createAuth(env: Env) {
             subject: "Your Prequel sign-in link",
             text: `Sign in to Prequel: ${url}\n\nThis link expires in 10 minutes.`,
             html: emailShell(
+              env.APP_URL,
               "Sign in to Prequel",
               "<p>Use the button below to sign in. The link expires in 10 minutes and works once.</p>",
               { href: url, label: "Sign in" },

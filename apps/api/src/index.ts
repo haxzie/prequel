@@ -151,7 +151,9 @@ app.notFound((c) => c.json({ message: "No such endpoint." }, 404));
  */
 export default {
   fetch: app.fetch,
-  scheduled: (_event: ScheduledController, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(scheduled(env));
+  scheduled: (event: ScheduledController, env: Env, ctx: ExecutionContext) => {
+    // The expression is what says which of the two schedules fired. Both are
+    // declared in `wrangler.jsonc` and both arrive here.
+    ctx.waitUntil(scheduled(env, event.cron));
   },
 };

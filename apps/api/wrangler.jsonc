@@ -101,11 +101,21 @@
     "DODOPAYMENT_LIFETIME_PRODUCT_ID": "",
   },
 
-  // Hourly, and for two things no webhook announces: a grace window closing
-  // after a failed renewal, and rows left disagreeing when a team was created
-  // but its membership was not. `wrangler dev` does not fire this on its own —
-  // trigger one with `curl <dev-host>/cdn-cgi/local/scheduled`.
-  "triggers": { "crons": ["0 * * * *"] },
+  // Two schedules, both handled by `scheduled` in src/cron.ts, which tells them
+  // apart by the expression it is handed.
+  //
+  // Hourly, for the things no webhook announces: a grace window closing after a
+  // failed renewal, and rows left disagreeing when a team was created but its
+  // membership was not.
+  //
+  // Daily at 09:00 UTC, for the trial-expiry email. The hour is for the people
+  // reading it rather than for us — late morning in Europe, early enough that
+  // the Americas get it before the day starts. `DAILY_CRON` in src/cron.ts has
+  // to match this string exactly or every run takes the hourly branch.
+  //
+  // `wrangler dev` fires neither on its own — trigger one with
+  // `curl '<dev-host>/cdn-cgi/local/scheduled?cron=0+9+*+*+*'`.
+  "triggers": { "crons": ["0 * * * *", "0 9 * * *"] },
 
   "env": {
     "production": {
@@ -135,7 +145,7 @@
         "DODOPAYMENT_PRO_PRODUCT_ID": "pdt_0Nm8ghwArUbYAOJtwSiSZ",
         "DODOPAYMENT_LIFETIME_PRODUCT_ID": "pdt_0Nmfhrp46FPz4Y0C8ExmS",
       },
-      "triggers": { "crons": ["0 * * * *"] },
+      "triggers": { "crons": ["0 * * * *", "0 9 * * *"] },
       "routes": [{ "pattern": "api.prequel.sh", "custom_domain": true }],
       "d1_databases": [
         {

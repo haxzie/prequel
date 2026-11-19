@@ -66,6 +66,15 @@ export default defineConfig({
           // fails inside `atob` and every signature test errors instead of
           // failing.
           DODOPAYMENT_WEBHOOK_SECRET: "whsec_dGVzdC13ZWJob29rLXNlY3JldA==",
+          // SES, with nothing real behind it. `sendEmail` calls `required()`
+          // for both before it signs anything, so a suite that reaches the
+          // trial email would throw from a missing secret rather than fail on
+          // what it meant to test. The region and sender come from
+          // `wrangler.jsonc` and are already real; these two are what make the
+          // signature computable and are never seen by AWS, because every
+          // suite that gets this far stubs `fetch`.
+          SES_ACCESS_KEY_ID: "test",
+          SES_SECRET_ACCESS_KEY: "test",
         },
       },
     }),

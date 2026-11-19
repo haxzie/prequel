@@ -1,8 +1,8 @@
 /**
- * The hourly sweep, for the two states nothing announces.
+ * The scheduled work, for the states nothing announces.
  *
  * Everything else about billing is driven by a webhook, because Dodo says what
- * it does. These two have nobody to say it:
+ * it does. These have nobody to say it:
  *
  * - A grace window running out. A failed renewal fires `subscription.on_hold`
  *   once, and the moment seven days later when that team stops being Pro is not
@@ -12,6 +12,14 @@
  *   membership — so a failure between them leaves one or the other stranded.
  *   Neither is an event; both are just rows that disagree, so they are swept
  *   for from both ends.
+ * - A trial running out, which is the same shape as the grace window and even
+ *   less announced: it is `user.createdAt` plus seven days and nothing else.
+ *
+ * **Two schedules, one handler.** The repairs run hourly because they are
+ * fixing rows somebody is waiting on. The trial email runs once a day at an
+ * hour chosen for the people reading it, and a sweep that writes to somebody
+ * is not something to run twenty-four times a day — see `lib/trial-email.ts`
+ * for why one run missing is survivable and two sends are not.
  */
 import { and, eq, isNotNull, lt, ne, notExists, notLike, sql } from "drizzle-orm";
 
@@ -24,9 +32,31 @@ import { applyPlan } from "./lib/entitlement.ts";
 import { syncPlan } from "./lib/mails.ts";
 import { id } from "./lib/ids.ts";
 import { ensureTeam } from "./lib/teams.ts";
+import { sweepLapsedTrials } from "./lib/trial-email.ts";
 
-export async function scheduled(env: Env): Promise<void> {
+/**
+ * The schedule that runs the once-a-day work.
+ *
+ * Matched against the `cron` the platform hands the handler, so the two
+ * schedules in `wrangler.jsonc` stay one list rather than becoming two
+ * entrypoints. Changing the expression there without changing it here makes
+ * every run take the hourly branch — which is quiet rather than loud, so it is
+ * asserted in `test/trial-email.test.ts`.
+ */
+export const DAILY_CRON = "0 9 * * *";
+
+/**
+ * `cron` is the expression that fired, as the platform reports it. Absent
+ * means the hourly work: the tests call this directly, and a sweep that
+ * repairs broken rows is the safe default for anything unrecognised.
+ */
+export async function scheduled(env: Env, cron?: string): Promise<void> {
   const db = database(env);
+
+  if (cron === DAILY_CRON) {
+    await step("trial email", () => sweepLapsedTrials(env, db));
+    return;
+  }
 
   // Each step on its own. They are independent sweeps, and one throwing — a D1
   // hiccup, one bad row — would otherwise skip every step after it, hour after

@@ -403,6 +403,30 @@ export const webhookEvent = sqliteTable("webhook_event", {
 });
 
 /**
+ * Accounts the trial-expiry email has already been sent to.
+ *
+ * A table rather than a column on `user`, for the same reason
+ * `emailPreference` is one: `user` is Better Auth's, and a column added there
+ * has to be repeated in the plugin's `additionalFields` or the adapter drops
+ * it on write.
+ *
+ * **The primary key is the check**, as it is on `webhookEvent`: the insert
+ * either succeeds, which means this account has not been written to, or it
+ * violates the constraint, which means it has. There is no read-then-write
+ * window for a retried cron to slip through.
+ *
+ * This existing is what lets the sweep look further back than one day. The
+ * trial it is about ended at a fixed moment, so a run that was missed can be
+ * caught up by a later one without anybody being written to twice.
+ */
+export const trialEmail = sqliteTable("trial_email", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  sentAt: createdAt(),
+});
+
+/**
  * A comment somebody left under a shared recording.
  *
  * Written only by a signed-in account. A share link is unlisted-public to
@@ -493,5 +517,6 @@ export type DeviceToken = typeof deviceToken.$inferSelect;
 export type Subscription = typeof subscription.$inferSelect;
 export type Purchase = typeof purchase.$inferSelect;
 export type EmailPreference = typeof emailPreference.$inferSelect;
+export type TrialEmail = typeof trialEmail.$inferSelect;
 export type VideoComment = typeof videoComment.$inferSelect;
 export type VideoReaction = typeof videoReaction.$inferSelect;
