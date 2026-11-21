@@ -46,6 +46,38 @@ import { SITE } from "@/lib/site";
  */
 export const dynamic = "force-static";
 
+/**
+ * The one-line summary, and deliberately not `SITE.description`.
+ *
+ * They read the same and are answering different questions. The site
+ * description is a search snippet and the footer's standfirst: Google cuts it
+ * near 155 characters and a visitor reads it in passing, so it names the thing
+ * and stops. This is read whole, by something deciding whether Prequel is the
+ * answer to "screen recorder for Mac with automatic zoom" or "how do I add
+ * click sounds to a screen recording" — so it is worth naming the features in
+ * the words somebody would actually ask for, and it has no length to fit.
+ *
+ * Sharing one string would mean one of the two jobs being done badly, and the
+ * one that would quietly lose is the search snippet, because nothing on the
+ * page shows it being truncated.
+ *
+ * The jobs come before the features, because that is the half of it somebody
+ * asks for by name: "record a product demo", "make a software tutorial". The
+ * four named here are the highest-intent of the sixteen in
+ * `content/use-cases.ts`, and `/usecases` carries the rest.
+ *
+ * No superlative, per `COPY.md`: "best screen recorder" is a claim with
+ * nothing in it and would survive being moved to a rival's page, which is the
+ * test that rules it out. The jobs and the features are the argument instead,
+ * and every one of them is real.
+ */
+const SUMMARY =
+  "Prequel is a screen recorder for macOS, for product demos, software " +
+  "tutorials, onboarding and course videos. It turns a plain screen recording " +
+  "into a beautiful one: automatic zooms on every click, custom camera frames " +
+  "and screen layouts, restyled cursors, click and key sounds, captions " +
+  "transcribed on your Mac, and export up to 4K.";
+
 /** One `- [name](url): notes` line. */
 function link(base: string, path: string, name: string, notes: string): string {
   return `- [${name}](${base}${path}): ${notes}`;
@@ -62,7 +94,7 @@ export async function GET(): Promise<Response> {
 
   const body = `# ${SITE.name}
 
-> ${SITE.description}
+> ${SUMMARY}
 
 Prequel is a native Mac app, not a web recorder. It records, edits and exports on your own machine — nothing is uploaded to make a video, and it works with no network at all. ${SITE.platform}.
 
