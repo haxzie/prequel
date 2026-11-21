@@ -7,6 +7,21 @@
  * looks for exactly that shape, so a stray `###` in the prose costs the file
  * its meaning rather than merely its tidiness.
  *
+ * **"When to use Prequel?" is the one section that does not follow that
+ * shape, and it is deliberate.** The spec says an H2 holds nothing but a list
+ * of links; this one holds plain bullets, because the question it answers is
+ * what somebody is here to make, and the answer should be readable without
+ * opening fourteen pages to find it. A strict parser reading H2s as link lists
+ * finds none here and takes nothing from the section, which is the cost; every
+ * one of those pages is still reachable from `/usecases` in `Product`.
+ *
+ * Written out rather than generated from `content/use-cases.ts`, which the
+ * docs list below is not. Each line here gathers several of those pages and
+ * names what Prequel does for them, and no mechanical join of an eyebrow and a
+ * heading produces that. The price is that a use case added to the site does
+ * not appear here on its own, so this is a list to revisit when the site gains
+ * a kind of video rather than a sixteenth page of one it already has.
+ *
  * **Generated rather than a file in `public/`**, for the reason `robots.ts` and
  * `sitemap.ts` are generated beside it: the links come from `SITE`, `NAV` and
  * the docs' own front matter, so a page renamed in one place does not leave a
@@ -34,7 +49,7 @@
 import { env } from "@prequel/env";
 
 import { outline } from "@/content/docs";
-import { PRICE_LIFETIME, PRICE_MONTHLY, TRIAL_DAYS } from "@/lib/pricing";
+import { PRICE_LIFETIME, PRICE_MONTHLY } from "@/lib/pricing";
 import { SITE } from "@/lib/site";
 
 /**
@@ -98,11 +113,33 @@ export async function GET(): Promise<Response> {
 
 Prequel is a native Mac app, not a web recorder. It records, edits and exports on your own machine — nothing is uploaded to make a video, and it works with no network at all. ${SITE.platform}.
 
-The first pass is the point: Prequel watches where you clicked and typed while recording, and uses that to place the zooms, frame the camera and put a background behind the screen. Everything it decides is then editable on a timeline. Captions are transcribed on the Mac, and exports go to MP4, HEVC or GIF at up to 4K.
+## When to use Prequel?
 
-Sharing is a separate, optional step taken after a file exists: an export can be published as a private link.
+- Product demos, SaaS walkthroughs, sales and launch videos, where the zooms land on every click and the cursor is smoothed and motion blurred rather than left to dart about
+- Courses, training, onboarding and software tutorials that want captions transcribed on your own Mac, a teleprompter sitting under the camera that never appears in the recording, and a look saved once and applied to the next lesson
+- Vertical and square cuts of a take recorded in widescreen: changing the frame preset moves the layout, the camera and the background with it, because every position is stored as a fraction of the frame rather than in pixels
+- Recording the whole display, a single window or a region you draw, with your camera, your microphone and Mac system audio kept on separate tracks you can still balance after the take
+- Bug reports, code walkthroughs and changelog clips, where a zoom is what makes small text readable, and the typing and clicking get sounds placed on the keystrokes you can see
+- Working offline from end to end: recording, editing and exporting all happen on your Mac with no network at all, and publishing a share link is a separate step taken after the file already exists
 
-Pricing is one number rather than a free tier with the useful part removed — ${PRICE_MONTHLY} a month or ${PRICE_LIFETIME} once, after a ${String(TRIAL_DAYS)}-day trial that holds the whole app, with no watermark and no length limit.
+## Key features
+
+- Recording: the whole display, a single window that stays followed as it moves, or a region you draw. Captured at your display's native resolution. The camera is a track of its own, and the microphone and Mac system audio are two more, so nothing is baked together. A countdown, a global shortcut, and pause and resume mid take. Prequel's own windows are kept out of the picture
+- Automatic zooms: the clicks and keystrokes in the take are clustered into shots, and a zoom is placed on each. Level, speed and an ease you drag as a curve. Every generated zoom is editable and any of them can be deleted, and you can add zoom and pan again anywhere. A zoom can follow the cursor, hold on a region, or sit on a field, and it can carry a perspective tilt and a focus falloff. A loupe you can read through
+- Layout: seventeen layouts and a custom one, including cutout layouts that keep only the person and lean the recording a few degrees away from them. One layout for the whole video or one per clip, and either picture can be dragged anywhere in the frame
+- Camera: six shapes, sized and mirrored, and five plates to dress the bubble in: a polaroid, a Mac window, a stamp, an old television and a Macintosh. The background can be cut away with a person matte so only you are left. The camera shrinks itself while a zoom is in
+- Background and frame: a solid, a gradient, your own wallpaper, a catalogue, or a pattern drawn at whatever size the frame needs, with padding, corner radius, border and shadow around the recording, and a blur behind it. Your own logo anywhere in the frame
+- Cursor and clicks: pointer styles drawn rather than filmed, so they stay sharp through a zoom, including an arm that reaches in to point and one carrying a name tag. Smoothed while it travels, motion blurred as it moves, and hidden when it goes still or while you type. Thirteen click marks, from a ripple or a sonar ring to confetti, ink or chalk
+- Keys you pressed: the shortcuts used during the take, drawn back as rows of key caps, with a panel to style them
+- Looks: seventeen filters applied per clip, from a warm or faded grade to halftone, CRT, VHS, film, Riso, Game Boy and C64. A look worth keeping is saved as a scene preset and applied to the next recording
+- Captions and text: transcribed on your Mac with nothing uploaded, then edited as text, where editing the transcript edits the video. Six looks, a colour for the word being spoken, placed top, middle or bottom in any of nine faces your Mac already has. Text overlays on top of that, with templates and motion of their own
+- Annotations: arrows, lines, pen, rectangles, ellipses, highlights and masks drawn over the recording
+- Sound: a gain for the microphone and one for the Mac, a clean-up pass over the microphone, and a music bed under the whole edit. Typing and clicks can be given sounds placed on the keystrokes you can see, with a switch to pick: Tactile, Linear, Clicky, Thock, the soft tock of a phone keyboard, or off, and Soft or Mechanical for the mouse
+- Timeline: a filmstrip and a waveform under every clip, with split, trim, delete and duplicate, and clip speed up to ten times. Cutting words from the transcript leaves one clip with the footage stepped over rather than a timeline in pieces
+- Teleprompter: a script in the notch under the camera that follows your voice as you read, and never appears in the recording
+- Export: MP4, HEVC or GIF, 4K by default, encoded in hardware on your own Mac. Any frame you like, landscape, vertical, square, or a size you type, and what comes out is the frame you approved
+- Sharing: an export can be published as a link to a watch page that needs no account, never indexed by search engines, unfurling where you paste it, with a library of everything you have shared
+- Command line: the same recording, editing and rendering driven from a terminal, or by an agent
 
 ## Product
 
@@ -111,18 +148,6 @@ ${at("/features", "Features", "Every feature in detail, grouped by what it does 
 ${at("/pricing", "Pricing", `${PRICE_MONTHLY} a month or ${PRICE_LIFETIME} once, what each includes, and the FAQ`)}
 ${at("/usecases", "Use cases", "Product demos, tutorials, onboarding, courses and shorts")}
 ${at("/compare", "Compare", "Prequel against the other Mac screen recorders, feature by feature")}
-
-## What it records and makes
-
-${at("/features#record", "Recording", "Screen, window or region, with camera, microphone and system audio on their own tracks")}
-${at("/features#zoom", "Zooms", "Placed for you from your clicks and typing, and editable afterwards")}
-${at("/features#layout", "Layouts", "Fourteen arrangements of the screen and the camera, five camera shapes")}
-${at("/features#background", "Backgrounds", "A wallpaper, gradient or solid behind the recording, with padding, radius and shadow")}
-${at("/features#cursor", "Cursor", "A drawn pointer: fifteen styles, smoothed, motion-blurred, hidden while idle")}
-${at("/features#captions", "Captions", "Transcribed on your Mac and edited as text")}
-${at("/features#timeline", "Timeline", "The cut, the sound and the look on one timeline")}
-${at("/features#export", "Export", "MP4, HEVC or GIF, up to 4K, rendered on your own Mac")}
-${at("/features#sharing", "Sharing", "Publish a finished export as a private link")}
 
 ## Documentation
 
