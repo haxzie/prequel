@@ -1,5 +1,13 @@
 # @prequel/desktop
 
+## 0.15.0
+
+### Minor Changes
+
+- 117ad92: A new Studio setting for the microphone that evens out your level, warms up the tone and makes you as loud as a podcast.
+
+  <!-- highlight: Give your voice a studio finish -->
+
 ## 0.14.1
 
 ### Patch Changes
