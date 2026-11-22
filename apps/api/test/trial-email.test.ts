@@ -290,7 +290,13 @@ describe("the schedule", () => {
    * anywhere says so, because the hourly work succeeds.
    */
   it("sends on the daily cron and not on the hourly one", async () => {
-    await account("ana");
+    // Seeded against the real clock rather than `NOW`, and that is the whole
+    // care this test needs. `scheduled` has no `now` to inject — it is the
+    // production entry point — so it sweeps at `Date.now()`. A sign-up fixed
+    // to `NOW` sits inside the catch-up window for three days and outside it
+    // on the fourth, which fails on a date rather than on a change. It did:
+    // green on the 19th, red on the 22nd, with nothing in between to blame.
+    await account("ana", { signedUpAt: Math.floor((Date.now() - 7.5 * DAY) / 1000) });
 
     await scheduled(env, "0 * * * *");
     expect(sent).toEqual([]);
