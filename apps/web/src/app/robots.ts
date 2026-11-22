@@ -35,7 +35,17 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       { userAgent: "*", allow: "/", disallow: "/api/" },
-      { userAgent: ENGINE_CRAWLERS, allow: "/", disallow: "/api/" },
+      {
+        userAgent: ENGINE_CRAWLERS,
+        allow: "/",
+        disallow: "/api/",
+        // Not a standard directive, and nothing is documented as reading it.
+        // It sits in this group rather than beside `Sitemap:` because that is
+        // where the type allows a non-standard one, and because the hint is
+        // for these agents rather than for every crawler there is. A parser
+        // that does not know it ignores the line.
+        other: { LLMs: `${base}/llms.txt` },
+      },
     ],
     sitemap: `${base}/sitemap.xml`,
   };

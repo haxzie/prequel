@@ -104,6 +104,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       className={`${sans.variable} ${mono.variable} ${serif.variable} ${script.variable}`}
     >
       <body>
+        {/*
+          The llms.txt discovery relation, which the spec defines and the
+          Metadata API has no slot for: `alternates.types` emits
+          `rel="alternate"` and `metadata.other` emits `<meta>`, and this has
+          to be a `<link rel="describedby">`. Rendered in the tree instead,
+          which React hoists into the head.
+
+          What it buys is unproven, the same as the file it points at: no
+          crawler has published that it reads either. It is one tag, and it is
+          the declared way a page says which file describes it, so it is here
+          rather than left to a guessed path.
+        */}
+        <link rel="describedby" href={`${env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/llms.txt`} />
         {children}
         {/*
           Google Analytics, in production only.
