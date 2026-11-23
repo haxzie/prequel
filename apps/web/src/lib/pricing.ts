@@ -29,12 +29,14 @@
  *  indefinitely on every licence sold at this price, and it is not something a
  *  page is allowed to invent on the way to a better conversion rate. The FAQ
  *  answers honestly if somebody asks whether it will rise, and it has risen
- *  once already. To run another sale, set `PRICE_LIFETIME_WAS` to the list
- *  price and `PRICE_LIFETIME` to the sale one: the strike, the badge and the
- *  ticker above the nav all come back from those two, and clearing
- *  `PRICE_LIFETIME_WAS` again takes all three away. The words in `SALE_LABEL`
- *  and in the ticker still say "launch day" and are wrong for a second sale —
- *  the numbers follow the constants, the sentence does not.
+ *  once already. To cut the price for a sale, set `PRICE_LIFETIME_WAS` to the
+ *  list price and `PRICE_LIFETIME` to the sale one: the strike beside the price
+ *  and the badge on the card both come back from those two, and clearing
+ *  `PRICE_LIFETIME_WAS` again takes both away. The words in `SALE_LABEL` still
+ *  say "launch day" and are wrong for a second sale — the numbers follow the
+ *  constants, the sentence does not. A sale run on a coupon leaves both prices
+ *  alone and sets `SALE` instead, which is the only thing the strip above the
+ *  nav reads.
  *
  *  **The price Dodo charges is the price, and it is not in this repo.** The
  *  amount lives on the lifetime product in Dodo's dashboard; nothing in
@@ -74,6 +76,27 @@ export const PRICE_LIFETIME_WAS: string | undefined = undefined;
  * Read only while `PRICE_LIFETIME_WAS` is set, so it says nothing today.
  */
 export const SALE_LABEL = "Launch day sale · 20% off";
+
+/**
+ * The sale strip above the nav, or `undefined` the rest of the time. Clear it
+ * and the strip goes; nothing else on the site reads it.
+ *
+ * A coupon rather than a cut price, which is why `PRICE_LIFETIME_WAS` stays
+ * clear beside it: the cards still charge the list price and Dodo takes the
+ * percentage off at checkout, so there is no second number for this file to
+ * name. Working one out here and striking it would advertise a price nothing
+ * in the repo charges — the discount lives on the coupon in Dodo's dashboard,
+ * and this file only repeats the word people type.
+ *
+ * Nothing expires it. The end date is set on the coupon in Dodo, and a strip
+ * still offering the code afterwards sends people to a checkout that rejects
+ * it, so take this down on the day the coupon does.
+ */
+export const SALE: { headline: string; offer: string; code: string } | undefined = {
+  headline: "Black Friday",
+  offer: "30% off the lifetime licence",
+  code: "PREQUEL30",
+};
 export const TRIAL_DAYS = 7;
 
 /**
