@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/copy-ffmpeg.mjs && next dev --port 3000",
-    "build": "node scripts/copy-ffmpeg.mjs && next build",
+    "dev": "node --experimental-strip-types scripts/check-ffmpeg-core.ts && next dev --port 3000",
+    "build": "node --experimental-strip-types scripts/check-ffmpeg-core.ts && next build",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
+    "cf:build": "NEXT_PUBLIC_APP_URL=https://prequel.sh NEXT_PUBLIC_API_URL=https://api.prequel.sh opennextjs-cloudflare build",
+    "cf:preview": "NEXT_PUBLIC_APP_URL=https://prequel.sh NEXT_PUBLIC_API_URL=https://api.prequel.sh opennextjs-cloudflare preview",
+    "cf:deploy": "NEXT_PUBLIC_APP_URL=https://prequel.sh NEXT_PUBLIC_API_URL=https://api.prequel.sh opennextjs-cloudflare deploy",
+    "ffmpeg": "node --experimental-strip-types scripts/upload-ffmpeg.ts",
     "clean": "rm -rf .next .turbo node_modules *.tsbuildinfo"
   },
   "dependencies": {
-    "@ffmpeg/core": "^0.12.10",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@mdx-js/loader": "^3.1.1",
@@ -32,14 +35,18 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@ffmpeg/core": "^0.12.10",
+    "@opennextjs/cloudflare": "^1.20.18",
     "@prequel/typescript-config": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/mdx": "^2.0.14",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "aws4fetch": "^1.0.20",
     "react-grab": "^0.2.0",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "wrangler": "^4.125.0"
   }
 }

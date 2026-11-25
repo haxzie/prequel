@@ -46,6 +46,18 @@ packages/recorder/index.d.ts
 # the repo root, which is the one committed copy of these pictures.
 apps/desktop/resources/backgrounds/
 
-# ffmpeg.wasm, copied out of node_modules by apps/web/scripts/copy-ffmpeg.mjs.
-# 32MB of WebAssembly pinned by package.json; see the note in that script.
+# The Cloudflare build: `next build` output transformed into a Worker and its
+# assets by `@opennextjs/cloudflare`. Produced by `pnpm --filter @prequel/web
+# cf:build`, holds a copy of every prerendered page, and is rebuilt on every
+# deploy — there is nothing in it that is not derived from the tree.
+apps/web/.open-next/
+
+# Wrangler's local account cache, written beside whichever command ran.
+.cloudflare/
+
+# Left over from when the converter's ffmpeg core was copied into the site.
+# It is fetched from R2 now — see apps/web/src/lib/free-tools/ffmpeg-core.ts —
+# and nothing writes this any more. Still ignored because a tree that built the
+# old way still holds 30MB of WebAssembly here, and a binary committed by
+# accident is in git for ever.
 apps/web/public/ffmpeg/

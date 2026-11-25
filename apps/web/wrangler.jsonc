@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "prequel-web",
+
+  // Built by `@opennextjs/cloudflare`, not by hand: `pnpm cf:build` runs
+  // `next build` and then transforms its output into these two paths. Neither
+  // exists in the tree, so a deploy without a build in front of it fails here
+  // rather than shipping something stale.
+  "main": ".open-next/worker.js",
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+  },
+
+  // The apex, as a custom domain — the same shape `apps/api` uses for
+  // `api.prequel.sh`. Cloudflare owns the record once this is deployed: it
+  // replaces the `A` that pointed at Vercel with a proxied record aimed at this
+  // Worker, and issues the certificate.
+  //
+  // At the top level rather than under an `env.production` as the API's is.
+  // That block exists there because the Worker's `vars` differ between dev and
+  // production; this one has no vars at all — every `NEXT_PUBLIC_` value is
+  // inlined into the bundle at build time by the `cf:*` scripts — so a second
+  // environment would be ceremony around an identical config.
+  "routes": [{ "pattern": "prequel.sh", "custom_domain": true }],
+
+  "compatibility_date": "2026-11-25",
+
+  // Not optional. Next's Node.js runtime is what the adapter targets — the
+  // alternative, the Edge runtime, does not support the features this app uses
+  // — and the server bundle reaches for `node:` builtins the moment it renders.
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": { "enabled": true },
+}

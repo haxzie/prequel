@@ -14,14 +14,15 @@
  * ffmpeg would do natively. The copy says so, and the tool is still the fastest
  * path for the thing people actually come for, which is a two minute clip.
  *
- * Served from `/ffmpeg` on our own origin rather than from unpkg: a third party
- * in the request path is exactly the thing the tool claims not to have. See
- * `scripts/copy-ffmpeg.mjs` for how it gets there.
+ * The core comes from R2 on our own domain rather than from unpkg — a third
+ * party in the request path is exactly the thing the tool claims not to have.
+ * See `lib/free-tools/ffmpeg-core.ts` for why it is not in `public/` any more.
  */
 
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile } from "@ffmpeg/util";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
+import { FFMPEG_CORE_BASE, FFMPEG_CORE_FILES } from "@/lib/free-tools/ffmpeg-core";
 import { conversionArgs, FORMATS, type FormatId } from "@/lib/free-tools/formats";
 
 /**
@@ -45,10 +46,31 @@ export async function loadFFmpeg(onProgress?: (progress: Progress) => void): Pro
     // and reports nothing, so the page shows an indeterminate state for it
     // rather than a lying percentage.
     onProgress?.({ stage: "loading", ratio: 0 });
-    await ffmpeg.load({
-      coreURL: "/ffmpeg/ffmpeg-core.js",
-      wasmURL: "/ffmpeg/ffmpeg-core.wasm",
-    });
+
+    // Both files are fetched here and handed over as `blob:` URLs rather than
+    // passed as the R2 addresses they are, which is what the cross-origin move
+    // actually costs. The worker reaches the core with `importScripts`, and a
+    // classic worker importing a script from another origin is refused whatever
+    // CORS says; a blob URL is same-origin by construction, so this is the
+    // documented way to host the core anywhere but the page's own origin.
+    //
+    // The wasm goes the same way for a duller reason: once `coreURL` is a blob,
+    // the core has no base URL left to resolve a relative sibling against, and
+    // Emscripten would look for it under `blob:`.
+    //
+    // The two blobs stay resident for the life of the tab — @ffmpeg/util never
+    // revokes them — so this holds ~30MB that the previous same-origin fetch did
+    // not. Deliberate, and the smaller problem: the alternative is a converter
+    // that cannot be hosted off a 25MiB-per-asset platform at all.
+    const blobURL = (file: keyof typeof FFMPEG_CORE_FILES) =>
+      toBlobURL(`${FFMPEG_CORE_BASE}/${file}`, FFMPEG_CORE_FILES[file]);
+
+    const [coreURL, wasmURL] = await Promise.all([
+      blobURL("ffmpeg-core.js"),
+      blobURL("ffmpeg-core.wasm"),
+    ]);
+
+    await ffmpeg.load({ coreURL, wasmURL });
     return ffmpeg;
   })();
 
