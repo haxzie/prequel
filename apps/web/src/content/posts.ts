@@ -73,6 +73,188 @@ export type Post = {
 /** Newest first. `posts` below is sorted, so order here is not load-bearing. */
 const ENTRIES: Post[] = [
   {
+    slug: "screen-recording-shortcuts-mac",
+    title: "Screen recording keyboard shortcuts on a Mac",
+    excerpt:
+      "Shift Command 5 opens a toolbar, not a recording. Here is every chord macOS binds for capture, why there is no pause and no camera key, and the shortcuts Prequel adds for the take and the cut.",
+    date: "2026-11-25",
+    tag: "Guide",
+    readingMinutes: 5,
+    releases: ["0.3.0"],
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "What is the shortcut to screen record on a Mac?",
+        answer:
+          "Shift + Command + 5. It opens the Screenshot toolbar along the bottom of the screen, where you choose a display or a region and press Record. No macOS shortcut starts a recording on its own: the chord opens the toolbar and the recording begins on the click after that. Prequel takes the same chord over and starts and stops a take with it directly.",
+      },
+      {
+        question: "How do I stop a screen recording on a Mac with the keyboard?",
+        answer:
+          "Command + Control + Esc stops a recording started from the Shift + Command + 5 toolbar, and the stop button in the menu bar does the same. QuickTime Player has no global shortcut to start a recording and is stopped the same two ways.",
+      },
+      {
+        question: "Can you pause a screen recording on a Mac?",
+        answer:
+          "Not with the built-in recorders. A macOS screen recording runs from Record until you stop it, so an interruption is in the file. Prequel binds Shift + Command + P to pause and resume from any application, and the pause does not appear in the recording.",
+      },
+      {
+        question: "Can I change the screen recording shortcut?",
+        answer:
+          "Not for the macOS Screenshot toolbar, whose chords are fixed. In Prequel the start and stop chord is set in Settings under Recording, and Prequel switches the system binding for Shift + Command + 5 off while it holds that chord and switches it back on when you rebind it or quit the app.",
+      },
+      {
+        question: "What is the keyboard shortcut to cut a screen recording?",
+        answer:
+          "In Prequel, S splits the clip at the playhead and Backspace deletes whatever is selected, so S, S, click, Backspace takes a section out of the middle. C picks up the slice tool to cut any bar where you click it, V goes back to selecting, Z adds a zoom, and Command + Z undoes any of it. QuickTime has no split and binds nothing for cutting.",
+      },
+      {
+        question: "Does Shift Command 5 work for screenshots too?",
+        answer:
+          "Yes. The Shift + Command + 5 toolbar takes stills as well as recordings, and it is where the Options menu lives for the save location and the timer. Shift + Command + 3 captures every display straight away and Shift + Command + 4 drags a region out, with Space switching the crosshair to window capture.",
+      },
+    ],
+  },
+  {
+    slug: "how-to-screenshot-on-mac",
+    title: "How to take a screenshot on a Mac",
+    excerpt:
+      "The four chords, the Space key nobody is taught, where they save and how to rebind them. Then what Markup cannot do: no redaction, no background, nothing reusable, and what to use when a screenshot is going in front of a customer.",
+    date: "2026-11-25",
+    tag: "Guide",
+    readingMinutes: 9,
+    releases: ["0.11.0", "0.1.0"],
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "How do you take a screenshot on a Mac?",
+        answer:
+          "Shift + Command + 3 saves a picture of every display straight away. Shift + Command + 4 gives you a crosshair to drag a region out with. Press Space after Shift + Command + 4 and the crosshair becomes a camera that captures the window under it with its shadow. All three write a PNG to the Desktop by default.",
+      },
+      {
+        question: "How do I screenshot one window on a Mac?",
+        answer:
+          "Press Shift + Command + 4, then press Space. The crosshair becomes a camera; move it over the window and click. The capture includes the window's shadow and nothing of what is behind it. Holding Option as you click leaves the shadow out.",
+      },
+      {
+        question: "How do I copy a screenshot to the clipboard instead of saving a file?",
+        answer:
+          "Hold Control along with any of the capture chords. Control + Shift + Command + 4 drags out a region and puts it on the clipboard with no file written, which is the fastest path into Slack or a document.",
+      },
+      {
+        question: "Where do Mac screenshots save, and how do I change it?",
+        answer:
+          "The Desktop, named with the date and time. To change it, press Shift + Command + 5 and open Options: the top of that menu offers Desktop, Documents, Clipboard, Mail, Messages, Preview or any folder you pick. The same menu holds the timer and the switch for the floating thumbnail.",
+      },
+      {
+        question: "How do I change the screenshot shortcut on a Mac?",
+        answer:
+          "Open the Apple menu, choose System Settings, click Keyboard in the sidebar, scroll to Keyboard Shortcuts and click Screenshots. Five rows are listed, one per capture, and double-clicking the chord beside a row lets you press a new one. Untick a row to switch that capture off and free the chord. The Space key for window capture and the Option key for dropping the shadow are built into the capture and are not rebindable.",
+      },
+      {
+        question: "Can I make Shift Command 4 copy to the clipboard by default?",
+        answer:
+          'Yes, by swapping two rows in System Settings under Keyboard, Keyboard Shortcuts, Screenshots. Put Shift + Command + 4 on "Copy picture of selected area to the clipboard" and give "Save picture of selected area as a file" the longer Control + Shift + Command + 4. macOS ships them the other way round, which is why the Desktop fills with captures you only ever pasted somewhere. macOS allows two rows to share a chord and the lower one then stops working, so set the second row first.',
+      },
+      {
+        question: "Can I blur or redact part of a Mac screenshot?",
+        answer:
+          "Not with Markup, which has pens, shapes and text but no blur and no pixelate. Covering something with a semi-transparent shape leaves the pixels in the file. Prequel's screenshot editor drags a mask over a region and pixelates or blurs it into the canvas the PNG is drawn from, so the original pixels are not in the exported file.",
+      },
+      {
+        question: "How do I put a background behind a Mac screenshot?",
+        answer:
+          "macOS has no way to do it: Markup has no canvas larger than the picture. Prequel opens a screenshot in the same editor a recording gets, with a background behind it, padding around it, a border, a shadow and a lean of up to 45 degrees, then exports it as a PNG.",
+      },
+    ],
+  },
+  {
+    slug: "record-screen-and-face-mac",
+    title: "How to record your screen and your face on a Mac",
+    excerpt:
+      "QuickTime does one or the other, never both. Here are the routes people take, and the one difference that decides whether you re-record: whether your face is burned in at capture or kept as its own track and framed afterwards.",
+    date: "2026-11-25",
+    tag: "Guide",
+    readingMinutes: 7,
+    releases: ["0.12.0", "0.0.19"],
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "Can you record your screen and your face at the same time on a Mac?",
+        answer:
+          "Not with anything Apple ships. QuickTime Player records a screen capture or a camera movie, never both into one file, and the Shift + Command + 5 toolbar has no camera option. Apps that do it include Prequel, Screen Studio, Loom, Cap and OBS Studio.",
+      },
+      {
+        question: "How do I put my webcam in the corner of a screen recording?",
+        answer:
+          "In Prequel, turn the camera on in the dock and record. The editor opens with the camera already framed over the screen, and the Camera panel sets its shape, size and position, with a nine-point map and free dragging in the composition. Because the camera is a separate track, moving it after the take costs nothing.",
+      },
+      {
+        question: "Is the camera bubble part of the recording?",
+        answer:
+          "In Prequel, no. The round preview on screen is there so you can check your framing and your light before you record. The camera is captured as its own track at full size, and where it sits in the finished video is decided afterwards in the editor.",
+      },
+      {
+        question: "Can I remove the background behind me on camera?",
+        answer:
+          "Yes, in Prequel: choose Remove background as the camera's shape and you are cut out of your surroundings and left over the composition's background. It works from a person matte recorded alongside the camera, so it is offered on takes made since the matte existed.",
+      },
+      {
+        question: "How do I stop my camera covering the thing I am demonstrating?",
+        answer:
+          "Put it in the corner your interface does not use, keep it to about a quarter of the frame height, and turn on Shrink on zoom in Prequel's Camera panel with a Size while zoomed. The camera then gets smaller for the length of every zoom, so it covers less of whatever you zoomed in to show.",
+      },
+      {
+        question: "Can I fix how I look on camera after recording?",
+        answer:
+          "In Prequel, open Effects in the Camera panel. Six colour looks apply to the camera alone, with Warm for a cold room or a window behind you, Cool for a warm bulb overhead and Film for lifted blacks. Hover a look to see it on your own face, and set Amount for how much of it you want. The screen beside you is untouched.",
+      },
+    ],
+  },
+  {
+    slug: "trim-screen-recording-mac",
+    title: "How to trim a screen recording on a Mac",
+    excerpt:
+      "QuickTime trims the ends and nothing else, and its documented route to a middle cut is two exports and a join in iMovie. Here is the difference between trimming and cropping, and the three keys that take a section out.",
+    date: "2026-11-25",
+    tag: "Guide",
+    readingMinutes: 7,
+    releases: ["0.13.0", "0.0.30"],
+    pillar: "screen-recording-on-mac",
+    faq: [
+      {
+        question: "How do I trim a screen recording on a Mac?",
+        answer:
+          "Open it in QuickTime Player and press Command + T, or choose Edit then Trim. A yellow bar appears with a handle at each end; drag them in and press Trim. That cuts the front and the back only. QuickTime has no split, so it cannot remove a section from the middle.",
+      },
+      {
+        question: "How do I cut a section out of the middle of a screen recording?",
+        answer:
+          "QuickTime's documented route is to trim one copy to the first half, trim another to the second, and join them in iMovie. In Prequel it is three keys: press S where the cut starts, S again where it ends, then click the part between them and press Backspace. The clips either side close up and Command + Z puts it back.",
+      },
+      {
+        question: "What is the difference between trimming and cropping a screen recording?",
+        answer:
+          "Trimming is time: it shortens the recording. Cropping is picture: it cuts the edges off the frame. QuickTime can trim but cannot crop at all, and iMovie's Crop to Fill scales the region you keep up to fill the frame, which costs resolution. The better answer is to drag out a region before you record so the capture is native resolution.",
+      },
+      {
+        question: "Can I cut a screen recording by editing the transcript?",
+        answer:
+          "In Prequel, yes. A take with a microphone track is transcribed on your Mac when the editor opens. Select a run of words in the transcript and the footage they were spoken over lights up on the timeline; press Backspace and that stretch leaves the video. On a six-minute recording it is reading instead of scrubbing.",
+      },
+      {
+        question: "How do I change a screen recording from 16:9 to vertical?",
+        answer:
+          "In Prequel the frame is a menu with Landscape 16:9, Landscape 4K, Vertical 9:16, Square 1:1, Portrait 4:5 and the social sizes. Everything about the look is stored as a fraction of the frame's shorter edge, so switching late re-composes the layout and keeps the proportions, giving you a vertical video with its edges intact.",
+      },
+      {
+        question: "Can I trim a screen recording without losing quality?",
+        answer:
+          "A trim at the ends in QuickTime saves without re-encoding, so nothing is lost. Any cut that needs a re-export, including iMovie's join, re-encodes the whole file. Prequel renders once from the original on your Mac's media engine, so one export at up to 4K carries the cuts and the quality of the source.",
+      },
+    ],
+  },
+  {
     slug: "loom-price-increase",
     title: "Loom's price increase: what a team actually pays in 2026",
     excerpt:

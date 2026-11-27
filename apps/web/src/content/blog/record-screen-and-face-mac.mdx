@@ -1,0 +1,183 @@
+## How do you record your screen and your face at the same time?
+
+Not with anything Apple ships. QuickTime Player records a screen capture or a
+camera movie, never both into one file, and the ⇧⌘5 toolbar records a display
+or a region with no camera option at all.
+
+So every route is a third-party one, and they differ in one thing that matters
+more than any feature: whether your face is burned into the picture while you
+record, or kept as its own track and placed afterwards.
+
+That difference is the whole of why people re-record. You finish a six-minute
+walkthrough, watch it back, and your head is sitting over the button you spend
+the last minute pressing. If the camera was composited at capture there is
+nothing to do about it. If it was a separate track, you drag it.
+
+This is what macOS gives you, the three routes people take, and how to get your
+face on a screen recording without deciding where it goes before you start.
+
+## What macOS gives you
+
+QuickTime Player does both, one at a time. **File**, then **New Screen
+Recording** captures the screen and a microphone. **File**, then **New Movie
+Recording** captures the camera. Run both and you have two files and no way to
+put one on the other.
+
+The ⇧⌘5 toolbar is the same capture with a toolbar on it. Display, region,
+microphone. No camera.
+
+[The complete guide to screen recording on Mac →](/blog/screen-recording-on-mac)
+
+## The three routes people take
+
+**Build a scene in OBS.** Add a display capture, add a video capture device,
+drag the camera where you want it, crop it to a circle with a mask. It is free
+and it works and it composites at capture, so the position you set before you
+start is the position you have forever. Budget half an hour the first time.
+
+**Use a recorder that puts a bubble in the corner.** Loom and most browser
+recorders do this. One click, your face is in the bottom left, and the file is
+finished when you stop. Fast, and the bubble is where the bubble is.
+
+**Record the camera separately and composite it yourself.** Two files into
+Final Cut or DaVinci Resolve, line up the audio, mask the camera, keyframe it
+out of the way when it covers something. Total control and an afternoon.
+
+**Record the camera as its own track and frame it in the editor.** The capture
+keeps the camera in a separate file, and where it sits, how big it is and what
+shape it is are decisions you make with the finished take in front of you.
+
+That last one is what Prequel does.
+
+## How to record your screen and your face in Prequel
+
+[Prequel](/) records the screen, the camera, the microphone and your Mac's own
+sound as four separate tracks, then opens an editor on the take with the camera
+already framed.
+
+### 1. Turn the camera on in the dock
+
+The dock has a camera control: the device's icon, a status dot and a chevron.
+Press it and pick your camera from the menu of everything the Mac can see. A
+green dot means it is on and available, grey means off, and red means it is
+switched on but something else is holding it.
+
+Prequel remembers the device by name, so the same camera is chosen after a
+restart even when macOS hands it a new identifier.
+
+### 2. Check your framing in the bubble, then forget it
+
+A round preview appears on screen so you can see yourself before you record.
+Drag it anywhere; it stays where you put it.
+
+The bubble is not in the recording. It is there so you can check you are in
+frame and lit, and the camera is captured as its own track at full size no
+matter where the bubble sat. Nothing you do to it affects the file.
+
+### 3. Record, and let the first pass frame you
+
+Press ⇧⌘5. When you stop, the editor opens with the zooms already placed where
+you clicked and typed, your camera framed over the screen, a background behind
+both and the audio balanced.
+
+The default layout is **Padded screen, camera over**: the screen inset with
+padding around it, your camera over the corner. Seven more are a click away,
+including the camera standing over one end, the two side by side, and a split
+down the middle.
+
+### 4. Change the shape and the size
+
+Open **Camera** in the inspector down the right-hand side.
+
+![The Camera panel: shape, roundness, size, zoom, a position map and mirror](/docs/inspector-camera.webp)
+
+**Shape** is Circle, Squircle, Rounded, Wide or Portrait, plus **Remove
+background**, which cuts you out of your surroundings and leaves you over the
+composition's background. It works from a person matte recorded alongside the
+camera, so it is offered on takes made since the matte existed.
+
+**Size** is the camera's height as a share of the frame. **Zoom** enlarges the
+picture inside its shape, which crops the edges and is how you sit closer
+without moving your chair. **Roundness** rounds the corners of the rectangular
+shapes.
+
+### 5. Move it off the thing it is covering
+
+The map at the bottom of the panel puts the camera at one of nine positions.
+Dragging it in the composition gives you any position at all, and holding
+Option while you drag pans the picture inside its box.
+
+**Mirror** flips the camera so it matches what you see in a mirror. It is on by
+default, because that is how most people expect to look.
+
+### 6. Make it shrink when the screen zooms
+
+Turn on **Shrink on zoom** and set **Size while zoomed**. Your camera gets
+smaller for the length of every zoom, so it covers less of the thing you zoomed
+in to look at.
+
+This is the setting worth turning on before anything else. A camera that is the
+right size over a full screen is too big over a zoomed one, and this is the one
+control that fixes it everywhere at once.
+
+### 7. Fix the room you recorded in
+
+Open **Effects** in the Camera panel. Six colour looks, applied to the camera
+alone: Warm for a cold room or a window behind you, Cool for a warm bulb
+overhead, Film for lifted blacks and warm highlights.
+
+Hover a look to see it on your own face before you choose it, and set
+**Amount** for how much of it you want. The screen beside you is untouched,
+which is right: it is lit by a display, not by the light you were sitting in.
+
+**Edge** puts a glass rim on the camera, with **Depth** for how thick it is and
+**Fringing** for how much colour it splits at the edge.
+
+## Four things that make a talking head work over a screen
+
+**Put yourself where your interface is not.** The bottom right corner is the
+default everywhere and is also where most apps put their primary button. Look
+at your own screen before you record and pick the empty corner.
+
+**Smaller than you think.** The screen is the content. Your face is there so the
+viewer knows a person is talking, and a quarter of the frame height is plenty.
+
+**Look at the camera at the start and the end.** The middle is you working, and
+looking at your own screen while you work is correct. The first and last
+sentence are addressed to somebody.
+
+**Record a microphone.** The camera is the picture; the microphone is the
+reason anybody stays. It also gets you the transcript, which is how the
+captions and the fastest route to a cut both work.
+
+[How to add subtitles to a screen recording →](/blog/add-subtitles-to-screen-recording)
+
+## What to record with
+
+[Screen recorders with a webcam overlay →](/blog/screen-recorder-webcam-overlay-mac) ·
+[Free screen recorders with a camera →](/blog/free-screen-recorder-mac-camera)
+
+A separate camera track, a shape and position you can change after the take,
+and a camera that gets out of the way during a zoom: those three narrow the
+field to almost nothing. Prequel does all of them and the first pass has
+already framed you by the time the editor opens. It needs an Apple Silicon Mac
+on macOS 14 or later, with the Screen Recording grant and a camera grant of its
+own. $39 once, or $9 a month, free for seven days first.
+
+[See what Prequel costs →](/pricing)
+
+## Where to go next
+
+Your Mac's own sound is the other track macOS will not give you, and a demo
+with no interface sound is half a demo.
+
+[How to record your Mac screen with internal audio →](/blog/record-mac-screen-with-internal-audio)
+
+Once your face is in the right place, the cut is what takes the six minutes
+down to three.
+
+[How to trim a screen recording on a Mac →](/blog/trim-screen-recording-mac)
+
+And if this is going on a landing page, the demo is its own craft.
+
+[How to record a product demo video →](/blog/product-demo-videos)

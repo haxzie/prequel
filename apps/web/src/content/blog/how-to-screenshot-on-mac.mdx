@@ -1,0 +1,233 @@
+## How do you take a screenshot on a Mac?
+
+Shift + Command + 3 saves a picture of every display. Shift + Command + 4 gives
+you a crosshair to drag a region out with. Both write a PNG to your Desktop.
+
+Press Space after ⇧⌘4 and the crosshair becomes a camera that captures the
+window under it with its shadow, which is the one most people want and the one
+nobody is taught.
+
+So the capture is solved. What is not solved is everything after it: the file
+lands on your Desktop called `Screenshot 2026-11-25 at 14.29.11.png`, sized to
+whatever your display happens to be, with a customer's email address visible in
+the corner and no way to point at the thing you were trying to show.
+
+This is every chord macOS binds, what Markup can and cannot do to the result,
+and how to get a screenshot you can put in a changelog or a support reply
+without opening a design tool.
+
+## The four chords
+
+| Keys                | Does                                                      |
+| ------------------- | --------------------------------------------------------- |
+| Shift + Command + 3 | Saves a picture of every display, straight away.          |
+| Shift + Command + 4 | Drag out a region. Press Space first to capture a window. |
+| Shift + Command + 5 | Opens the Screenshot toolbar, with recording and Options. |
+| Shift + Command + 6 | The Touch Bar, on a Mac that has one.                     |
+
+Hold **Control** with any of them and the picture goes on the clipboard and no
+file is written. That is the fastest path into Slack: ⌃⇧⌘4, drag, ⌘V.
+
+While the crosshair is up, **Space** switches to window capture, holding
+**Option** while you drag resizes from the centre, and **Esc** cancels.
+
+## Where they go, and how to change it
+
+The Desktop, by default, which is how a Desktop ends up with ninety of them.
+
+Press ⇧⌘5 and open **Options**. The top of that menu sets where screenshots are
+saved: Desktop, Documents, Clipboard, Mail, Messages, Preview, or **Other
+Location** for any folder you pick. Under it, a five or ten second timer, the
+microphone for a recording, whether to show the floating thumbnail, whether to
+remember the last selection, whether to capture in HDR or SDR, and whether to
+show the mouse pointer.
+
+Turning the floating thumbnail off is the single best change in that menu if
+you take a lot of them. With it on, every capture puts a card in the corner
+that you either click or wait out.
+
+## How to change the screenshot shortcuts
+
+The four chords are rebindable, and the pane they live in is three levels down
+where nobody finds it.
+
+Open the Apple menu, choose **System Settings**, click **Keyboard** in the
+sidebar, scroll to **Keyboard Shortcuts**, and click **Screenshots** in the
+sidebar of the window that opens.
+
+Five rows, each with a tick box and the chord beside it.
+
+| Row                                            | Default |
+| ---------------------------------------------- | ------- |
+| Save picture of screen as a file               | ⇧⌘3     |
+| Copy picture of screen to the clipboard        | ⌃⇧⌘3    |
+| Save picture of selected area as a file        | ⇧⌘4     |
+| Copy picture of selected area to the clipboard | ⌃⇧⌘4    |
+| Screenshot and recording options               | ⇧⌘5     |
+
+To change one, double-click the chord beside the row and press the keys you
+want. The field takes the new combination as you press it, and clicking away
+commits it. Untick a row to switch that capture off entirely, which frees the
+chord for something else.
+
+### The rebind most people want
+
+Swap the two selected-area rows. Put ⇧⌘4 on **Copy picture of selected area to
+the clipboard** and give **Save picture of selected area as a file** the longer
+⌃⇧⌘4.
+
+macOS ships them the other way round, so the chord in your fingers writes a
+file every time and the Desktop fills up with captures you pasted into Slack
+and never needed again. Swapped, the common case leaves nothing behind and you
+hold one extra key on the rare occasion you want the PNG.
+
+macOS will let you set the two rows to the same chord, and the one lower in the
+list stops working with nothing on screen to say so. Set the second row before
+you check the first.
+
+### Two things that will not rebind
+
+**Space and Option.** Pressing Space after the crosshair to capture a window,
+and holding Option to drop the shadow, are built into the capture and are not
+in this pane.
+
+**The chord an app has already taken.** macOS does not warn you here. A
+screenshot chord that an application has claimed for itself usually loses to
+that application while it is in front, and you get no screenshot and no error.
+If a rebind seems to do nothing, try it over the Desktop before you change it
+again.
+
+### If a recorder has taken ⇧⌘5
+
+Apps that record the screen often hold that chord, because it is the one people
+already press. [Prequel](/) does, and it switches the macOS binding off while
+it holds it and switches it back on when you rebind the shortcut or quit the
+app, so the toolbar comes back when you want it.
+
+To have both, give one of them something else. Prequel's chord is in
+**Settings** under Recording; the macOS toolbar's is the **Screenshot and
+recording options** row above.
+
+[Screen recording keyboard shortcuts on a Mac →](/blog/screen-recording-shortcuts-mac)
+
+## What Markup gives you
+
+Click the floating thumbnail, or open the PNG in Preview and press the pen
+icon, and you get Markup: a pen, shapes, a text box, a signature, and a shape
+and text colour.
+
+It draws arrows and boxes, and that is genuinely most of what a screenshot
+needs. Three things it has no answer for.
+
+**No redaction.** Markup has no blur and no pixelate. People cover an email
+address with a filled black rectangle, which is correct, and then people cover
+it with a semi-transparent one, which is not. There is no tool here that
+removes the pixels underneath.
+
+**No background.** A screenshot of a window is a window on nothing. A
+changelog entry or a landing page wants it sitting on something, with padding
+around it and a shadow under it, and Markup has no concept of a canvas larger
+than the picture.
+
+**Nothing is reusable.** Every mark is drawn from scratch at whatever size you
+happen to draw it, so the arrow on today's screenshot is a different weight
+from yesterday's.
+
+## How to take a screenshot in Prequel
+
+[Prequel](/) is a screen recorder that also takes stills, because the two are
+the same capture and the same editor. The switch is at the left of the panel.
+
+![The recording dock, set up to take a screenshot](/docs/dock-setup-photo.webp)
+
+### 1. Pick Screenshot, or choose it on the window
+
+Press ⇧⌘5 to bring the panel up and press the Screenshot half of the switch.
+You can also skip the panel: point at a window and pick **Screenshot** on the
+window itself, which is the quicker route when you already know what you are
+capturing.
+
+### 2. It opens in the editor, already composed
+
+A screenshot lands in the editor the way a recording does, with a background
+behind it, padding around it, a border and a shadow. The same backgrounds, the
+same frame presets, and the same lean: a screenshot can tilt up to 45 degrees
+if a flat rectangle is too plain for where it is going.
+
+Everything about the look is stored as a fraction of the frame's shorter edge,
+so switching from 16:9 to a 4:5 portrait keeps the proportions. The picture is
+re-composed, and no edge is lost to a crop.
+
+### 3. Draw on it
+
+Arrows, lines, boxes, ellipses, freehand, a highlighter and text. Each mark is
+sized against the picture, so an arrow on a 5K capture reads the same as one on
+a small crop.
+
+Text comes in five styles: Classic, Modern, Neon, Typewriter and Strong. Pick
+one and every label on the picture matches.
+
+### 4. Hide what should not be in it
+
+Drag a mask over the region and choose blur or pixelate. The exported PNG is
+drawn from that canvas, so the original pixels are not in the file you hand
+over, which is not true of most blurs.
+
+This is the part worth the thirty seconds. A screenshot of your own dashboard
+has a real customer's name in it more often than you would like.
+
+### 5. Point at one thing
+
+Two ways. A **loupe** magnifies a region in place, the way a reading glass
+would. A **soft-focus lens** does the opposite and lets everything outside it
+fall away, which works better on a dense interface where a magnified box reads
+as a second screenshot pasted on top.
+
+### 6. Export, or share it
+
+Export writes a PNG and saves it straight away. Screenshots live in their own
+Screenshots tab, separate from recordings, and anything you export lands in
+Exports with everything else.
+
+A share link on a screenshot opens the picture itself, so nobody arrives at an
+empty video player.
+
+## If you only need to mark one up
+
+[Try the screenshot editor →](/free-tools/screenshot-editor)
+
+Take the capture with ⇧⌘4, paste it into that page with ⌘V, drag out an arrow,
+press Copy and paste the result into Slack. It runs in your browser, nothing is
+uploaded, and there is no app to install. It is the right tool when all you
+want is an arrow on one picture.
+
+## What to capture with
+
+[Best screen recorders for Mac →](/blog/best-screen-recorders-for-mac) ·
+[CleanShot X alternatives →](/blog/cleanshot-alternatives)
+
+Redaction that removes pixels, a background that makes a window look like
+something, and marks that stay consistent across a set: those three narrow the
+field quickly. Prequel does all of them and records video with the same app and
+the same shortcut. It needs an Apple Silicon Mac on macOS 14 or later and the
+Screen Recording permission. $39 once, or $9 a month, free for seven days
+first.
+
+[See what Prequel costs →](/pricing)
+
+## Where to go next
+
+The keys are shared between the still and the video, so learning one set covers
+both.
+
+[Screen recording keyboard shortcuts on a Mac →](/blog/screen-recording-shortcuts-mac)
+
+A changelog usually wants both: a picture of the panel and a ten-second clip of
+it working.
+
+[The complete guide to screen recording on Mac →](/blog/screen-recording-on-mac)
+
+And if it is going on a landing page, the zoom is what makes a small interface
+readable.
+
+[Screen recorders with automatic mouse zoom →](/blog/screen-recorder-mouse-zoom-mac)
