@@ -3,19 +3,21 @@ import { Logo } from "@/components/Logo";
 import { TRIAL_DAYS } from "@/lib/pricing";
 
 /**
- * The call to action in a post's right-hand rail, under the contents.
+ * The call to action in a right-hand rail, under the contents. Blog posts and
+ * docs pages both carry one.
  *
  * The narrow sibling of `TryItAside`, which is the panel at the foot of a post
  * and is shared with the articles. Not that component at a smaller size: this
- * one sits in an 11rem track, where the mark-beside-text row it is built from
+ * one sits in a 14rem track, where the mark-beside-text row it is built from
  * has nowhere to go, so the two are laid out differently and only the words
  * and the destination are the same.
  *
- * The post page hides `TryItAside` from `xl`, which is the width this appears
- * at, so a reader only ever sees one of the two. That is not tidiness: the note
- * on the `cta` variant in `Button.tsx` says two filled blues on a screen are
- * two primary actions, which is none, and a sticky rail would otherwise put a
- * second one beside the panel for the whole of the last screenful.
+ * A post hides `TryItAside` from `xl`, which is the width this appears at, so
+ * a reader only ever sees one of the two. That is not tidiness: the note on
+ * the `cta` variant in `Button.tsx` says two filled blues on a screen are two
+ * primary actions, which is none, and a sticky rail would otherwise put a
+ * second one beside the panel for the whole of the last screenful. The docs
+ * carry no other call to action, so there is nothing to hide there.
  */
 export function TryPrequelCard() {
   return (
@@ -43,9 +45,9 @@ export function TryPrequelCard() {
           Record your screen and get back a finished video, with the zooms already placed. Free for{" "}
           {TRIAL_DAYS} days.
         </p>
-        {/* `size="sm"` and full width: at 11rem the medium button's 1.5rem of
-            horizontal padding leaves "Download for Mac" nowhere to sit and it
-            wraps onto two lines. */}
+        {/* `size="sm"` and full width: at this width the medium button's
+            1.5rem of horizontal padding leaves "Download for Mac" nowhere to
+            sit and it wraps onto two lines. */}
         <ButtonLink href="/download" variant="cta" size="sm" className="mt-4 w-full">
           Download for Mac
         </ButtonLink>

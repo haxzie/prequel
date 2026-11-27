@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { Container } from "@/components/Section";
 import { Toc } from "@/components/Toc";
+import { TryPrequelCard } from "@/components/TryPrequelCard";
 import type { DocSection, DocSlug } from "@/content/docs";
 import type { Heading } from "@/lib/toc";
 
@@ -34,7 +35,11 @@ export function DocsShell({
 
   return (
     <Container className="py-14 lg:py-20">
-      <div className="grid gap-10 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[13rem_minmax(0,1fr)_11rem]">
+      {/* The rail is 14rem, where it was 11, and the gap narrows at `xl` to
+          pay for it: the card under the contents has a full-width button with
+          "Download for Mac" on it, and at 11rem that wraps onto two lines. The
+          article gives up 1rem of the 37 it had; the gap gives up 2. */}
+      <div className="grid gap-10 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[13rem_minmax(0,1fr)_14rem] xl:gap-10">
         {/* The list, twice. Sticky on the left from `lg`, and folded into a
             disclosure above the article below it. A native `<details>` rather
             than the header's `NavMenu`: that component is a client component
@@ -75,9 +80,21 @@ export function DocsShell({
           <article className="mx-auto max-w-2xl lg:mx-0">{children}</article>
         </div>
 
+        {/* A column with the scroll on the contents alone, so the card under
+            them is always on screen. The same shape a blog post's rail uses,
+            and for the same reason: a long page's contents are taller than the
+            viewport, and a rail that scrolls as one piece puts the card below
+            the fold of a sticky element where the page's own scrollbar cannot
+            reach it. `min-h-0` is what lets the list shrink inside the flex
+            column instead of pushing the card back out of it. */}
         {toc.length >= 2 ? (
-          <aside className="hidden self-start xl:sticky xl:top-8 xl:block">
-            <Toc headings={toc} />
+          <aside className="hidden self-start xl:sticky xl:top-8 xl:flex xl:max-h-[calc(100dvh-4rem)] xl:flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <Toc headings={toc} />
+            </div>
+            <div className="mt-6 shrink-0">
+              <TryPrequelCard />
+            </div>
           </aside>
         ) : null}
       </div>
