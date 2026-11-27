@@ -7,8 +7,13 @@ import type { Heading } from "@/lib/toc";
  * `IntersectionObserver` in a client component, and the value of that on a
  * page of this length is a moving dot. The `id`s come from `rehype-slug` and
  * the list from `lib/toc.ts`, both off the same text.
+ *
+ * Shared by the docs and the blog rather than copied into each. It was
+ * `components/docs/DocsToc` while the docs were the only caller; a second copy
+ * for the posts is how the two rails would come to indent `###` differently
+ * and nobody would notice, because no page shows both.
  */
-export function DocsToc({ headings }: { headings: Heading[] }) {
+export function Toc({ headings }: { headings: Heading[] }) {
   return (
     <nav aria-label="On this page" className="text-sm">
       <p className="mb-3 font-mono text-xs tracking-[0.18em] text-muted uppercase">On this page</p>

@@ -28,6 +28,19 @@ export function readDocSource(slug: DocSlug): string {
 }
 
 /**
+ * The raw MDX of one blog post, for the same reason and with the same caveat
+ * as `readDocSource`: the compiled module is a React component and cannot be
+ * asked what its own headings are.
+ *
+ * A post's file may open with `import` lines for its figures. Those are not
+ * headings and `headingsOf` does not match them, so the source is handed over
+ * whole.
+ */
+export function readPostSource(slug: string): string {
+  return readFileSync(join(process.cwd(), "src/content/blog", `${slug}.mdx`), "utf8");
+}
+
+/**
  * The `##` and `###` headings of a Markdown source, with the ids `rehype-slug`
  * will have given them.
  *

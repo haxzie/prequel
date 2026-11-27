@@ -2,10 +2,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Container } from "@/components/Section";
+import { Toc } from "@/components/Toc";
 import type { DocSection, DocSlug } from "@/content/docs";
 import type { Heading } from "@/lib/toc";
-
-import { DocsToc } from "./DocsToc";
 
 /**
  * The frame every docs page sits in: the section list, the article, and the
@@ -78,7 +77,7 @@ export function DocsShell({
 
         {toc.length >= 2 ? (
           <aside className="hidden self-start xl:sticky xl:top-8 xl:block">
-            <DocsToc headings={toc} />
+            <Toc headings={toc} />
           </aside>
         ) : null}
       </div>
