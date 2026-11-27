@@ -70,19 +70,29 @@ export default async function BlogPost({ params }: PageProps<"/blog/[slug]">) {
 
   return (
     <Container className="py-20">
-      {/* Three tracks at `xl`: an empty one, the article, and the rail.
-          The first is empty on purpose. The article has always sat in the
-          middle of this container, and a two-track grid would slide every
-          existing post a few centimetres left the day the rail shipped. The
-          widths add up to the 68rem inside the container's padding exactly, so
-          the measure stays at `max-w-2xl` with the rail beside it.
+      {/* The article and the rail are one block, centred together: the rail is
+          part of what there is to read, so centring the prose alone and
+          letting the rail hang off its right would sit the page's weight left
+          of the window.
+
+          `justify-center` is what does it. Both tracks are fixed, so they come
+          to 59.5rem inside a 68rem container and the free space is split
+          either side; a `1fr` spacer track would do the same thing by hand and
+          stop being symmetric the moment either width changed.
+
+          The rail is 15rem. It was 11rem, matching the docs' own, and the docs
+          have short page titles where a post has "How do you record your
+          screen and your face at the same time?" — which wrapped to three
+          lines and made the list taller than the post it was indexing.
+
+          The container cannot grow to pay for that: `Nav` uses the same
+          `Container` at `max-w-6xl`, and a wider one here would start the
+          article's left edge outside the logo above it.
 
           Below `xl` the grid is off and the article is centred as before; the
           rail is the first thing to go, because a contents list stacked above
           a post is a screenful of links in front of the thing you came for. */}
-      <div className="xl:grid xl:grid-cols-[11rem_minmax(0,42rem)_11rem] xl:gap-8">
-        <div aria-hidden className="hidden xl:block" />
-
+      <div className="xl:grid xl:grid-cols-[minmax(0,42rem)_15rem] xl:justify-center xl:gap-10">
         <article className="mx-auto max-w-2xl">
           <Link href="/blog" className="font-mono text-xs text-muted hover:text-fg">
             ← All posts
