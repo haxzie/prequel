@@ -83,7 +83,11 @@ export function Library({
           of one list. All a notch below where they started — a border only has
           to say where one thing ends, and at the distance they were drawn at a
           pane of eight bordered groups read as eight boxes. */}
-      <nav className="drag flex w-48 shrink-0 flex-col gap-0.5 border-r border-white/8 p-3 pt-10">
+      {/* `pt-13` is the pane header's height beside it, so the first row of
+          each column starts on the same line — and it is also the room the
+          inset traffic lights need. The two numbers have always been the same
+          one; see `PANE_HEADER_HEIGHT`. */}
+      <nav className="drag flex w-48 shrink-0 flex-col gap-0.5 border-r border-white/8 p-3 pt-13">
         {/* The one thing in here that is not a place to go.
 
             First, because it is what the window is for: this is a library of
@@ -201,8 +205,11 @@ export function Library({
       </nav>
 
       {/* Thicker than the sidebar beside it: this is where the recordings are
-          read, and the sidebar is where the frost belongs. */}
-      <main className="flex min-w-0 flex-1 flex-col bg-editor-scrim">
+          read, and the sidebar is where the frost belongs.
+
+          `relative`, because every pane's header floats over it rather than
+          taking a row at the top — see `PaneHeader`. */}
+      <main className="relative flex min-w-0 flex-1 flex-col bg-editor-scrim">
         {section === "projects" ? (
           <Projects onOpen={onOpen} />
         ) : section === "screenshots" ? (

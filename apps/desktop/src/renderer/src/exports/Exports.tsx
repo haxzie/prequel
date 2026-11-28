@@ -5,7 +5,7 @@ import { cn } from "../lib/cn";
 import { formatElapsed, formatFileSize, formatTimeAgo } from "../lib/format";
 import { CheckIcon, CopyIcon, ExportIcon, FolderIcon } from "../editor/icons";
 import { useDock } from "../hooks/useDock";
-import { PaneHeader } from "../workspace/PaneHeader";
+import { PANE_HEADROOM, PaneHeader } from "../workspace/PaneHeader";
 import { ViewToggle } from "../workspace/ViewToggle";
 import { useExportThumbnails } from "./useExportThumbnails";
 
@@ -80,7 +80,13 @@ export function Exports() {
       ) : exports.length === 0 ? (
         <Empty />
       ) : (
-        <div className={cn("min-h-0 flex-1 overflow-y-auto", view === "grid" && "p-5")}>
+        <div
+          className={cn(
+            "min-h-0 flex-1 overflow-y-auto",
+            PANE_HEADROOM,
+            view === "grid" && "px-5 pb-5",
+          )}
+        >
           {/* The column heads, and only for the table. Sticky rather than
               above the scroller: the pane scrolls as one, and a head that
               scrolled away would leave three unlabelled columns. */}
@@ -91,6 +97,8 @@ export function Exports() {
                 // Sticky, so scrolling a long list never leaves four
                 // unlabelled columns. Opaque, or the rows would show through
                 // it as they pass underneath.
+                // `top-0` is under the bar — see the same head in
+                // `Projects.tsx`, and `PANE_HEADROOM`.
                 "sticky top-0 z-10 border-b border-white/7 bg-editor-scrim",
                 "h-8 text-[11px] font-medium text-editor-muted",
               )}

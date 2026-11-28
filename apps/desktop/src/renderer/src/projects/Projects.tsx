@@ -6,7 +6,7 @@ import { cn } from "../lib/cn";
 import { FolderIcon, TrashIcon } from "../editor/icons";
 import { RecordingsIcon, ScreenshotsIcon } from "../workspace/icons";
 import { useDock } from "../hooks/useDock";
-import { PaneHeader } from "../workspace/PaneHeader";
+import { PANE_HEADROOM, PaneHeader } from "../workspace/PaneHeader";
 import { RenameField } from "../components/RenameField";
 import { ViewToggle } from "../workspace/ViewToggle";
 import { PencilIcon } from "./icons";
@@ -336,9 +336,11 @@ export function Projects({
         // pane rather than the window — it belongs over this list, not over
         // the sidebar beside it.
         <div className="relative flex min-h-0 flex-1">
-          {/* No padding in the list: the sticky head is the first thing in
-              the scroller and has its own height, and padding above it would
-              leave a band of empty pane that the head then scrolls up into. */}
+          {/* No padding in the list beyond the headroom: the sticky head is
+              the first thing in the scroller and has its own height, and
+              padding above it would leave a band of empty pane that the head
+              then scrolls up into. The headroom is not that — it is the room
+              the bar floating over this needs, and the rows pass under it. */}
           {/* `min-w-0 flex-1`, not `h-full` alone. This is a flex child now that
               the inspector sits beside it, and a flex item is sized to its
               content until it is told otherwise — the grid stopped filling the
@@ -346,7 +348,13 @@ export function Projects({
               beside them. `min-w-0` is the other half: without it the floor is
               the content's own width and the scroller refuses to shrink when
               the pane opens. */}
-          <div className={cn("h-full min-w-0 flex-1 overflow-y-auto", grid && "p-5")}>
+          <div
+            className={cn(
+              "h-full min-w-0 flex-1 overflow-y-auto",
+              PANE_HEADROOM,
+              grid && "px-5 pb-5",
+            )}
+          >
             {!grid && (
               <div
                 className={cn(
@@ -354,6 +362,8 @@ export function Projects({
                   // Sticky, so scrolling a long library never leaves four
                   // unlabelled columns. Opaque, or the rows would show through
                   // it as they pass underneath.
+                  // `top-0` is under the bar, not behind it: the scroller's
+                  // own `PANE_HEADROOM` is what the sticky rect is shrunk by.
                   "sticky top-0 z-10 border-b border-white/7 bg-editor-scrim",
                   "h-8 text-[11px] font-medium text-editor-muted",
                 )}

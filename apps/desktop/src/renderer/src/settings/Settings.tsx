@@ -5,7 +5,7 @@ import { TELEPROMPTER_SHORTCUTS } from "../../../shared/contract";
 import { systemHotkeyFor } from "../../../shared/system-hotkeys";
 import { Field, Section } from "../editor/controls/Field";
 import { cn } from "../lib/cn";
-import { PaneHeader } from "../workspace/PaneHeader";
+import { PANE_HEADROOM, PaneHeader } from "../workspace/PaneHeader";
 import { AppIcon, GeneralIcon, PermissionsIcon, RecordingIcon, ShortcutsIcon } from "./icons";
 import { PermissionList } from "../components/PermissionList";
 import { usePermissions } from "../hooks/usePermissions";
@@ -52,7 +52,7 @@ export function SettingsPane() {
     <>
       <PaneHeader icon={<GeneralIcon />} title="Settings" />
 
-      <div className="flex min-h-0 flex-1">
+      <div className={cn("flex min-h-0 flex-1", PANE_HEADROOM)}>
         {/* Subordinate to the window's own sidebar, and drawn to say so: a
             glyph a size down at 3.5, a 12px label against its 13, and a
             selected row at 8% where that one uses 15%. Two navigations at the

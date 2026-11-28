@@ -24,7 +24,7 @@ export function ViewToggle({
     // `no-drag`: this sits in the pane header, which is the window's drag
     // region, and without it a press here would move the window instead of
     // changing the layout.
-    <div className="no-drag flex items-center gap-0.5 rounded-lg bg-white/6 p-0.5">
+    <div className="no-drag flex items-center gap-0.5 rounded-xl bg-white/6 p-1">
       {(
         [
           { id: "list", label: "Show as a list", Icon: ListIcon },
@@ -39,7 +39,7 @@ export function ViewToggle({
           aria-pressed={view === option.id}
           onClick={() => onChange(option.id)}
           className={cn(
-            "grid size-6 place-items-center rounded-md transition-colors [&_svg]:size-3.5",
+            "grid size-7 place-items-center rounded-lg transition-colors [&_svg]:size-[18px]",
             view === option.id
               ? "bg-white/15 text-editor-fg"
               : "text-editor-fg/55 hover:text-editor-fg",
