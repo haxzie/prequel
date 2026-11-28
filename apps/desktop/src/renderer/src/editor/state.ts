@@ -2696,11 +2696,12 @@ function edit(state: EditorState, change: (project: Project) => Project): Editor
 /**
  * The project with any arrangement the frame cannot hold moved out of it.
  *
- * Only `over-column` is ever moved, and only into a frame that is not wider
- * than it is tall. The picker is what stops it being *picked* there; this is
- * the other way in — a recording arranged in 16:9 and then switched to 9:16
- * would otherwise sit in an arrangement whose cell is greyed out, which is a
- * state nothing on screen explains and only picking something else undoes.
+ * Only the standing column and the filled pair are ever moved, and only into a
+ * frame that is not wider than it is tall. The picker is what stops either
+ * being *picked* there; this is the other way in — a recording arranged in 16:9
+ * and then switched to 9:16 would otherwise sit in an arrangement whose cell is
+ * greyed out, which is a state nothing on screen explains and only picking
+ * something else undoes.
  *
  * It lands in `over-padded`, which is the column with the standing camera taken
  * out of it: the recording keeps the size and the padding it already had, and
@@ -2715,6 +2716,8 @@ function framed(project: Project): Project {
   const fits = (preset: LayoutPreset) => presetFitsFrame(preset, project.frame);
   // Nothing to walk in a frame every arrangement fits, which is every landscape
   // one — and so is every frame the editor opens on unless someone changed it.
+  // Asked of the column on behalf of all of them: every arrangement that can
+  // fail asks the frame the same question — see `NEEDS_WIDTH`.
   if (fits("over-column")) return project;
 
   const kept = (preset: LayoutPreset): LayoutPreset => (fits(preset) ? preset : "over-padded");

@@ -1701,6 +1701,22 @@ export function buildRenderPlan(
       perspective: layout.screenPerspective,
     };
 
+    /**
+     * The arrangement's own pan, where it has one.
+     *
+     * Built before the zooms, because they rest on it: a shot eases back to
+     * where the arrangement has the window, and in the filled pair that is a
+     * moving target. Empty everywhere else, which is every arrangement that
+     * does not crop the recording to fill a slot — see `tracksTheCursor`.
+     */
+    const tracking =
+      cursor && tracksTheCursor(layout.preset)
+        ? trackingKeys(dstRect, srcRect, sources.screen, shape.radius, spread, border, pose, cursor)
+        : null;
+    const panned = tracking?.keys.length
+      ? (at: number) => rectAt(tracking.keys, at, dstRect, shape.radius).src ?? srcRect
+      : undefined;
+
     // Three tracks off the one shot: the picture, the ring one border width
     // outside it, and the shadow cast by the two of them together. Separate
     // because each is a different rectangle put through the same tilt, and a
@@ -1716,7 +1732,29 @@ export function buildRenderPlan(
       border,
       pose,
       cursor,
+      panned,
     );
+
+    /**
+     * The three tracks the picture, its ring and its shadow follow before the
+     * cut and the roll are folded in.
+     *
+     * One track, not two: a plan item holds one `motion`. So the shots are
+     * dropped into the pan over the stretch they cover and the pan carries the
+     * rest of the clip — without which a project with one zoom in it panned up
+     * to that zoom and then held the window still for ever after, because
+     * outside a shot's own span there are no keys and the last one is held.
+     *
+     * They meet without a seam because they agree at the join: a shot's first
+     * and last samples are the picture at rest, and `resting` is this same pan.
+     */
+    const tracked = tracking
+      ? {
+          keys: spliced(tracking.keys, zoomed.keys),
+          border: spliced(tracking.border, zoomed.border),
+          shadow: spliced(tracking.shadow, zoomed.shadow),
+        }
+      : zoomed;
 
     /**
      * A screenshot's focus area, in the frame's own pixels.
@@ -1754,17 +1792,18 @@ export function buildRenderPlan(
     // `rectAt` answers with it at every moment, which is what a pose that does
     // not move is.
     //
-    // Only where there are no zoom keys, because a plan item holds one
-    // `motion`. Where there are, the pose went into the track instead — see
-    // `shotTrack` — so the picture leans the same amount either way and the two
-    // can never be a third answer.
+    // Only where the track is empty, because a plan item holds one `motion`.
+    // Where it is not, the pose went into it instead — see `shotTrack` and
+    // `trackingKeys`, both of which put every sample through this same `keyFor`
+    // — so the picture leans the same amount either way and the two can never
+    // be a third answer.
     const leaning = pose.rotateX !== 0 || pose.rotateY !== 0;
     // A lens is depth of field and a vignette, which are two fields of the same
     // key the lean writes — so one key carries both and a still that has only
     // one of them pays for nothing extra.
     const lensed = focus?.mode === "lens";
     const posed =
-      (leaning || lensed) && zoomed.keys.length === 0
+      (leaning || lensed) && tracked.keys.length === 0
         ? keyFor(
             {
               rect: dstRect,
@@ -1829,7 +1868,13 @@ export function buildRenderPlan(
           // the recording: a change of padding or of pan would otherwise snap
           // the picture while its box was still travelling. Both ends or
           // neither — see `rectAt`, which drops a window one key is missing.
-          window: sameRect(cameFrom.srcRect, srcRect) ? null : cameFrom.srcRect,
+          //
+          // Always where this clip's window travels, whatever the two crops
+          // say at rest: the keys being arrived at all carry one, so a `from`
+          // without one is a pair with a window at one end — which is dropped,
+          // and the opening of the clip plays at the resting crop before
+          // snapping to wherever the pan had got to.
+          window: !tracking && sameRect(cameFrom.srcRect, srcRect) ? null : cameFrom.srcRect,
           radius: enter.from.background.cornerRadius * unit,
           rotateX: enter.from.layout.screenRotateX,
           rotateY: enter.from.layout.screenRotateY,
@@ -1877,7 +1922,7 @@ export function buildRenderPlan(
     };
 
     const motion = travelled(
-      posed ? [posed.key] : zoomed.keys,
+      posed ? [posed.key] : tracked.keys,
       dstRect,
       shape.radius,
       leavingScreen?.key ?? { at: 0, ...dstRect, radius: shape.radius },
@@ -1885,13 +1930,13 @@ export function buildRenderPlan(
     );
     plane = { srcRect, dstRect, motion };
     const borderMotion = travelled(
-      posed ? [posed.border] : zoomed.border,
+      posed ? [posed.border] : tracked.border,
       outer,
       outerShape.radius,
       leavingScreen?.border ?? { at: 0, ...outer, radius: outerShape.radius },
     );
     const shadowMotion = travelled(
-      posed ? [posed.shadow] : zoomed.shadow,
+      posed ? [posed.shadow] : tracked.shadow,
       grow(outer, spread),
       outerShape.radius,
       leavingScreen?.shadow ?? { at: 0, ...grow(outer, spread), radius: outerShape.radius },
@@ -3411,6 +3456,17 @@ function zoomKeys(
   /** The lean the arrangement left the picture in, which every shot rests at. */
   pose: Pose,
   cursor?: CursorTrack | null,
+  /**
+   * The window the picture rests at, moment by moment, where the arrangement is
+   * already walking one through the recording — see `trackingKeys`.
+   *
+   * Absent is the ordinary case: the resting window is the one the arrangement
+   * placed and does not move. Passed in rather than worked out here because
+   * there is one answer to where the window rests and `trackingKeys` is it; two
+   * would meet at the end of every zoom, where the shot eases back to rest and
+   * the pan is still going.
+   */
+  resting?: (at: number) => Rect,
 ): { keys: RectKey[]; border: RectKey[]; shadow: RectKey[] } {
   if (zooms.length === 0) return { keys: [], border: [], shadow: [] };
 
@@ -3459,7 +3515,19 @@ function zoomKeys(
   });
 
   const shots = zooms.map((zoom, index) =>
-    shotTrack(zoom, times, reachOf[index]!, frame, base, srcRect, source, radius, pose, cursor),
+    shotTrack(
+      zoom,
+      times,
+      reachOf[index]!,
+      frame,
+      base,
+      srcRect,
+      source,
+      radius,
+      pose,
+      cursor,
+      resting,
+    ),
   );
 
   const keys: RectKey[] = [];
@@ -4574,6 +4642,8 @@ function shotTrack(
   radius: number,
   pose: Pose,
   cursor?: CursorTrack | null,
+  /** See `zoomKeys`. */
+  resting?: (at: number) => Rect,
 ): ShotTrack {
   const at = times.slice(covers.first, covers.last + 1);
   const level = Math.max(1, zoom.level);
@@ -4637,13 +4707,34 @@ function shotTrack(
     : srcRect;
 
   /**
+   * The point the travel puts the aim at — the middle of the picture a viewer is
+   * watching.
+   *
+   * The frame's middle wherever the picture travels, which is what it has always
+   * been: the card is scaled about the frame there, and a shot that pushes in is
+   * aimed at the middle of the screen.
+   *
+   * The *card's* middle wherever the window travels, and that distinction is
+   * the whole of what `followPath` is told below. Its dead zone, its catch-up
+   * and the clamp that keeps the pointer in the shot are all stated as offsets
+   * from this point, so with the frame's middle under an arrangement that gives
+   * the recording two thirds of the frame, "in the shot" meant inside a
+   * rectangle a third wider than the picture — and the pointer left the
+   * recording by a quarter of its width with the shot reporting itself on
+   * target. See `trackingKeys`, which was written against the card from the
+   * start and is this same arithmetic at no magnification.
+   */
+  const anchor = cropping
+    ? { x: base.x + base.width / 2, y: base.y + base.height / 2 }
+    : { x: frame.width / 2, y: frame.height / 2 };
+
+  /**
    * How far the shot may look into the scaled picture before it pulls off it.
    *
    * Stated as what the *card* may not leave: the recording has to be under every
    * part of the box it is drawn in, or the picture stops short of an edge and
-   * the background shows through. With `target.x` being
-   * `frame.width / 2 - travel.x`, those two bounds on the rectangle are two
-   * bounds on the travel.
+   * the background shows through. With `target.x` being `anchor.x - travel.x`,
+   * those two bounds on the rectangle are two bounds on the travel.
    *
    * One formula for both geometries, and it has to be this one. Where the
    * picture moves, `plane` is the card and this reduces to
@@ -4656,11 +4747,17 @@ function shotTrack(
    * the bug this was built to fix, reintroduced one level down.
    */
   const bounds = {
-    minX: frame.width / 2 - base.x,
-    maxX: frame.width / 2 - base.x - base.width + plane.width * level,
-    minY: frame.height / 2 - base.y,
-    maxY: frame.height / 2 - base.y - base.height + plane.height * level,
+    minX: anchor.x - base.x,
+    maxX: anchor.x - base.x - base.width + plane.width * level,
+    minY: anchor.y - base.y,
+    maxY: anchor.y - base.y - base.height + plane.height * level,
   };
+
+  /**
+   * The picture the follow is judged against: the card where the window travels,
+   * the frame where the picture does. See `anchor`.
+   */
+  const watched = cropping ? { width: base.width, height: base.height } : frame;
 
   // How much of the capture the shot can show at once, as fractions of it. A
   // field wider than this cannot be framed whole, and `typingCentre` needs to
@@ -4712,10 +4809,12 @@ function shotTrack(
           x: held(aim.x, bounds.minX, bounds.maxX),
           y: held(aim.y, bounds.minY, bounds.maxY),
         }))
-      : followPath(deJitter(aims, stepSeconds), aims, stepSeconds, frame, bounds).map((point) => ({
-          x: held(point.x, bounds.minX, bounds.maxX),
-          y: held(point.y, bounds.minY, bounds.maxY),
-        }));
+      : followPath(deJitter(aims, stepSeconds), aims, stepSeconds, watched, bounds).map(
+          (point) => ({
+            x: held(point.x, bounds.minX, bounds.maxX),
+            y: held(point.y, bounds.minY, bounds.maxY),
+          }),
+        );
 
   const shorter = Math.min(frame.width, frame.height);
   const width = plane.width * level;
@@ -4737,8 +4836,8 @@ function shotTrack(
     // nothing where the window does — and a second clamp here would quietly undo
     // that decision.
     const moved: Rect = {
-      x: frame.width / 2 - travel.x,
-      y: frame.height / 2 - travel.y,
+      x: anchor.x - travel.x,
+      y: anchor.y - travel.y,
       width,
       height,
     };
@@ -4788,7 +4887,13 @@ function shotTrack(
       // The crop the arrangement placed, which is what `plane` was built to map
       // back to — so a shot at rest is the picture the arrangement draws with no
       // zoom in the project at all.
-      window: cropping ? srcRect : null,
+      //
+      // Or wherever the arrangement's own pan has got to, where it has one. At
+      // rest means at rest *in this arrangement*, and in the filled pair the
+      // window is never still: resting on the static crop instead snapped the
+      // picture back to the middle of the recording every time a zoom let go,
+      // with the pointer left outside it.
+      window: cropping ? (resting?.(at[step]!) ?? srcRect) : null,
       radius,
       // The clip's pose, which is what "at rest" means: the picture lying the
       // way the Angle panel put it, with nothing of the zoom in it. Zero on
@@ -4811,6 +4916,201 @@ function shotTrack(
   }
 
   return { first: covers.first, curve: zoom, rest, full };
+}
+
+/**
+ * The window walking through the recording to keep the pointer on screen, with
+ * no zoom involved at all.
+ *
+ * A cropping arrangement throws columns away before anything has happened — the
+ * filled pair hands the recording a slot about two thirds of a frame wide, so a
+ * 16:9 take loses a third of itself — and the pointer spends half the take
+ * outside what is left. The card cannot move, because the arrangement placed
+ * it; so the window does, exactly as it does under a cropped zoom.
+ *
+ * **The same follow, measured against the card rather than the frame.**
+ * `followPath` states its dead zone, its catch-up and its speed limit as
+ * fractions of the picture a viewer is watching, and here that picture is a
+ * panel two thirds of the frame wide — passing the frame instead would let the
+ * pointer sit a fifth of a frame outside the recording and still count as kept
+ * in shot, which is the one thing this exists to guarantee.
+ *
+ * `travel` is therefore measured from the *card's* middle rather than the
+ * frame's: the aim lands there when the recording has travelled exactly as far
+ * as the aim, which is what makes `aim - travel` the pointer's offset from the
+ * centre of the picture and the whole of `followPath` apply unchanged.
+ */
+function trackingKeys(
+  base: Rect,
+  srcRect: Rect,
+  source: Size,
+  radius: number,
+  spread: number,
+  border: number,
+  pose: Pose,
+  cursor: CursorTrack,
+): { keys: RectKey[]; border: RectKey[]; shadow: RectKey[] } {
+  const none = { keys: [], border: [], shadow: [] };
+  const samples = cursor.samples;
+  const from = samples[0]?.at;
+  const to = samples[samples.length - 1]?.at;
+  if (from === undefined || to === undefined || to <= from) return none;
+  // Nothing is being cropped, so there is nowhere to walk and the picture the
+  // arrangement placed is already the whole of it. A recording the shape of its
+  // slot lands here, and gets the plan it would have had.
+  if (srcRect.width >= source.width - 0.5 && srcRect.height >= source.height - 0.5) return none;
+
+  const steps = Math.max(1, Math.ceil((to - from) / ZOOM_SAMPLE_NS));
+  const times: number[] = [];
+  for (let step = 0; step <= steps; step += 1) {
+    times.push(Math.round(from + ((to - from) * step) / steps));
+  }
+
+  // Where the whole recording lies, in output pixels, at the scale the crop is
+  // drawn at — the plane the card is a window onto. The same rectangle
+  // `shotTrack` works against, at no magnification.
+  const plane = uncropped(base, srcRect, source);
+  const middle = { x: base.x + base.width / 2, y: base.y + base.height / 2 };
+  // How far the plane may travel before the card stops being covered by it, in
+  // the travel's own units: at `base.width / 2` the plane's left edge is on the
+  // card's, and at `plane.width - base.width / 2` its right edge is.
+  const bounds = {
+    minX: base.width / 2,
+    maxX: Math.max(base.width / 2, plane.width - base.width / 2),
+    minY: base.height / 2,
+    maxY: Math.max(base.height / 2, plane.height - base.height / 2),
+  };
+
+  const stepSeconds = ZOOM_SAMPLE_NS / 1_000_000_000;
+  const aims: Aim[] = times.map((at) => {
+    const point = cursorAim(cursor, at);
+    // A pointer, never a field: there is no zoom here to frame something with,
+    // so nothing has asked to come to rest on a form.
+    return { x: point.x * plane.width, y: point.y * plane.height, field: false };
+  });
+
+  const card = { width: base.width, height: base.height };
+  const path = followPath(deJitter(aims, stepSeconds), aims, stepSeconds, card, bounds).map(
+    (point) => ({
+      // A hard clamp, for the reason the cropped zoom takes one: past the bound
+      // the window is off the edge of the recording, and what a rasteriser
+      // samples there is the last row of texels smeared rather than background.
+      x: clamp(point.x, bounds.minX, bounds.maxX),
+      y: clamp(point.y, bounds.minY, bounds.maxY),
+    }),
+  );
+
+  const keys: RectKey[] = [];
+  const edges: RectKey[] = [];
+  const shadow: RectKey[] = [];
+
+  // Only the samples that say something. The follow is integrated at the full
+  // rate because a spring's dynamics depend on its step, but the track it
+  // produces spends most of a take dead still — a pointer resting inside the
+  // dead zone moves the window not at all — and a clip is as long as somebody
+  // talks. Written out whole, a ten-minute clip carried eighteen thousand keys
+  // of which a handful differ, rebuilt on every drag of every slider and
+  // handed to the exporter in full. See `KEPT_*`.
+  for (const step of kept(path, times)) {
+    const at = times[step]!;
+    const travel = path[step]!;
+    const moved: Rect = {
+      x: middle.x - travel.x,
+      y: middle.y - travel.y,
+      width: plane.width,
+      height: plane.height,
+    };
+    const sampled = keyFor(
+      {
+        rect: base,
+        window: windowOn(base, moved, source),
+        radius,
+        ...pose,
+        vignette: 0,
+        focus: null,
+      },
+      at,
+      spread,
+      border,
+    );
+    keys.push(sampled.key);
+    edges.push(sampled.border);
+    shadow.push(sampled.shadow);
+  }
+
+  return { keys, border: edges, shadow };
+}
+
+/**
+ * How far a dropped sample may sit from the straight line drawn in its place,
+ * in output pixels, and the longest run that may be dropped at once.
+ *
+ * Half a pixel is under what either rasteriser can draw, so what is kept is the
+ * same picture — and both of them read a track by lerping between two keys
+ * anyway, which is exactly the line this measures against.
+ *
+ * The run is capped because the test is greedy: it compares each sample against
+ * the line to its *neighbour*, so a long slow drift can creep past half a pixel
+ * a step at a time. A key a second is enough to bound that, and a parked
+ * pointer still comes down to one key a second from thirty.
+ */
+const KEPT_SLACK = 0.5;
+const KEPT_RUN = 30;
+
+/**
+ * Which samples of a path are worth a key.
+ *
+ * The ends always, and in between only where the line from the last kept sample
+ * to the next one would put this one somewhere else. A window that is not
+ * moving collapses to its two ends; one being carried across the recording
+ * keeps every sample of the move.
+ */
+function kept(path: readonly Point[], times: readonly number[]): number[] {
+  if (path.length < 3) return path.map((_, step) => step);
+
+  const out = [0];
+  let last = 0;
+
+  for (let step = 1; step < path.length - 1; step += 1) {
+    const from = path[last]!;
+    const to = path[step + 1]!;
+    const span = times[step + 1]! - times[last]!;
+    const u = span > 0 ? (times[step]! - times[last]!) / span : 1;
+    const guessX = from.x + (to.x - from.x) * u;
+    const guessY = from.y + (to.y - from.y) * u;
+
+    if (
+      step - last >= KEPT_RUN ||
+      Math.abs(path[step]!.x - guessX) > KEPT_SLACK ||
+      Math.abs(path[step]!.y - guessY) > KEPT_SLACK
+    ) {
+      out.push(step);
+      last = step;
+    }
+  }
+
+  out.push(path.length - 1);
+  return out;
+}
+
+/**
+ * A shot's keys dropped into a pan's, over the stretch the shot covers.
+ *
+ * The shots come first wherever both have something to say — they are the pan
+ * with a zoom on top of it, built against this very pan as their rest — and the
+ * pan carries the clip either side. Its samples inside the shot's span are the
+ * ones the shot replaces, so they go; nothing is interleaved.
+ *
+ * `stagesFor` covers a zoom's whole life in one contiguous run, the moves
+ * between two zooms included, so a shot track is one span rather than several
+ * and this needs no notion of holes.
+ */
+function spliced(pan: readonly RectKey[], shot: readonly RectKey[]): RectKey[] {
+  if (shot.length === 0) return [...pan];
+  const from = shot[0]!.at;
+  const to = shot[shot.length - 1]!.at;
+
+  return [...pan.filter((key) => key.at < from), ...shot, ...pan.filter((key) => key.at > to)];
 }
 
 /**
@@ -8472,9 +8772,92 @@ const COLUMN_SHARE = 1 / 3;
  * nothing, and the picker cannot come to disagree with what is drawn.
  */
 export function presetFitsFrame(preset: LayoutPreset, frame: Size): boolean {
-  if (preset !== "over-column" && preset !== "over-column-left") return true;
+  if (!NEEDS_WIDTH.has(preset)) return true;
   return frame.width > frame.height;
 }
+
+/**
+ * The arrangements that want a frame wider than it is tall.
+ *
+ * Two families, failing the same way. A portrait column standing in a portrait
+ * frame leaves the recording a strip down one side; the filled pair divides a
+ * frame that is already narrow and leaves the recording a slot too thin to read
+ * a line of text in. Both are a frame's worth of camera with a sliver of the
+ * thing being demonstrated beside it.
+ */
+const NEEDS_WIDTH = new Set<LayoutPreset>([
+  "over-column",
+  "over-column-left",
+  "beside-fill",
+  "beside-fill-left",
+]);
+
+/**
+ * Whether an arrangement is the filled pair — the two pictures run to the full
+ * height of the frame, with the recording cropped to fill what is left of it.
+ *
+ * The one place the pair is named, for the reason every other such question is
+ * a function here: the picker greys the cell, the inspector writes the corners
+ * and `layoutBoxes` draws the boxes, and three lists of two names is three
+ * places for a third member to be forgotten.
+ */
+export function flushPair(preset: LayoutPreset): boolean {
+  return preset === "beside-fill" || preset === "beside-fill-left";
+}
+
+/**
+ * Whether an arrangement keeps the pointer on screen by walking its window
+ * through the recording.
+ *
+ * Only the filled pair, and it is not an extra: filling a slot about two thirds
+ * of a frame wide with a 16:9 recording throws a third of its columns away
+ * before anything has happened, and the pointer spends half the take outside
+ * the strip that is left. A static crop there is a recording of the wrong part
+ * of the screen.
+ *
+ * So the card holds still and the window travels — the same arithmetic a
+ * cropped zoom already uses, at no magnification. See `trackingKeys`, and
+ * `shotTrack`, which is where a zoom on top of this one picks the travel up.
+ */
+export function tracksTheCursor(preset: LayoutPreset): boolean {
+  return flushPair(preset);
+}
+
+/**
+ * The corner the filled pair is cut with, as a fraction of the frame's shorter
+ * edge — and the camera's, as a fraction of its own.
+ *
+ * Two numbers for one corner, because the two pictures measure their radius
+ * against different edges: the recording's comes off the frame and the
+ * camera's off the panel it is drawn in — see `radiusFor`. The pair below is
+ * what makes those come out as the same corner in output pixels at the shape
+ * the arrangement gives them, which is the whole point of writing either.
+ *
+ * Small. The two pictures stand side by side with a hair between them, so a
+ * generous round on each leaves a gap shaped like an hourglass; what is wanted
+ * is a cut edge that is not quite sharp.
+ */
+export const FLUSH_RADIUS = 0.01;
+/** See `FLUSH_RADIUS`. */
+export const FLUSH_CAMERA_RADIUS = 0.017;
+
+/**
+ * The margin the filled pair is drawn at, as a fraction of the frame's shorter
+ * edge.
+ *
+ * Half the ordinary one, and it is the same decision the corner above is. The
+ * whole point of this arrangement is two pictures that read as one object: the
+ * padding sets both the margin round the pair *and* the gap down the middle of
+ * it, and at the default the gap is wide enough that the recording and the
+ * person are plainly two things standing near each other.
+ *
+ * A ceiling rather than a value, applied on the way in — the mirror of
+ * `LEAN_PADDING`, which is a floor. Picking the cell out of a generous
+ * arrangement has to give you the tight pair the thumbnail shows; a margin
+ * somebody has already pulled tighter is an answer to "how much", and this is
+ * not that question.
+ */
+export const FLUSH_PADDING = 0.03;
 
 /**
  * Where both pictures go.
@@ -8865,6 +9248,36 @@ export function layoutBoxes(
       };
     }
 
+    // The same row, run to the full height of the frame.
+    //
+    // `beside` fits the recording whole and the pair stands on the background
+    // with the frame showing round it; here both pictures reach the top and the
+    // bottom of the padded area and the recording is cropped to do it. That
+    // crop is the arrangement: a 16:9 take in a slot two thirds of a frame wide
+    // is showing about two thirds of its columns, so the window walks through
+    // it to keep the pointer in the strip — see `tracksTheCursor`.
+    //
+    // Without a camera there is nothing to stand beside, and a recording
+    // cropped to a slot with nothing in the rest of the frame is a mistake
+    // rather than an arrangement — so it falls back to `over-padded`, as every
+    // other paired arrangement does.
+    case "beside-fill":
+    case "beside-fill-left": {
+      if (!withCamera) {
+        return { screen: { area: padded, fit: "contain", card: true }, camera: null };
+      }
+      const [screen, camera] = fullHeight(padded, gap);
+      // The reflection the rest of the handed pairs get, across the area the
+      // two of them fill.
+      const flip = layout.preset === "beside-fill-left";
+      const hand = (box: Rect) => (flip ? mirror(padded, box) : box);
+
+      return {
+        screen: { area: hand(screen), fit: "cover", card: true },
+        camera: { area: hand(camera), fit: "cover", card: true },
+      };
+    }
+
     case "stacked": {
       if (!withCamera) {
         return { screen: { area: padded, fit: "contain", card: true }, camera: null };
@@ -8887,17 +9300,6 @@ export function layoutBoxes(
         // a circle here rather than becoming a rounded card the moment the
         // arrangement is picked.
         camera: { area: camera, fit: "cover", card: false },
-      };
-    }
-
-    case "split": {
-      if (!withCamera) {
-        return { screen: { area: padded, fit: "contain", card: true }, camera: null };
-      }
-      const [screen, camera] = halves(padded, gap);
-      return {
-        screen: { area: screen, fit: "cover", card: true },
-        camera: { area: camera, fit: "cover", card: true },
       };
     }
 
@@ -8998,6 +9400,35 @@ function matched(area: Rect, gap: number, screenAspect: number): [Rect, Rect] {
   return [
     { x: area.x, y, width: screenWidth, height },
     { x: area.x + screenWidth + gap, y, width: Math.max(0, room - screenWidth), height },
+  ];
+}
+
+/**
+ * The same row with nothing fitted: both boxes the full height of the area, the
+ * camera a portrait panel and the recording everything left of it.
+ *
+ * Not `matched`, and the difference is which picture gives way. There the
+ * recording keeps its own shape and the pair loses height until it fits; here
+ * the height is the arrangement, so the recording is handed a slot of whatever
+ * shape is left and crops into it. Nothing shrinks and nothing is letterboxed.
+ *
+ * The camera's width is its height at `CAMERA_COLUMN`, which is the narrowest a
+ * camera is allowed to be beside a screen — a panel the full height of a 16:9
+ * frame is already most of a face, and anything wider starts taking the
+ * recording's own room. Capped at `COLUMN_SHARE` of the row for the reason the
+ * standing column is: in a frame not much wider than it is tall, a panel that
+ * tall comes out nearly half the picture.
+ */
+function fullHeight(area: Rect, gap: number): [Rect, Rect] {
+  const room = Math.max(0, area.width - gap);
+  const wanted = area.height * CAMERA_COLUMN;
+  const width = Math.max(1, Math.min(wanted, room * COLUMN_SHARE));
+  // Everything the panel does not take, which is what the recording crops into.
+  const left = Math.max(1, room - width);
+
+  return [
+    { x: area.x, y: area.y, width: left, height: area.height },
+    { x: area.x + left + gap, y: area.y, width, height: area.height },
   ];
 }
 
@@ -9105,16 +9536,6 @@ function flushLeft(area: Rect, screenAspect: number): Rect {
   const width = height * screenAspect;
 
   return { x: area.x, y: area.y + (area.height - height) / 2, width, height };
-}
-
-/** An area cut in two down the middle, with the gap between. */
-function halves(area: Rect, gap: number): [Rect, Rect] {
-  const width = Math.max(0, area.width - gap) / 2;
-
-  return [
-    { x: area.x, y: area.y, width, height: area.height },
-    { x: area.x + width + gap, y: area.y, width, height: area.height },
-  ];
 }
 
 /**

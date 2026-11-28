@@ -937,12 +937,12 @@ describe("the frame", () => {
     const state = run(
       start(),
       { type: "select", sliceId: null },
-      { type: "setSetting", section: "layout", key: "preset", value: "split" },
+      { type: "setSetting", section: "layout", key: "preset", value: "stacked" },
       { type: "setFrame", frame: vertical },
       { type: "setFrame", frame: landscape },
     );
 
-    expect(state.project.defaults.layout.preset).toBe("split");
+    expect(state.project.defaults.layout.preset).toBe("stacked");
     expect(state.project.frame).toEqual(landscape);
   });
 });

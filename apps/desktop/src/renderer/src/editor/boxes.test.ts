@@ -53,7 +53,7 @@ describe("boxPatch", () => {
       true,
       { x: 0, y: 0, width: 200, height: 200 },
       FRAME,
-      layoutWith({ preset: "split" }),
+      layoutWith({ preset: "beside" }),
       { screen: null, camera: null },
     );
 

@@ -56,7 +56,6 @@ export function detachedPreset(preset: LayoutSettings["preset"]): LayoutSettings
     // somebody asked for.
     case "over-cutout":
       return "over-full";
-    case "split":
     case "camera-full":
     default:
       return "over-padded";

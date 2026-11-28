@@ -29,6 +29,10 @@ import {
   cameraFloats,
   cameraFollows,
   fillsTheFrame,
+  FLUSH_CAMERA_RADIUS,
+  FLUSH_PADDING,
+  FLUSH_RADIUS,
+  flushPair,
   LEAN_PADDING,
   screenYawFor,
   shapeAspect,
@@ -1920,6 +1924,15 @@ function LayoutPanel({
               // hand survives picking an arrangement it is already the shape of.
               set("layout", "cameraCornerRadius", SHAPE_RADIUS[shape]);
             }
+            // Except in the pair that is cut with a hairline round, where the
+            // shape's own radius is far too generous: `portrait` rounds by an
+            // eighth of the panel's width, which on a panel the height of the
+            // frame is a lozenge standing beside a square-cut recording.
+            // Written whatever the shape did above, because the shape may
+            // already have been `portrait` and skipped the write entirely.
+            if (flushPair(preset)) {
+              set("layout", "cameraCornerRadius", FLUSH_CAMERA_RADIUS);
+            }
             // The toggle and the arrangement are two ways of asking the same
             // question, so picking a screen-only arrangement has to answer it
             // the same way — otherwise the Camera panel says the camera is on
@@ -1996,15 +2009,44 @@ function LayoutPanel({
             //
             // Nothing here touches the picker: its thumbnails are drawn at a
             // fixed padding precisely so a write like this cannot redraw
-            // fourteen cells.
+            // the grid.
             //
-            // The border is left alone. It stands *outside* the picture, so at
-            // no padding there is nowhere for it to be drawn and it falls off
-            // the edge on its own — clearing it as well would discard a setting
-            // the arrangement has already answered.
+            // A full-bleed arrangement leaves the border alone. It stands
+            // *outside* the picture, so at no padding there is nowhere for it
+            // to be drawn and it falls off the edge on its own — clearing it as
+            // well would discard a setting the arrangement has already
+            // answered. The filled pair below is the one that does clear it,
+            // and for the opposite reason: there is room for the ring there,
+            // and it is drawn in the wrong place.
             if (fillsTheFrame(preset)) {
               set("background", "padding", 0);
               set("background", "cornerRadius", 0);
+            } else if (flushPair(preset)) {
+              // The hairline the pair is cut with, written rather than left to
+              // whatever the arrangement before it had. The two pictures stand
+              // a gap apart with their edges facing each other, and the ordinary
+              // corner leaves that gap shaped like an hourglass — the round is
+              // part of the arrangement here, the way the margin is part of the
+              // inset ones.
+              set("background", "cornerRadius", FLUSH_RADIUS);
+              // And the tighter margin that goes with it. A ceiling, not a
+              // value — the mirror of the lean pair's floor above: picking the
+              // cell out of a generous arrangement gives the tight pair the
+              // thumbnail draws, and a margin already narrower than this is
+              // left exactly as it is. Zero is the one exception, because the
+              // arrangement has a margin at all and a full-bleed pair has
+              // nothing between the two pictures.
+              if (background.padding === 0 || background.padding > FLUSH_PADDING) {
+                set("background", "padding", FLUSH_PADDING);
+              }
+              // And no ring round the recording. The border stands *outside*
+              // the picture, so in this pair it is drawn into the hair of a gap
+              // the two pictures share — a line down the middle of the
+              // composition on one side only, which reads as the recording
+              // having an edge the camera beside it does not. Written like the
+              // corner above: it is part of the arrangement, and the slider
+              // still means something afterwards.
+              set("background", "borderWidth", 0);
             } else {
               // And the other way round, which is the half that was missing.
               //
@@ -2155,8 +2197,14 @@ function cameraShapeFor(preset: LayoutPreset): CameraShape | null {
     case "beside":
     case "beside-left":
     case "stacked":
-    case "split":
       return "rounded";
+    // The panel standing the full height of the frame, which is the camera's
+    // own crop on end — the shape the arrangement is a picture of. Its corner
+    // is not `SHAPE_RADIUS`'s: the pair is cut with a hairline round, and the
+    // pick writes `FLUSH_CAMERA_RADIUS` over the top. See the handler.
+    case "beside-fill":
+    case "beside-fill-left":
+      return "portrait";
     default:
       return null;
   }
@@ -2193,7 +2241,6 @@ const SCREEN_ONLY = new Set<LayoutPreset>(["screen-full", "screen-padded", "scre
 const SLOTTED = new Set<LayoutPreset>([
   "beside",
   "beside-left",
-  "split",
   // The corner cutout decides where and how big as well — see `CUTOUT_CORNER`.
   // Dragging the person in the preview is how it is let loose.
   "over-cutout",
@@ -2202,6 +2249,11 @@ const SLOTTED = new Set<LayoutPreset>([
   // nothing. Dragging it in the preview is how it is let loose.
   "over-column",
   "over-column-left",
+  // Same again: the panel is the full height of the padded area and its width
+  // is that height at a fixed shape, so there is nothing left for either
+  // control to say.
+  "beside-fill",
+  "beside-fill-left",
 ]);
 
 /**

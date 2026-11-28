@@ -2,6 +2,7 @@ import type { BackgroundSettings, LayoutSettings, LayoutPreset } from "../../../
 import { DEFAULT_LAYOUT } from "../../../../shared/project";
 import {
   fillsTheFrame,
+  flushPair,
   layoutBoxes,
   presetFitsFrame,
   screenYawFor,
@@ -14,15 +15,15 @@ import { cn } from "../../lib/cn";
 /**
  * The arrangement, as a grid of the shapes it makes.
  *
- * Fourteen small pictures rather than a list of names. "Padded screen with the
+ * A small picture each rather than a list of names. "Padded screen with the
  * camera beside it, matched to its height" is a sentence nobody reads twice; the
  * same thing as two rectangles is understood before it is finished being looked
  * at, and the grid is scanned rather than read.
  *
  * Grouped by what the arrangement puts in the frame, because that is the order
  * the choice is actually made in: what is in the picture first, how it is
- * arranged second. As fourteen unlabelled cells in one block, the camera-only
- * arrangements read as three more variations on the eight above them.
+ * arranged second. As unlabelled cells in one block, the camera-only
+ * arrangements read as three more variations on the ones above them.
  *
  * Each arrangement is listed next to its own reflection, so a pair reads as one
  * choice with a side to it rather than as two arrangements that happen to look
@@ -38,7 +39,7 @@ import { cn } from "../../lib/cn";
  * Drawn on a plate of their own rather than on the composition's background.
  * The background was behind them for a while, so a padded arrangement showed
  * its gap against the thing it would really sit on — but a cell is a diagram,
- * and a photograph behind one turns the grid into fourteen swatches of the
+ * and a photograph behind one turns the grid into so many swatches of the
  * same picture with some blocks on top. What the gap has to contrast with is
  * the block beside it, which three fixed tones answer — see `--layout-plate`.
  *
@@ -46,7 +47,7 @@ import { cn } from "../../lib/cn";
  * and that question has the same answer whatever the project's padding happens
  * to be set to — so it is drawn at [`THUMB_PADDING`] rather than at the
  * composition's own. Threading the live padding in made the whole grid redraw
- * as the slider moved, which is fourteen pictures changing to describe one
+ * as the slider moved, which is every picture in it changing to describe one
  * setting, and at a low enough value it collapsed arrangements that differ only
  * by their margin into copies of each other. The panel below the grid is where
  * the current value is read; the grid is the menu, not the dish.
@@ -88,9 +89,18 @@ const GROUPS: {
       { value: "over-column-left", label: "Padded screen, camera standing over its left end" },
       { value: "beside", label: "Screen and camera side by side, camera at the right" },
       { value: "beside-left", label: "Screen and camera side by side, camera at the left" },
+      // Straight after the pair they are a variation on, and in the same order
+      // every handed pair in this grid takes.
+      {
+        value: "beside-fill",
+        label: "Side by side at full height, camera at the right, screen cropped to fill",
+      },
+      {
+        value: "beside-fill-left",
+        label: "Side by side at full height, camera at the left, screen cropped to fill",
+      },
       { value: "stacked", label: "Screen above the camera" },
-      { value: "split", label: "Split down the middle" },
-      // Last of the eight, after the arrangements that put a whole camera
+      // Last of them, after the arrangements that put a whole camera
       // picture somewhere: this is the one that puts a *person* there, and it
       // is read as a variation on the first cell rather than as another way of
       // dividing the frame.
@@ -153,7 +163,7 @@ const THUMB_SOURCES = { screen: { width: 16, height: 9 }, camera: { width: 16, h
  * told apart are a worse failure than a gap drawn wider than it will be.
  *
  * Fixed rather than a floor over the live value. As a floor, turning the
- * padding up redrew all fourteen cells to describe one slider — and the three
+ * padding up redrew every cell to describe one slider — and the three
  * screen-only cells, which differ from one another *only* by their margin, kept
  * changing what they were promising while the thing being chosen stood still.
  */
@@ -168,6 +178,17 @@ const THUMB_PADDING = 0.1;
  * the same relationship rather than using the real number.
  */
 const THUMB_LEAN_PADDING = 0.15;
+
+/**
+ * And what the filled pair is drawn at.
+ *
+ * Tighter, for the same reason and in the other direction: picking one lowers
+ * the composition's padding to `FLUSH_PADDING` where it is above it, and the
+ * margin is half the arrangement — two pictures with a hair between them read
+ * as one object, two with the ordinary gap read as two. Kept in the same
+ * proportion to the real number as the figure above it.
+ */
+const THUMB_FLUSH_PADDING = 0.05;
 
 // Square, so the cell is the same size whatever shape the output frame is and
 // the grid does not reflow when someone switches to a vertical preset.
@@ -331,12 +352,16 @@ function Plate({
       // The leaning pair is drawn wider than the rest, because it is: picking
       // one raises the padding to `LEAN_PADDING` if it is below it, and a cell
       // showing the ordinary margin would promise a card tighter than the one
-      // the pick gives.
+      // the pick gives. The filled pair is the same bargain the other way —
+      // picking one pulls the margin in, and the gap down its middle is half
+      // of what the cell is saying.
       padding: fillsTheFrame(preset)
         ? 0
         : screenYawFor(preset) !== 0
           ? THUMB_LEAN_PADDING
-          : THUMB_PADDING,
+          : flushPair(preset)
+            ? THUMB_FLUSH_PADDING
+            : THUMB_PADDING,
     },
     THUMB_SOURCES,
   );

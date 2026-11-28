@@ -580,6 +580,23 @@ describe("sanitiseProject", () => {
     expect(repaired.tracks[0]!.slices[0]!.overrides.layout?.preset).toBe("stacked");
   });
 
+  it("translates the halves onto the pair that replaced them", () => {
+    // The one anybody is actually holding: the frame cut down the middle was
+    // in the grid until the filled pair arrived, and the two are the same
+    // picture — both run to the full height of the frame and both crop to fill.
+    const project = stored() as {
+      defaults: { layout: { preset: string } };
+      tracks: { slices: { overrides: { layout?: { preset: string } } }[] }[];
+    };
+    project.defaults.layout.preset = "split";
+    project.tracks[0]!.slices[0]!.overrides.layout = { preset: "split" };
+
+    const repaired = sanitiseProject(project, RECORDING, 10 * S)!;
+
+    expect(repaired.defaults.layout.preset).toBe("beside-fill");
+    expect(repaired.tracks[0]!.slices[0]!.overrides.layout?.preset).toBe("beside-fill");
+  });
+
   it("opens a project saved before the camera could be cut out as a bubble", () => {
     // The leaf is new; every project on disk lacks it. It has to read back as
     // off — anything else would turn every old take's bubble into a cutout

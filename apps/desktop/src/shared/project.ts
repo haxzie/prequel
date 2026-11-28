@@ -79,7 +79,7 @@ export type Ns = MediaTime;
  * This is the shape of the composition, and it replaced a `contain`/`cover`
  * choice that could only ever say how the screen filled a frame it always had
  * to itself. The arrangements where the two pictures *share* the frame — beside
- * each other, stacked, split down the middle — were unreachable, because
+ * each other, stacked, the full height of it apiece — were unreachable, because
  * neither picture was an object with a box of its own.
  *
  * `over-full` and `over-padded` own only the screen and leave the camera free,
@@ -108,8 +108,16 @@ export type LayoutPreset =
   | "over-column-left"
   | "beside"
   | "beside-left"
+  // The same row with both pictures run to the full height of the frame: the
+  // camera a portrait panel down one side, the recording filling everything
+  // left of it and cropped to do so. `beside` fits the recording whole and
+  // lets the frame show round it; this one fills, so the pair reads as one
+  // object rather than as two pictures on a background — and because the
+  // recording is then showing a strip of itself, the window walks through it
+  // to keep the pointer on screen. See `tracksTheCursor`.
+  | "beside-fill"
+  | "beside-fill-left"
   | "stacked"
-  | "split"
   | "screen-full"
   | "screen-padded"
   | "screen-inset"
@@ -330,7 +338,7 @@ export interface LayoutSettings {
    * `custom`; every other arrangement knows which of the two it wants.
    *
    * Carried rather than assumed, because `custom` is arrived at from both. A
-   * camera dragged out of `split` was a square-cornered card standing beside
+   * camera dragged out of `beside` was a square-cornered card standing beside
    * the screen, and one dragged out of `over-padded` was a round bubble on top
    * of it — picking either as the answer for both turns the *other* one into a
    * different shape the instant the screen is touched, which reads as the
@@ -3186,6 +3194,17 @@ function migrateLayout(
   const removed: Record<string, LayoutPreset> = {
     "beside-flush": "beside",
     "split-stacked": "stacked",
+    // The frame cut in two equal halves, taken out of the grid once the filled
+    // pair arrived: both are two pictures run to the full height of the frame
+    // and both crop to fill, and the only thing the halves added was a camera
+    // exactly as wide as the recording — which at a frame's width is a person
+    // the size of what they are demonstrating.
+    //
+    // The filled pair is offered only in a frame wider than it is tall, where
+    // the halves were offered in any. A project that was holding one in a
+    // vertical frame lands there and is moved on to `over-padded` by `framed`,
+    // which is the same path a column switched into a vertical frame takes.
+    split: "beside-fill",
   };
   const replacement = removed[legacy.preset as string];
   if (replacement !== undefined) migrated.preset = replacement;

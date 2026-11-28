@@ -33,6 +33,7 @@ import {
   type PlanItem,
   presetFitsFrame,
   type Rect,
+  type RectKey,
   rectAt,
   type RenderedChord,
   type RenderedCue,
@@ -71,8 +72,9 @@ const PRESETS: LayoutPreset[] = [
   "over-column-left",
   "beside",
   "beside-left",
+  "beside-fill",
+  "beside-fill-left",
   "stacked",
-  "split",
   "screen-full",
   "screen-padded",
   "screen-inset",
@@ -3229,19 +3231,20 @@ describe("the arrangements", () => {
     }
   });
 
-  it("offers the column only where the frame is wider than it is tall", () => {
+  it("offers the column and the filled pair only where the frame is wider than it is tall", () => {
     // The gate is on what the picker offers, not on what the geometry draws —
     // the two disagreeing is how a thumbnail comes to promise one picture and
     // the export writes another, so the column above still has an answer for
     // every frame and this only says which of them it is for.
-    for (const column of ["over-column", "over-column-left"] as const) {
+    const wide = ["over-column", "over-column-left", "beside-fill", "beside-fill-left"] as const;
+    for (const column of wide) {
       expect(presetFitsFrame(column, LANDSCAPE), column).toBe(true);
       expect(presetFitsFrame(column, VERTICAL), column).toBe(false);
       expect(presetFitsFrame(column, { width: 1080, height: 1080 }), column).toBe(false);
     }
 
     for (const preset of PRESETS) {
-      if (preset === "over-column" || preset === "over-column-left") continue;
+      if ((wide as readonly LayoutPreset[]).includes(preset)) continue;
       for (const frame of [LANDSCAPE, VERTICAL, { width: 1080, height: 1080 }]) {
         expect(presetFitsFrame(preset, frame), preset).toBe(true);
       }
@@ -3256,6 +3259,7 @@ describe("the arrangements", () => {
     for (const [right, left] of [
       ["over-column", "over-column-left"],
       ["beside", "beside-left"],
+      ["beside-fill", "beside-fill-left"],
     ] as const) {
       for (const frame of [LANDSCAPE, { width: 1080, height: 1080 }]) {
         const there = boxes(right, frame);
@@ -3320,14 +3324,6 @@ describe("the arrangements", () => {
         expect(at(inset)[which]!.fit, where).toBe("contain");
       }
     }
-  });
-
-  it("gives each picture exactly half of a split", () => {
-    const { screen, camera } = boxes("split");
-
-    expect(screen!.area.width).toBeCloseTo(camera!.area.width);
-    expect(screen!.area.height).toBeCloseTo(camera!.area.height);
-    expect(overlap(screen!.area, camera!.area)).toBeCloseTo(0);
   });
 
   it("leaves out the picture its name leaves out", () => {
@@ -3453,13 +3449,13 @@ describe("the arrangements", () => {
 
     // A circle is a circle whether it stands beside the screen or floats over
     // it: half the shorter edge of the box it is in, never the screen's radius.
-    const slotted = radius("split");
+    const slotted = radius("beside");
     const card = image(
       buildRenderPlan(
         LANDSCAPE,
         { screen: SCREEN, camera: CAMERA },
         settings({
-          layout: { ...DEFAULT_SETTINGS.layout, preset: "split", cameraShape: "circle" },
+          layout: { ...DEFAULT_SETTINGS.layout, preset: "beside", cameraShape: "circle" },
         }),
       ),
       "camera",
@@ -3504,7 +3500,7 @@ describe("the arrangements", () => {
     // the dressing they had.
     const split = layoutBoxes(
       LANDSCAPE,
-      { ...DEFAULT_SETTINGS.layout, preset: "split" },
+      { ...DEFAULT_SETTINGS.layout, preset: "beside" },
       DEFAULT_SETTINGS.background,
       { screen: SCREEN, camera: CAMERA },
     );
@@ -3519,7 +3515,7 @@ describe("the arrangements", () => {
       cameraHeight: box.height / unit,
     };
 
-    expect(shapeOf(dragged)).toEqual(shapeOf({ preset: "split" }));
+    expect(shapeOf(dragged)).toEqual(shapeOf({ preset: "beside" }));
 
     // And the other direction still holds: a bubble dragged out of `over-*`
     // must not square off either.
@@ -3541,7 +3537,7 @@ describe("the arrangements", () => {
         }),
       ).items.filter((item) => item.kind === "stroke").length;
 
-    expect(strokes("split")).toBe(1);
+    expect(strokes("beside")).toBe(1);
     expect(strokes("over-padded")).toBe(1);
     expect(strokes("camera-padded")).toBe(0);
   });
@@ -4287,6 +4283,277 @@ describe("zooming", () => {
 
       expect(pictureMoved(plan, "screen", 10 * S)).toBe(true);
       expect(pictureMoved(plan, "screen", 0)).toBe(false);
+    });
+  });
+
+  /**
+   * The pair that fills the frame: two pictures the full height of the padded
+   * area, the camera a portrait panel and the recording cropped into whatever
+   * is left. The crop is the arrangement, which is why the window walks — a
+   * static one is a recording of two thirds of the screen with the pointer
+   * spending half the take outside it.
+   */
+  describe("the pair that fills the frame", () => {
+    const FRAME: Size = { width: 1920, height: 1080 };
+    /** 16:9, so the slot left beside the panel throws columns away. */
+    const WIDE: Size = { width: 1920, height: 1080 };
+    const CAM: Size = { width: 1280, height: 720 };
+
+    /** The pointer crossing the whole screen, slowly enough to be caught up with. */
+    const crossing = (): CursorTrack => ({
+      shapes: { arrow: { path: "cursor.png", hotspot: { x: 0.055, y: 0.055 } } },
+      size: 0.035,
+      hideAfter: null,
+      samples: Array.from({ length: 201 }, (_, step) => ({
+        at: (step / 200) * 20 * S,
+        x: 0.05 + (step / 200) * 0.9,
+        y: 0.5,
+      })),
+    });
+
+    const areas = (preset: LayoutPreset = "beside-fill") =>
+      layoutBoxes(FRAME, { ...DEFAULT_SETTINGS.layout, preset }, DEFAULT_SETTINGS.background, {
+        screen: WIDE,
+        camera: CAM,
+      });
+
+    const screenOf = (zooms: ZoomSlice[] = [], cursor: CursorTrack | null = crossing()) => {
+      const item = buildRenderPlan(
+        FRAME,
+        { screen: WIDE, camera: CAM },
+        settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: "beside-fill" } }),
+        cursor,
+        zooms,
+      ).items.find((candidate) => candidate.kind === "image" && candidate.source === "screen")!;
+      if (item.kind !== "image") throw new Error("wrong item");
+      return { keys: item.motion ?? [], srcRect: item.srcRect, dstRect: item.dstRect };
+    };
+
+    it("runs both pictures the full height of the padded area", () => {
+      // The whole arrangement. `beside` gives the height up to keep the
+      // recording whole; here the height is the statement and the recording
+      // crops into what is left.
+      const { screen, camera } = areas();
+      const unit = Math.min(FRAME.width, FRAME.height);
+      const padding = DEFAULT_SETTINGS.background.padding * unit;
+      const tall = FRAME.height - padding * 2;
+
+      for (const slot of [screen!, camera!]) {
+        expect(slot.area.height).toBeCloseTo(tall);
+        expect(slot.area.y).toBeCloseTo(padding);
+        expect(slot.fit).toBe("cover");
+        expect(slot.card).toBe(true);
+      }
+
+      // Side by side with the padding between them, inside the padded area.
+      expect(screen!.area.x).toBeCloseTo(padding);
+      expect(camera!.area.x).toBeCloseTo(screen!.area.x + screen!.area.width + padding);
+      expect(camera!.area.x + camera!.area.width).toBeCloseTo(FRAME.width - padding);
+    });
+
+    it("stands the camera on end, and never wider than a third of the row", () => {
+      // A panel, not a card: the camera is a person standing beside the
+      // recording, and at the full height of a 16:9 frame anything wider starts
+      // taking the recording's own room.
+      const { screen, camera } = areas();
+      const aspect = camera!.area.width / camera!.area.height;
+
+      expect(aspect).toBeLessThan(1);
+      expect(aspect).toBeGreaterThan(0.5);
+      expect(camera!.area.width).toBeLessThan(screen!.area.width);
+    });
+
+    it("crops the recording into its slot rather than fitting it", () => {
+      // `cover`, so the slot is filled and the overflow is taken out of the
+      // picture — the window, which is what the pan then walks through.
+      const { srcRect, dstRect } = screenOf([], null);
+      const { screen } = areas();
+
+      expect(dstRect.width).toBeCloseTo(screen!.area.width);
+      expect(dstRect.height).toBeCloseTo(screen!.area.height);
+      expect(srcRect.width).toBeLessThan(WIDE.width);
+      expect(srcRect.height).toBeCloseTo(WIDE.height);
+      // The one invariant `place` may never break: window and box are the same
+      // shape, or the picture is stretched.
+      expect(srcRect.width / srcRect.height).toBeCloseTo(dstRect.width / dstRect.height, 4);
+    });
+
+    it("walks the window after the pointer with no zoom in the project at all", () => {
+      // The arrangement's own pan. Every other arrangement draws a still
+      // window until a zoom asks for one.
+      const { keys, srcRect } = screenOf();
+
+      expect(keys.length).toBeGreaterThan(10);
+      expect(keys.every((key) => key.src !== undefined)).toBe(true);
+      expect(keys[keys.length - 1]!.src!.x).toBeGreaterThan(keys[0]!.src!.x + 1);
+      // The window only travels: it is the arrangement's crop at every moment,
+      // never a tighter one.
+      for (const key of keys) {
+        expect(key.src!.width).toBeCloseTo(srcRect.width, 4);
+        expect(key.src!.x).toBeGreaterThanOrEqual(-1e-6);
+        expect(key.src!.x + key.src!.width).toBeLessThanOrEqual(WIDE.width + 1e-6);
+      }
+    });
+
+    it("keeps the pointer inside the window the whole way across", () => {
+      // The guarantee, and the reason the follow is measured against the card
+      // rather than the frame: the recording is two thirds of a frame wide, so
+      // `KEEP_IN` of the frame would leave the pointer a fifth of a frame
+      // outside the picture and still call it kept in shot.
+      const { keys } = screenOf();
+      // The sweep is linear in time, so where the pointer was at a key's moment
+      // needs no lookup.
+      const at = (when: number) =>
+        (0.05 + 0.9 * Math.min(1, Math.max(0, when / (20 * S)))) * WIDE.width;
+
+      for (const key of keys) {
+        const pointer = at(key.at);
+        expect(pointer).toBeGreaterThanOrEqual(key.src!.x - 1);
+        expect(pointer).toBeLessThanOrEqual(key.src!.x + key.src!.width + 1);
+      }
+    });
+
+    it("holds the card exactly still while the window travels", () => {
+      // The padding, the gap and the corners are where the arrangement put
+      // them for the whole clip. Nothing about the pan is visible as movement
+      // of the box.
+      const { keys, dstRect } = screenOf();
+
+      for (const key of keys) {
+        expect(key.x).toBeCloseTo(dstRect.x, 6);
+        expect(key.y).toBeCloseTo(dstRect.y, 6);
+        expect(key.width).toBeCloseTo(dstRect.width, 6);
+        expect(key.height).toBeCloseTo(dstRect.height, 6);
+      }
+    });
+
+    it("rests a zoom on the pan rather than on the crop it started from", () => {
+      // At rest means at rest *in this arrangement*, and here the window is
+      // never still. Resting on the static crop instead snapped the picture
+      // back to the middle of the recording every time a zoom let go, with the
+      // pointer left outside it.
+      const zoom: ZoomSlice = {
+        ...DEFAULT_ZOOM,
+        id: "z",
+        target: "cursor",
+        source: { start: 2 * S, end: 6 * S },
+        level: 2,
+      };
+      const zoomed = screenOf([zoom]);
+      const plain = screenOf();
+      const late = 16 * S;
+
+      const window = (keys: readonly RectKey[]) =>
+        rectAt(keys, late, { x: 0, y: 0, width: 1, height: 1 }, 0).src!;
+
+      expect(window(zoomed.keys).x).toBeCloseTo(window(plain.keys).x, 0);
+      expect(window(zoomed.keys).width).toBeCloseTo(window(plain.keys).width, 0);
+    });
+
+    it("spends no keys on a window that is standing still", () => {
+      // A clip is as long as somebody talks and the pan is sampled at thirty a
+      // second, so a ten-minute take would carry eighteen thousand keys — of
+      // which, with the pointer resting inside the dead zone, none say anything
+      // the one before it did not. Rebuilt on every drag of every slider, and
+      // handed to the exporter in full.
+      const parked: CursorTrack = {
+        ...crossing(),
+        samples: Array.from({ length: 601 }, (_, step) => ({
+          at: (step / 600) * 20 * S,
+          x: 0.5,
+          y: 0.5,
+        })),
+      };
+      const { keys } = screenOf([], parked);
+
+      // A key a second, which is the cap on how long a run may be dropped —
+      // against the 601 samples the follow was integrated over.
+      expect(keys.length).toBeGreaterThan(2);
+      expect(keys.length).toBeLessThan(40);
+    });
+
+    it("keeps the window through the move a cut opens with", () => {
+      // Both ends or neither: `rectAt` drops a window one key of a pair is
+      // missing, so a clip arriving from one that showed the same resting crop
+      // played its opening at that crop and then snapped to wherever the pan
+      // had got to.
+      const layout = { ...DEFAULT_SETTINGS.layout, preset: "beside-fill" as const };
+      const item = buildRenderPlan(
+        FRAME,
+        { screen: WIDE, camera: CAM },
+        settings({ layout }),
+        crossing(),
+        [],
+        { from: settings({ layout }), source: { start: 0, end: 20 * S } },
+      ).items.find((candidate) => candidate.kind === "image" && candidate.source === "screen")!;
+      if (item.kind !== "image") throw new Error("wrong item");
+
+      expect(item.motion!.length).toBeGreaterThan(2);
+      expect(item.motion!.every((key) => key.src !== undefined)).toBe(true);
+    });
+
+    it("keeps the pointer in the picture under a zoom, at every output frame", () => {
+      // The bug this pair was reported with, and it was not the pan: the
+      // follow states its dead zone and the clamp that keeps the pointer in
+      // shot as fractions of the picture being watched, and a shot measured
+      // against the *frame* under an arrangement that gives the recording two
+      // thirds of it called the pointer in shot a third of a frame outside the
+      // recording. Every recording here carries an auto zoom spanning the whole
+      // clip, so this was every take.
+      //
+      // Sampled at sixty a second through `rectAt`, not at the keys: what is on
+      // screen between two keys is the line drawn between them, and a guarantee
+      // that only holds where a key happens to land is not one.
+      const zoom: ZoomSlice = {
+        ...DEFAULT_ZOOM,
+        id: "auto-0",
+        target: "cursor",
+        source: { start: 0, end: 20 * S },
+        level: 1.5,
+      };
+      // Flicked across rather than swept: a hand crossing the screen in a fifth
+      // of a second is faster than any watchable pan, so what holds the pointer
+      // is the clamp rather than the spring — which is exactly the part that
+      // was measuring against the wrong rectangle.
+      const dashing: CursorTrack = {
+        ...crossing(),
+        samples: Array.from({ length: 601 }, (_, step) => {
+          const when = (step / 600) * 20 * S;
+          const seconds = when / S;
+          const dash = Math.min(1, Math.max(0, (seconds - 6) / 0.2));
+          return { at: when, x: 0.06 + dash * 0.88, y: 0.5 };
+        }),
+      };
+      const { keys, dstRect } = screenOf([zoom], dashing);
+      const at = (when: number) =>
+        (0.06 + 0.88 * Math.min(1, Math.max(0, (when / S - 6) / 0.2))) * WIDE.width;
+
+      for (let step = 0; step <= 20 * 60; step += 1) {
+        const when = Math.round((step / 60) * S);
+        const window = rectAt(keys, when, dstRect, 0).src!;
+        const pointer = at(when);
+
+        expect(pointer, `${(when / S).toFixed(2)}s`).toBeGreaterThanOrEqual(window.x - 1);
+        expect(pointer, `${(when / S).toFixed(2)}s`).toBeLessThanOrEqual(
+          window.x + window.width + 1,
+        );
+      }
+    });
+
+    it("leaves every other arrangement's window where the settings put it", () => {
+      // The pan is the filled pair's, not a new rule for every cropping
+      // arrangement: `beside` fits the recording whole, and a still window is
+      // what every project that is not this one still renders.
+      const item = buildRenderPlan(
+        FRAME,
+        { screen: WIDE, camera: CAM },
+        settings({ layout: { ...DEFAULT_SETTINGS.layout, preset: "beside" } }),
+        crossing(),
+        [],
+      ).items.find((candidate) => candidate.kind === "image" && candidate.source === "screen")!;
+      if (item.kind !== "image") throw new Error("wrong item");
+
+      expect(item.motion ?? []).toHaveLength(0);
     });
   });
 
@@ -6481,7 +6748,7 @@ describe("arriving from the slice before", () => {
     // A clip that shows a different slice of the recording — a change of
     // padding under `cover`, or a pan — would otherwise snap to the new crop
     // on the first frame while the box was still on its way.
-    const keys = image(planFor("split", "over-full"), "screen")!.motion!;
+    const keys = image(planFor("beside-fill", "over-full"), "screen")!.motion!;
 
     expect(keys[0]!.src).toBeDefined();
     expect(keys[keys.length - 1]!.src).toBeDefined();

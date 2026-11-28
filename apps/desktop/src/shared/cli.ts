@@ -662,8 +662,10 @@ export const LAYOUT_SUMMARY: Record<LayoutPreset, string> = {
   "over-column-left": "The same column, on the left",
   beside: "Screen and camera side by side, camera right",
   "beside-left": "Side by side, camera left",
+  "beside-fill":
+    "Side by side at full height, camera right, the screen cropped to fill and panning to keep the pointer in shot",
+  "beside-fill-left": "The same full-height pair, camera left",
   stacked: "Camera above, screen below",
-  split: "The frame split down the middle between the two",
   "screen-full": "The screen alone, full bleed",
   "screen-padded": "The screen alone, padded on the background",
   "screen-inset": "The screen alone, inset further still",
