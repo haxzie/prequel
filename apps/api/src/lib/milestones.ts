@@ -23,6 +23,41 @@ const LABELS = {
 
 export type Milestone = keyof typeof LABELS;
 
+/**
+ * The icon each line opens with.
+ *
+ * A channel is read by scanning it, and these two events arrive far more often
+ * than anything else in the feed — so the first character of the line is what
+ * says which of them this is, before the sentence is read at all.
+ *
+ * Three icons for two events, because an export is two different things: a film
+ * somebody rendered and a screenshot somebody saved land on the same event and
+ * are not the same news. A GIF counts as a film here — it is a recording that
+ * happens to be written as frames — so only a still takes the picture.
+ *
+ * Unicode rather than `:shortcodes:`. Slack renders both, and only one of them
+ * is still legible in the logs, in a test, and in whatever reads the channel
+ * next.
+ */
+const ICONS = {
+  recording_stopped: "🎥",
+  export_done: "🎬",
+  /** An export that wrote a picture rather than something to play. */
+  still: "🖼️",
+} as const;
+
+/**
+ * What the export wrote, where the app said.
+ *
+ * `png` is the screenshot path's; the rest are the encoders. Absent on an event
+ * from a build that predates the property, which reads as a film — the common
+ * case by a long way, and the icon is a hint rather than a fact anybody acts
+ * on.
+ */
+function isStill(properties: Record<string, unknown> | undefined): boolean {
+  return properties?.["format"] === "png";
+}
+
 /** Whether this event is one of the two. */
 export function isMilestone(event: string): event is Milestone {
   return event in LABELS;
@@ -41,7 +76,7 @@ export const MAX_PER_BATCH = 5;
 /**
  * One line, in the shape the rest of the `events` feed already uses.
  *
- * `*What happened* — who · what they pay us · how long`, and the last two are
+ * `<icon> *What happened* — who · what they pay us · how long`, and the last two are
  * left out rather than guessed at when they are not known. A duration is the
  * number somebody is actually scanning for — a thirty-second take and a
  * forty-minute one are different events — so it goes last, where the eye lands.
@@ -58,7 +93,9 @@ export function milestoneLine(
   const duration = durationOf(properties);
   if (duration !== null) parts.push(duration);
 
-  return `*${LABELS[event]}* — ${parts.join(" · ")}`;
+  const icon = event === "export_done" && isStill(properties) ? ICONS.still : ICONS[event];
+
+  return `${icon} *${LABELS[event]}* — ${parts.join(" · ")}`;
 }
 
 /** The tiers as a person says them, matching what `billing.ts` posts. */

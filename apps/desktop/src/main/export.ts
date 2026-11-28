@@ -222,6 +222,7 @@ export async function saveStill(
   // A still has no render to describe, and the shape left over from the last
   // video would be reported against this one's failure as if it were its own.
   runningShape = null;
+  runningFormat = "png";
 
   // Shapes and switches only, like every other event. No size: the bytes are
   // already encoded by the time they get here, so main does not know it — and a
@@ -293,6 +294,23 @@ type ExportShape = {
 };
 
 let runningShape: ExportShape | null = null;
+
+/**
+ * What the export in progress is writing — one of the encoders, or `png` for a
+ * screenshot.
+ *
+ * Kept for the reason `runningFps` is: the request that named it is gone by the
+ * time the terminal progress arrives, and this is the one property that says
+ * whether the thing that just landed was a film or a picture. The Slack line in
+ * `apps/api/src/lib/milestones.ts` is what reads it — a channel scanning past
+ * "Export finished" wants to know which of the two without opening anything.
+ *
+ * Inferred nowhere. A still carries no frame rate and no duration, so it could
+ * be told from a video by what it is *missing* — which is the kind of reading
+ * that holds until the day a one-frame video arrives, and then reads as a
+ * screenshot in the channel with nothing to say why.
+ */
+let runningFormat: ExportFormat | "png" = "png";
 
 /**
  * How often a running export says where it has got to, in milliseconds.
@@ -387,6 +405,7 @@ export async function startExport(request: ExportRequest): Promise<void> {
   // in rather than one interval after the render actually began.
   reportedAt = 0;
   runningFps = request.fps;
+  runningFormat = request.format;
   runningShape = {
     format: request.format,
     frame: `${String(request.width)}×${String(request.height)}`,
@@ -569,6 +588,10 @@ function finish(update: ExportProgress): void {
   track(`export_${update.stage}`, {
     took_ms: startedAt ? Date.now() - startedAt : null,
     frames: update.framesTotal,
+    // What was written, which `export_started` already reports and the terminal
+    // event did not: a feed that only hears the end of an export could not tell
+    // a film from a screenshot. See `runningFormat`.
+    format: runningFormat,
     // How long the file runs, not how long it took to write — the two were one
     // property away from being read as each other. Added for the Slack line
     // `apps/api/src/lib/milestones.ts` builds, which is the length somebody

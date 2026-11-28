@@ -349,7 +349,7 @@ describe("announcing a milestone", () => {
       slack: WEBHOOK,
     });
 
-    expect(sent).toEqual(["*Recording finished* — Ana (ana@example.com) · Free · 2m 14s"]);
+    expect(sent).toEqual(["🎥 *Recording finished* — Ana (ana@example.com) · Free · 2m 14s"]);
   });
 
   it("says nothing about an install that has never signed in", async () => {
@@ -397,7 +397,7 @@ describe("announcing a milestone", () => {
       slack: WEBHOOK,
     });
 
-    expect(sent).toEqual(["*Export finished* — Ana (ana@example.com) · Free · 8s"]);
+    expect(sent).toEqual(["🎬 *Export finished* — Ana (ana@example.com) · Free · 8s"]);
   });
 
   it("answers 202 when Slack refuses the message", async () => {

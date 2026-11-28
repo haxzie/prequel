@@ -36,21 +36,40 @@ suite("which events reach the channel", () => {
 suite("the line", () => {
   it("names the person, the tier and the length", () => {
     expect(milestoneLine("recording_stopped", { duration_ms: 134_000 }, ANA)).toBe(
-      "*Recording finished* — Ana (ana@example.com) · Pro · 2m 14s",
+      "🎥 *Recording finished* — Ana (ana@example.com) · Pro · 2m 14s",
     );
   });
 
   it("uses the same field for an export's length", () => {
     expect(milestoneLine("export_done", { duration_ms: 8_400 }, ANA)).toBe(
-      "*Export finished* — Ana (ana@example.com) · Pro · 8s",
+      "🎬 *Export finished* — Ana (ana@example.com) · Pro · 8s",
     );
+  });
+
+  it("opens with the picture where the export wrote one", () => {
+    // The whole point of the icon: a screenshot and a film land on the same
+    // event, and a channel is read by scanning the first character of a line
+    // rather than the sentence after it. A still carries no duration either,
+    // which is why that half of the line is simply absent.
+    expect(milestoneLine("export_done", { format: "png" }, ANA)).toBe(
+      "🖼️ *Export finished* — Ana (ana@example.com) · Pro",
+    );
+  });
+
+  it("calls a GIF a film, and anything it was not told about one too", () => {
+    // A GIF is a recording that happens to be written as frames. And an event
+    // from a build that predates the property has to read as *something* —
+    // films are the common case by a long way.
+    for (const properties of [{ format: "gif" }, { format: "h264" }, {}]) {
+      expect(milestoneLine("export_done", properties, ANA)).toMatch(/^🎬 /);
+    }
   });
 
   it("leaves out a tier it does not know rather than assuming free", () => {
     // Signed in with no team yet. "Free" here would be a figure where there is
     // a gap, and free is the one answer somebody would act on differently.
     expect(milestoneLine("export_done", { duration_ms: 1_000 }, { ...ANA, plan: null })).toBe(
-      "*Export finished* — Ana (ana@example.com) · 1s",
+      "🎬 *Export finished* — Ana (ana@example.com) · 1s",
     );
   });
 
@@ -60,7 +79,7 @@ suite("the line", () => {
     // the product rather than in the notifier.
     for (const properties of [{}, { duration_ms: "long" }, { duration_ms: -1 }, undefined]) {
       expect(milestoneLine("export_done", properties, ANA)).toBe(
-        "*Export finished* — Ana (ana@example.com) · Pro",
+        "🎬 *Export finished* — Ana (ana@example.com) · Pro",
       );
     }
   });
