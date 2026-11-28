@@ -76,13 +76,16 @@ function fakeWindow(): FakeWindow {
   return window;
 }
 
+/** What `loadRoute` answers, so a test can fail an overlay's load. */
+let loading: () => Promise<void> = () => Promise.resolve();
+
 vi.mock("./base.js", () => ({
   createPanel: () => {
     const window = fakeWindow();
     panels.push(window);
     return window;
   },
-  loadRoute: () => Promise.resolve(),
+  loadRoute: () => loading(),
 }));
 
 const { SelectionOverlay } = await import("./selection.js");
@@ -104,7 +107,52 @@ let overlay: InstanceType<typeof SelectionOverlay>;
 beforeEach(() => {
   panels.length = 0;
   zoomFactor = 1;
+  loading = () => Promise.resolve();
   overlay = new SelectionOverlay();
+});
+
+suite("an overlay whose page never arrives", () => {
+  it("settles the picker rather than leaving it up", async () => {
+    // The window is shown where the load resolves, so a load that fails leaves
+    // an invisible always-on-top panel over the display and the promise
+    // hanging: pressing record appears to do nothing at all. Six people hit
+    // this before the rejection was so much as caught.
+    loading = () => Promise.reject(new Error("ERR_FAILED (-2) loading"));
+    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => undefined);
+
+    const picked = overlay.open("area", BOTH, []);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(await picked).toBeNull();
+    expect(overlay.isOpen).toBe(false);
+    expect(console).toHaveBeenCalled();
+    console.mockRestore();
+  });
+
+  it("leaves the picker that replaced it alone", async () => {
+    // A rejection from a cancelled picker arrives whenever it arrives. Taken
+    // as a reason to cancel, it closes whatever is on screen by then — which
+    // is a picker the user has just opened.
+    let fail: (error: Error) => void = () => undefined;
+    loading = () => new Promise<void>((_, reject) => (fail = reject));
+    const console = vi.spyOn(globalThis.console, "error").mockImplementation(() => undefined);
+
+    const first = overlay.open("area", BOTH, []);
+    overlay.cancel();
+    expect(await first).toBeNull();
+
+    loading = () => Promise.resolve();
+    const second = overlay.open("area", BOTH, []);
+    fail(new Error("ERR_FAILED (-2) loading"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(overlay.isOpen).toBe(true);
+    overlay.cancel();
+    expect(await second).toBeNull();
+    console.mockRestore();
+  });
 });
 
 suite("an overlay whose zoom is not 1", () => {

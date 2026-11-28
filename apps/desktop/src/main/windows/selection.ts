@@ -245,27 +245,59 @@ export class SelectionOverlay {
     });
     window.setFullScreenable(false);
 
-    void loadRoute(window, "/selection").then(() => {
-      // Checked here as well as pinned in `createPanel`, because this is the
-      // one window where zoom is not a cosmetic setting: it draws in CSS
-      // pixels that are meant to *be* this display's points, so anything but
-      // 100% silently rescales every highlight it ever draws. Free to ask, and
-      // it runs before the overlay is shown.
-      const zoom = window.webContents.getZoomFactor();
-      if (Math.abs(zoom - 1) > 0.001) {
-        console.warn(`[picker] overlay zoom was ${String(zoom)}; pinning it back to 1`);
-        window.webContents.setZoomLevel(0);
-      }
+    void loadRoute(window, "/selection").then(
+      () => {
+        // The picker may have been cancelled while the page was loading —
+        // Escape destroys every pane at once, and the load is a round trip. On
+        // a destroyed window each of the calls below throws `Object has been
+        // destroyed`, a getter included, and in main nothing catches that. See
+        // `live`.
+        if (window.isDestroyed()) return;
 
-      window.webContents.send(
-        IPC_CHANNELS.selectionSetup,
-        describe(display, mode, offers, targets, icons, []),
-      );
-      window.showInactive();
-      // The overlay owns the keyboard while it is up, so Escape works without
-      // the user having to click it first.
-      window.focus();
-    });
+        // Checked here as well as pinned in `createPanel`, because this is the
+        // one window where zoom is not a cosmetic setting: it draws in CSS
+        // pixels that are meant to *be* this display's points, so anything but
+        // 100% silently rescales every highlight it ever draws. Free to ask, and
+        // it runs before the overlay is shown.
+        const zoom = window.webContents.getZoomFactor();
+        if (Math.abs(zoom - 1) > 0.001) {
+          console.warn(`[picker] overlay zoom was ${String(zoom)}; pinning it back to 1`);
+          window.webContents.setZoomLevel(0);
+        }
+
+        window.webContents.send(
+          IPC_CHANNELS.selectionSetup,
+          describe(display, mode, offers, targets, icons, []),
+        );
+        window.showInactive();
+        // The overlay owns the keyboard while it is up, so Escape works without
+        // the user having to click it first.
+        window.focus();
+      },
+      (error: unknown) => {
+        // The page did not arrive, so this display has no overlay.
+        //
+        // Not a rejection to swallow, and not one to leave unhandled either —
+        // which is what it was. The window is *shown* in the branch above, so
+        // a load that fails leaves an invisible always-on-top panel covering
+        // the display with the picker waiting for a click that can never come:
+        // recording appears to do nothing, and Escape is the only way out for
+        // anyone who thinks to try it. Cancelling settles the promise, takes
+        // the panes down and gives Escape back, which leaves the dock to try
+        // again from.
+        //
+        // Seen in the wild as `ERR_FAILED` loading the bundle, from copies
+        // running translocated — macOS puts the app in a disposable mount when
+        // it is opened from the disk image, and the bundle can go out from
+        // under a window that has not loaded yet.
+        //
+        // Only while this overlay is still the one on screen: a rejection
+        // arriving from a picker that has already been cancelled must not
+        // cancel the picker that replaced it.
+        console.error(`[picker] overlay failed to load: ${String(error)}`);
+        if (this.panes.some((pane) => pane.window === window)) this.cancel();
+      },
+    );
 
     return window;
   }
