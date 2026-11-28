@@ -121,15 +121,58 @@ const ESCAPE = "Escape";
  * which leaves the overlays' own handling as it was.
  */
 export function bindEscape(onEscape: () => void): void {
-  if (globalShortcut.register(ESCAPE, onEscape)) return;
-  log("warn", "could not register Escape; the picker cancels only while it has the keyboard");
+  wantEscape(onEscape);
 }
 
 export function unbindEscape(): void {
-  globalShortcut.unregister(ESCAPE);
+  wantEscape(null);
+}
+
+/**
+ * What Escape should be bound to, and whether a change is already on its way.
+ *
+ * **Nothing here touches `globalShortcut` on the key handler's own stack**, and
+ * that is the whole reason this is not two one-line functions. Escape is
+ * released by the very thing it triggers: the press cancels the picker, the
+ * picker closing takes the panel with it, and `syncEscape` then gives the key
+ * back — so `unregister` ran inside the callback Electron was in the middle of
+ * dispatching. On macOS that unhooks the Carbon handler from inside its own
+ * `NotifyKeyPressed`, and the browser process goes down with it.
+ *
+ * So the last thing asked for is remembered and applied a tick later, off that
+ * stack. Several asks in one turn collapse to the last, which is also what the
+ * panel wants: it syncs Escape on every change it emits.
+ */
+let escapeWanted: (() => void) | null = null;
+let escapeQueued = false;
+
+function wantEscape(onEscape: (() => void) | null): void {
+  escapeWanted = onEscape;
+  if (escapeQueued) return;
+  escapeQueued = true;
+  setImmediate(applyEscape);
+}
+
+function applyEscape(): void {
+  escapeQueued = false;
+  const next = escapeWanted;
+
+  // Always off first. Registering over an accelerator we already hold fails —
+  // the same rule `setToggleShortcut` is built around — and the callback is
+  // what changes between one picker and the next.
+  if (globalShortcut.isRegistered(ESCAPE)) globalShortcut.unregister(ESCAPE);
+  if (!next) return;
+
+  if (!globalShortcut.register(ESCAPE, next)) {
+    log("warn", "could not register Escape; the picker cancels only while it has the keyboard");
+  }
 }
 
 export function teardownShortcuts(): void {
+  // Before the sweep, or a request still on its way back would put Escape
+  // on again a tick into the quit and leave the key held by a process that is
+  // going away. See `wantEscape`.
+  escapeWanted = null;
   globalShortcut.unregisterAll();
   // An app that is not running has no business holding ⇧⌘5. Giving it back on
   // quit is also what keeps "Prequel was deleted and the screenshot toolbar
