@@ -1,5 +1,22 @@
 # @prequel/desktop
 
+## 0.15.0
+
+### Minor Changes
+
+- 117ad92: A new Studio setting for the microphone that evens out your level, warms up the tone and makes you as loud as a podcast.
+
+  <!-- highlight: Give your voice a studio finish -->
+
+### Patch Changes
+
+- 10de30f: Pressing Escape to dismiss the picker no longer closes the app on some Macs.
+- 3d05167: A new arrangement stands the camera full height beside the screen, which pans to keep the pointer in view.
+- 9260168: The library's panes have a bigger header with a larger view switch, and the list slides under it instead of stopping at a line.
+- 3d05167: Recordings arranged with Split down the middle open in the new full-height pair, which takes its place.
+- b279be0: Recording no longer leaves nothing on screen when the picker cannot open on one of your displays.
+- 3d05167: A zoom that follows the pointer keeps it inside the recording in the layouts where the screen shares the frame.
+
 ## 0.14.1
 
 ### Patch Changes
